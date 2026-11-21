@@ -168,8 +168,8 @@ object ModBuilder {
         return BuildResult(root, files, warnings)
     }
 
-    fun zip(rootDir: File, output: OutputStream) {
-        val base = rootDir.parentFile ?: rootDir
+    fun zip(rootDir: File, output: OutputStream, includeRoot: Boolean = true) {
+        val base = if (includeRoot) (rootDir.parentFile ?: rootDir) else rootDir
         ZipOutputStream(BufferedOutputStream(output)).use { zip ->
             rootDir.walkTopDown().filter { it.isFile }.sortedBy { it.relativeTo(base).path }.forEach { file ->
                 val entryName = file.relativeTo(base).invariantSeparatorsPath

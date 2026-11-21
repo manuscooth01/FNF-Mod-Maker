@@ -513,7 +513,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     File(root, "LEEME.txt").writeText(characterReadme(draft.charFolder), Charsets.UTF_8)
                     val stream = app.contentResolver.openOutputStream(uri)
                         ?: throw IllegalStateException("No se pudo abrir el destino elegido.")
-                    stream.use { ModBuilder.zip(root, it) }
+                    // Sin carpeta contenedora: el ZIP se descomprime dentro del mod.
+                    stream.use { ModBuilder.zip(root, it, includeRoot = false) }
                     MediaTools.displayName(app, uri).ifBlank { characterZipName } to warningsList
                 }
             }

@@ -139,9 +139,19 @@ object ModBuilder {
             onProgress("Escribiendo archivos de Psych Engine…")
             writeText(root, "pack.json", JsonBuilders.psychPack(config))
             val chartJson = JsonBuilders.psychChart(config, durationMs)
-            for (difficulty in config.orderedDifficulties) {
+            val difficulties = config.orderedDifficulties
+            for (difficulty in difficulties) {
                 val fileName = if (difficulty == "normal") "$songFolder.json" else "$songFolder-$difficulty.json"
                 writeText(root, "data/$songFolder/$fileName", chartJson)
+            }
+            // Psych abre siempre la dificultad "Normal", que es el archivo SIN sufijo.
+            // Si no la marcaste, se copia la primera que elegiste para que no falle al entrar.
+            if (difficulties.none { it == "normal" }) {
+                writeText(root, "data/$songFolder/$songFolder.json", chartJson)
+                warnings.add(
+                    "Psych arranca en la dificultad Normal: se copió " +
+                        "${difficulties.first()} también como $songFolder.json."
+                )
             }
             writeText(root, "weeks/$modFolder.json", JsonBuilders.psychWeek(config))
         }

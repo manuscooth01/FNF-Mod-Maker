@@ -298,6 +298,12 @@ los archivos se leen y se guardan con el selector de Android (SAF).
   de tempo, este asistente (una sola BPM) no basta.
 - **"No se pudo convertir"**: el error de FFmpeg se muestra en pantalla. Si tu archivo es raro
   (DRM, opus dentro de ogg), expórtalo a WAV/MP3 y vuelve a intentarlo.
+- **Psych carga la canción en "Normal" y no la encuentra**: Psych siempre abre el archivo sin
+  sufijo (`<cancion>.json`). La app lo crea siempre; si no marcaste `normal`, copia ahí la primera
+  dificultad que elegiste y te avisa en el resultado.
+- **El personaje sale en gris / con la animación equivocada**: revisa el orden de los frames de la
+  hoja y el tamaño de frame. Si el personaje mira al lado contrario, activa *voltear
+  horizontalmente*.
 - **El APK no instala**: revisa que el teléfono sea ARM (todos los móviles normales lo son); el
   APK no incluye binarios x86 para emuladores.
 

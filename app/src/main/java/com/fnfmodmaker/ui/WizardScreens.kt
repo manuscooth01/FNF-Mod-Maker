@@ -460,6 +460,14 @@ private fun StepSong(vm: WizardViewModel, config: ModConfig) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.error
         )
+    } else {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Solo se generan las marcadas, y la semana de Psych las declara para no ofrecer " +
+                "dificultades vacías.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 
     Spacer(Modifier.height(18.dp))

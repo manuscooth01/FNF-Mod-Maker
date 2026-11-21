@@ -228,7 +228,12 @@ object JsonBuilders {
             .put("hiddenUntilUnlocked", false)
             .put("hideStoryMode", !config.showInStoryMode)
             .put("hideFreeplay", false)
-            .put("difficulties", "")
+            // Psych lista las dificultades a nivel global; si la semana no las
+            // declara, ofrece también las que no tienen chart. Con esto solo
+            // aparecen las que realmente generamos.
+            .put("difficulties", config.orderedDifficulties.joinToString(",") { name ->
+                name.replaceFirstChar { it.uppercase() }
+            })
             .toString(2)
     }
 

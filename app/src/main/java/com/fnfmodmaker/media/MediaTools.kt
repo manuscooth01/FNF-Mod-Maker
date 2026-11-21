@@ -89,7 +89,9 @@ object MediaTools {
                 "$inputs -filter_complex \"[0:a][1:a]amix=inputs=2:duration=longest:normalize=0\" " +
                     "-c:a libvorbis -q:a 5 -ar 44100 ${quote(output.absolutePath)}",
                 "$inputs -filter_complex \"[0:a][1:a]amix=inputs=2:duration=longest\" " +
-                    "-c:a libvorbis -q:a 5 -ar 44100 ${quote(output.absolutePath)}"
+                    "-c:a libvorbis -q:a 5 -ar 44100 ${quote(output.absolutePath)}",
+                "$inputs -filter_complex \"[0:a][1:a]amix=inputs=2:duration=longest\" " +
+                    "-c:a vorbis -strict -2 -q:a 5 -ar 44100 ${quote(output.absolutePath)}"
             ),
             output
         )

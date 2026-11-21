@@ -22,7 +22,68 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
+/** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
+enum class Tool { HOME, MOD, CHARACTER, AUDIO }
+
 class WizardViewModel(application: Application) : AndroidViewModel(application) {
+
+    var tool by mutableStateOf(Tool.HOME)
+        private set
+
+    /** ¿Qué falta para poder exportar el mod completo? */
+    val missingForExport: List<String>
+        get() = buildList {
+            if (config.modTitle.isBlank()) add("Nombre del mod")
+            if (config.songName.isBlank()) add("Nombre de la canción")
+            if (config.bpmValue !in 1..400) add("BPM válido")
+            if (config.difficulties.isEmpty()) add("Al menos una dificultad")
+            if (config.instrumental == null) add("La instrumental")
+        }
+
+    val exportReady: Boolean get() = missingForExport.isEmpty()
+
+    /** Personaje suelto: mismo formulario, pero sin depender del resto del mod. */
+    val characterOnlyReady: Boolean
+        get() = config.character.copy(enabled = true).isReady
+
+    val characterZipName: String
+        get() = "${config.character.charFolder}-personaje.zip"
+
+    // ---------------- Herramientas sueltas ----------------
+
+    var toolAudio by mutableStateOf<PickedAudio?>(null)
+        private set
+
+    var toolAudioSaved by mutableStateOf<String?>(null)
+        private set
+
+    var characterSaved by mutableStateOf<String?>(null)
+        private set
+
+    val toolAudioFileName: String
+        get() {
+            val base = toolAudio?.displayName?.substringBeforeLast('.') ?: "audio"
+            return (slugify(base).ifEmpty { "audio" }) + ".ogg"
+        }
+
+    fun openTool(target: Tool) {
+        if (busy) return
+        error = null
+        status = ""
+        if (target == Tool.CHARACTER) {
+            updateCharacter { it.copy(enabled = true) }
+            characterSaved = null
+        }
+        if (target == Tool.AUDIO) toolAudioSaved = null
+        tool = target
+    }
+
+    fun goHome() {
+        if (busy) return
+        error = null
+        status = ""
+        tool = Tool.HOME
+    }
 
     var config by mutableStateOf(ModConfig())
         private set
@@ -82,7 +143,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun goTo(target: Int) {
-        if (target in 0..4 && target <= step) step = target
+        if (target in 0..4) {
+            step = target
+            error = null
+        }
     }
 
     fun reset() {
@@ -350,6 +414,141 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             status = ""
             busy = false
         }
+    }
+
+    fun pickToolAudio(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        toolAudioSaved = null
+        status = "Copiando archivo…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = MediaTools.displayName(app, uri)
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "audio" }
+                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    MediaTools.copyTo(app, uri, target)
+                    PickedAudio(
+                        uri = uri,
+                        displayName = displayName,
+                        path = target.absolutePath,
+                        durationMs = MediaTools.readDurationMs(target.absolutePath)
+                    )
+                }
+            }
+            result.onSuccess { picked -> toolAudio = picked }
+                .onFailure { error = it.message ?: "No se pudo leer el archivo elegido." }
+            status = ""
+            busy = false
+        }
+    }
+
+    /** Convierte el audio de la herramienta suelta y lo guarda donde elija el usuario. */
+    fun convertToolAudio(uri: Uri) {
+        if (busy) return
+        val source = toolAudio ?: return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        toolAudioSaved = null
+        status = "Convirtiendo a OGG…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val input = File(source.path)
+                    val temp = File(app.cacheDir, "tool/out.ogg")
+                    temp.parentFile?.mkdirs()
+                    if (source.isOgg) {
+                        input.copyTo(temp, overwrite = true)
+                    } else {
+                        val failure = MediaTools.convertToOgg(input, temp)
+                        if (failure != null) {
+                            throw IllegalStateException("No se pudo convertir:\n$failure")
+                        }
+                    }
+                    val stream = app.contentResolver.openOutputStream(uri)
+                        ?: throw IllegalStateException("No se pudo abrir el destino elegido.")
+                    stream.use { output -> temp.inputStream().use { it.copyTo(output) } }
+                    MediaTools.displayName(app, uri).ifBlank { toolAudioFileName }
+                }
+            }
+            result.onSuccess { name ->
+                toolAudioSaved = name
+                status = "¡Listo!"
+            }.onFailure {
+                status = ""
+                error = it.message ?: it.toString()
+            }
+            busy = false
+        }
+    }
+
+    /** Crea un ZIP solo con el personaje (XML, JSON de los dos motores e icono). */
+    fun exportCharacter(uri: Uri) {
+        if ((busy) || !characterOnlyReady) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        characterSaved = null
+        status = "Preparando el personaje…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val draft = config.character.copy(enabled = true)
+                    val workRoot = File(app.cacheDir, "chartool")
+                    if (workRoot.exists()) workRoot.deleteRecursively()
+                    val root = File(workRoot, draft.charFolder)
+                    if (!root.mkdirs()) throw IllegalStateException("No se pudo crear la carpeta de trabajo.")
+                    val tempConfig = ModConfig(engine = TargetEngine.BOTH)
+                        .copy(character = draft)
+                    val warningsList = mutableListOf<String>()
+                    com.fnfmodmaker.mod.CharacterBuilder.build(
+                        root = root,
+                        config = tempConfig,
+                        onProgress = { message -> status = message },
+                        warnings = warningsList
+                    )
+                    File(root, "LEEME.txt").writeText(characterReadme(draft.charFolder), Charsets.UTF_8)
+                    val stream = app.contentResolver.openOutputStream(uri)
+                        ?: throw IllegalStateException("No se pudo abrir el destino elegido.")
+                    stream.use { ModBuilder.zip(root, it) }
+                    MediaTools.displayName(app, uri).ifBlank { characterZipName } to warningsList
+                }
+            }
+            result.onSuccess { (name, list) ->
+                warnings = list
+                characterSaved = name
+                status = "¡Personaje listo!"
+            }.onFailure {
+                status = ""
+                error = it.message ?: it.toString()
+            }
+            busy = false
+        }
+    }
+
+    private fun characterReadme(id: String): String = buildString {
+        appendLine("PERSONAJE: $id")
+        appendLine()
+        appendLine("Este ZIP NO es un mod: son los archivos de un personaje para meterlos")
+        appendLine("dentro de un mod que ya tengas (o en el que crees con esta misma app).")
+        appendLine()
+        appendLine("CÓMO USARLO")
+        appendLine("1. Descomprime el ZIP dentro de la carpeta de tu mod")
+        appendLine("   (la que está dentro de mods/). Debe quedar así:")
+        appendLine("     characters/$id.json            (Psych)")
+        appendLine("     data/characters/$id.json       (V-Slice)")
+        appendLine("     images/characters/$id.png")
+        appendLine("     images/characters/$id.xml")
+        appendLine("     images/icons/icon-$id.png")
+        appendLine("2. Dile al chart que use el personaje \"$id\":")
+        appendLine("   - Psych: en el chart, player1 (si es el jugador) o player2 (si es el rival).")
+        appendLine("   - V-Slice: en la metadata, playData.characters.player u .opponent.")
+        appendLine()
+        appendLine("Si una animación sale mal, revisa el orden de los frames de tu hoja:")
+        appendLine("idle, singLEFT, singDOWN, singUP, singRIGHT.")
     }
 
     // ---------------- Exportar ----------------

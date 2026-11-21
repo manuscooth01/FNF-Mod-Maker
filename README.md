@@ -18,9 +18,15 @@ para los dos juegos (cada uno ignora los archivos del otro).
 
 ## Estado actual (v1)
 
-Esto es la **v1: un asistente**. Hace esto:
+La app abre en un **inicio con herramientas**: puedes hacer un mod completo o usar cada
+herramienta por separado. Hace esto:
 
-- Formulario guiado en 5 pasos (mod → canción → personaje → audio → exportar).
+- **Pantalla de inicio** con tres herramientas independientes:
+  - **Crear un mod completo**: asistente de 5 pasos (mod → canción → personaje → audio → exportar).
+  - **Crear un personaje**: solo sprites, **sin pedirte el nombre del mod** ni la canción.
+  - **Convertir audio a OGG**: un archivo suelto, sin crear nada más.
+- En el asistente puedes **saltar entre pasos** tocando los números de arriba; solo se valida al
+  exportar y te dice exactamente qué falta.
 - Genera la estructura de carpetas y **todos** los JSON que necesitan los dos motores.
 - **Convierte audio a OGG Vorbis dentro del teléfono** con FFmpeg (MP3, WAV, M4A, FLAC…).
 - Si el archivo ya es `.ogg`, lo copia sin recomprimir.
@@ -83,6 +89,21 @@ Gradle automáticamente la primera vez.
 
 ## 2. Cómo se usa
 
+### Inicio
+La primera pantalla te pregunta **qué quieres hacer**. Cada tarjeta abre una herramienta que
+funciona sola:
+
+| Herramienta | Para qué sirve | Necesita datos del mod |
+|---|---|---|
+| **Crear un mod completo** | ZIP listo para instalar con canción, dificultades y audio | sí |
+| **Crear un personaje** | XML Sparrow + JSON de Psych y V-Slice + icono de vida | **no** |
+| **Convertir audio a OGG** | Pasar un MP3/WAV/M4A/FLAC al formato del juego | **no** |
+
+### Asistente del mod
+Los números de la barra superior son **tocables**: puedes ir directo a "Personaje" o "Audio" sin
+pasar por los demás. Al pulsar **Crear .zip** la app comprueba lo imprescindible y, si falta algo,
+te lo dice con la lista exacta.
+
 ### Paso 1 — Tu mod
 - **Nombre del mod**: lo que verás en la lista de mods.
 - **Carpeta**: se rellena solo (minúsculas y guiones). Es el nombre de la carpeta dentro de `mods/`.
@@ -124,6 +145,9 @@ La app comprueba que los frames quepan en la hoja antes de dejarte continuar, y 
 - **Icono (opcional)**: se convierte a PNG de 512 px.
 
 La conversión ocurre en el teléfono. Un tema de 2 minutos suele tardar entre 10 y 40 segundos.
+
+> Si solo quieres el audio convertido, usa la herramienta **Convertir audio a OGG** del inicio: no
+> hace falta crear un mod.
 
 ### Paso 5 — Crear el mod
 Pulsa **Crear .zip** y elige dónde guardarlo (por ejemplo, `Descargas`). Al terminar verás la lista
@@ -279,8 +303,9 @@ app/src/main/java/com/fnfmodmaker/
 ├─ mod/CharacterBuilder.kt      corta la hoja de sprites, XML Sparrow, JSON e icono
 └─ ui/
    ├─ Theme.kt                  colores tipo FNF
-   ├─ WizardViewModel.kt        estado + validación + exportación
-   └─ WizardScreens.kt          las 5 pantallas
+   ├─ WizardViewModel.kt        estado, herramienta activa, validación y exportación
+   ├─ ToolScreens.kt            inicio + herramientas sueltas (personaje, audio)
+   └─ WizardScreens.kt          el asistente del mod (5 pasos)
 ```
 
 Dependencias: Jetpack Compose (Material 3) y `ffmpeg-kit-audio` (recompilación comunitaria,

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fnfmodmaker.model.ALL_DIFFICULTIES
 import com.fnfmodmaker.model.AudioSlot
+import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.PickedAudio
@@ -51,9 +52,19 @@ import com.fnfmodmaker.model.TargetEngine
 
 private val STEP_LABELS = listOf("Mod", "Canción", "Personaje", "Audio", "Listo")
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
+    when (vm.tool) {
+        Tool.HOME -> HomeScreen(vm)
+        Tool.MOD -> WizardScreen(vm)
+        Tool.CHARACTER -> CharacterToolScreen(vm)
+        Tool.AUDIO -> AudioToolScreen(vm)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WizardScreen(vm: WizardViewModel) {
     val config = vm.config
 
     val pickInstrumental = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -81,12 +92,10 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text("FNF Mod Maker", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                )
+            ToolTopBar(
+                title = "Mod nuevo",
+                subtitle = config.modTitle.ifBlank { "sin nombre todavía" },
+                onHome = vm::goHome
             )
         },
         bottomBar = {
@@ -119,7 +128,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
                         Button(
                             onClick = { createZip.launch(vm.zipFileName) },
                             modifier = Modifier.weight(1f),
-                            enabled = !vm.busy && config.instrumental != null
+                            enabled = !vm.busy && vm.exportReady
                         ) {
                             Text(if (vm.busy) "Creando…" else "Crear .zip")
                         }
@@ -133,7 +142,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            StepBar(current = vm.step)
+            StepBar(current = vm.step, onSelect = vm::goTo)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -175,7 +184,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun StepBar(current: Int) {
+private fun StepBar(current: Int, onSelect: (Int) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -185,7 +194,10 @@ private fun StepBar(current: Int) {
         STEP_LABELS.forEachIndexed { index, label ->
             val active = index <= current
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onSelect(index) }
+                    .padding(vertical = 2.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Surface(
@@ -593,7 +605,26 @@ private fun StepCharacter(
         return
     }
 
-    Spacer(Modifier.height(14.dp))
+    Spacer(Modifier.height(6.dp))
+    CharacterForm(
+        vm = vm,
+        draft = draft,
+        onPickSheet = onPickSheet,
+        onPickIcon = onPickIcon
+    )
+}
+
+/**
+ * Formulario del personaje. Se usa igual en el asistente del mod y en la
+ * herramienta suelta "Crear un personaje".
+ */
+@Composable
+internal fun CharacterForm(
+    vm: WizardViewModel,
+    draft: CharacterDraft,
+    onPickSheet: () -> Unit,
+    onPickIcon: () -> Unit
+) {
     Field(
         label = "ID del personaje",
         value = draft.charId,
@@ -1008,10 +1039,22 @@ private fun StepExport(vm: WizardViewModel, config: ModConfig, onCreate: () -> U
             "• La canción aparece en Freeplay."
     )
 
-    if (!vm.busy && vm.savedName == null) {
+    if (vm.savedName == null) {
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
-            Text(if (config.instrumental == null) "Falta la instrumental" else "Crear .zip")
+        if (!vm.exportReady) {
+            MessageCard(
+                "Todavía falta: " + vm.missingForExport.joinToString(", ") +
+                    ".\n\nToca los números de arriba para volver al paso que necesites.",
+                error = true
+            )
+            Spacer(Modifier.height(10.dp))
+        }
+        Button(
+            onClick = onCreate,
+            modifier = Modifier.fillMaxWidth(),
+            enabled = vm.exportReady && !vm.busy
+        ) {
+            Text(if (vm.busy) "Creando…" else "Crear .zip")
         }
     }
 }

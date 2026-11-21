@@ -23,6 +23,9 @@ enum class TargetEngine(val label: String, val description: String) {
 
 val ALL_DIFFICULTIES: List<String> = listOf("easy", "normal", "hard")
 
+/** Ranura de audio que se está eligiendo en el paso 3. */
+enum class AudioSlot { INSTRUMENTAL, VOICES_PLAYER, VOICES_OPPONENT }
+
 /** Archivo copiado a la caché de la app, listo para procesar. */
 data class PickedAudio(
     val uri: Uri,
@@ -77,11 +80,20 @@ data class ModConfig(
     val difficulties: Set<String> = setOf("easy", "normal", "hard"),
     val practiceNotes: Boolean = true,
 
+    /** Ajuste de sincronía en milisegundos (positivo = la música entra más tarde). */
+    val offsetMs: String = "0",
+    /** Si es true, la semana también aparece en el modo historia, no solo en Freeplay. */
+    val showInStoryMode: Boolean = false,
+
     // Archivos
     val instrumental: PickedAudio? = null,
-    val vocals: PickedAudio? = null,
+    val vocalsPlayer: PickedAudio? = null,
+    val vocalsOpponent: PickedAudio? = null,
     val icon: PickedImage? = null
 ) {
+    val hasVocals: Boolean get() = vocalsPlayer != null || vocalsOpponent != null
+    val hasSplitVocals: Boolean get() = vocalsPlayer != null && vocalsOpponent != null
+
     /** Carpeta del mod: se usa como nombre de carpeta dentro de mods/. */
     val modFolder: String
         get() {
@@ -100,6 +112,7 @@ data class ModConfig(
 
     val bpmValue: Int get() = bpm.toIntOrNull() ?: 0
     val speedValue: Float get() = speed.toFloatOrNull() ?: 0f
+    val offsetValue: Int get() = offsetMs.toIntOrNull() ?: 0
 
     val orderedDifficulties: List<String>
         get() = ALL_DIFFICULTIES.filter { it in difficulties }.ifEmpty { listOf("normal") }

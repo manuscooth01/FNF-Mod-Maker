@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fnfmodmaker.media.MediaTools
+import com.fnfmodmaker.model.AudioSlot
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.PickedAudio
 import com.fnfmodmaker.model.PickedImage
@@ -166,6 +167,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         config = config.copy(weekColor = value)
     }
 
+    fun setOffsetMs(value: String) {
+        val filtered = value.filter { it.isDigit() || it == '-' }.take(6)
+        val clean = if (filtered.startsWith("-")) "-" + filtered.drop(1).filter { it.isDigit() } else filtered
+        config = config.copy(offsetMs = clean)
+    }
+
+    fun setShowInStoryMode(enabled: Boolean) {
+        config = config.copy(showInStoryMode = enabled)
+    }
+
     fun toggleDifficulty(difficulty: String) {
         val current = config.difficulties
         val updated = if (difficulty in current) current - difficulty else current + difficulty
@@ -178,7 +189,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---------------- Archivos ----------------
 
-    fun pickAudio(uri: Uri, instrumental: Boolean) {
+    fun pickAudio(uri: Uri, slot: AudioSlot) {
         if (busy) return
         val app = getApplication<Application>()
         busy = true
@@ -200,10 +211,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             result.onSuccess { picked ->
-                config = if (instrumental) {
-                    config.copy(instrumental = picked)
-                } else {
-                    config.copy(vocals = picked)
+                config = when (slot) {
+                    AudioSlot.INSTRUMENTAL -> config.copy(instrumental = picked)
+                    AudioSlot.VOICES_PLAYER -> config.copy(vocalsPlayer = picked)
+                    AudioSlot.VOICES_OPPONENT -> config.copy(vocalsOpponent = picked)
                 }
                 if (picked.durationMs <= 0L) {
                     warnings = warnings + "No se pudo leer la duración de \"${picked.displayName}\". El chart se generará corto; ajusta el BPM o usa otro archivo."

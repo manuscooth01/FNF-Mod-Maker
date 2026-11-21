@@ -3,6 +3,10 @@ package com.fnfmodmaker.media
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -62,16 +66,90 @@ object MediaTools {
      * @return null si todo fue bien, o un mensaje de error legible.
      */
     fun convertToOgg(input: File, output: File): String? {
-        output.parentFile?.mkdirs()
-        if (output.exists()) output.delete()
-
         val common = "-hide_banner -loglevel error -y -i ${quote(input.absolutePath)} " +
             "-vn -map_metadata -1"
-
-        val attempts = listOf(
-            "$common -c:a libvorbis -q:a 5 -ar 44100 ${quote(output.absolutePath)}",
-            "$common -c:a vorbis -strict -2 -q:a 5 -ar 44100 ${quote(output.absolutePath)}"
+        return runFfmpeg(
+            listOf(
+                "$common -c:a libvorbis -q:a 5 -ar 44100 ${quote(output.absolutePath)}",
+                "$common -c:a vorbis -strict -2 -q:a 5 -ar 44100 ${quote(output.absolutePath)}"
+            ),
+            output
         )
+    }
+
+    /**
+     * Mezcla dos pistas (por ejemplo voces del jugador + del oponente) en un
+     * único OGG. Psych Engine solo reproduce un archivo `Voices.ogg`.
+     */
+    fun mixToOgg(first: File, second: File, output: File): String? {
+        val inputs = "-hide_banner -loglevel error -y -i ${quote(first.absolutePath)} " +
+            "-i ${quote(second.absolutePath)}"
+        return runFfmpeg(
+            listOf(
+                "$inputs -filter_complex \"[0:a][1:a]amix=inputs=2:duration=longest:normalize=0\" " +
+                    "-c:a libvorbis -q:a 5 -ar 44100 ${quote(output.absolutePath)}",
+                "$inputs -filter_complex \"[0:a][1:a]amix=inputs=2:duration=longest\" " +
+                    "-c:a libvorbis -q:a 5 -ar 44100 ${quote(output.absolutePath)}"
+            ),
+            output
+        )
+    }
+
+    /**
+     * Genera el título de la semana que V-Slice muestra en la lista de niveles.
+     * Medidas tomadas de los assets reales del juego (359 x 89 px).
+     */
+    fun makeTitleCard(text: String, accentHex: String, output: File): Boolean {
+        return try {
+            val width = 359
+            val height = 89
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.parseColor("#1F1F2B"))
+
+            val accent = try {
+                Color.parseColor(accentHex)
+            } catch (_: Throwable) {
+                Color.parseColor("#C24B99")
+            }
+            canvas.drawRect(0f, 0f, 9f, height.toFloat(), Paint().apply {
+                color = accent
+                style = Paint.Style.FILL
+            })
+
+            val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
+            }
+            val label = text.trim().ifEmpty { "MI MOD" }.uppercase()
+
+            var size = 34f
+            textPaint.textSize = size
+            while (textPaint.measureText(label) > (width - 34) && size > 11f) {
+                size -= 1f
+                textPaint.textSize = size
+            }
+
+            val metrics = textPaint.fontMetrics
+            val baseline = height / 2f - (metrics.ascent + metrics.descent) / 2f
+            canvas.drawText(label, width / 2f + 5f, baseline, textPaint)
+
+            output.parentFile?.mkdirs()
+            val ok = output.outputStream().use { stream ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            }
+            bitmap.recycle()
+            ok
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /** Ejecuta varios comandos FFmpeg en orden y para en el primero que funcione. */
+    private fun runFfmpeg(attempts: List<String>, output: File): String? {
+        output.parentFile?.mkdirs()
+        if (output.exists()) output.delete()
 
         var lastError = "FFmpeg no devolvió información."
         for (command in attempts) {

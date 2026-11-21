@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fnfmodmaker.model.ALL_DIFFICULTIES
+import com.fnfmodmaker.model.AudioSlot
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.PickedAudio
 import com.fnfmodmaker.model.TargetEngine
@@ -55,10 +56,13 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
     val config = vm.config
 
     val pickInstrumental = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.pickAudio(uri, instrumental = true)
+        if (uri != null) vm.pickAudio(uri, AudioSlot.INSTRUMENTAL)
     }
-    val pickVocals = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.pickAudio(uri, instrumental = false)
+    val pickPlayerVocals = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickAudio(uri, AudioSlot.VOICES_PLAYER)
+    }
+    val pickOpponentVocals = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickAudio(uri, AudioSlot.VOICES_OPPONENT)
     }
     val pickIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickIcon(uri)
@@ -137,7 +141,8 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
                         vm = vm,
                         config = config,
                         onPickInstrumental = { pickInstrumental.launch(arrayOf("*/*")) },
-                        onPickVocals = { pickVocals.launch(arrayOf("*/*")) },
+                        onPickPlayerVocals = { pickPlayerVocals.launch(arrayOf("*/*")) },
+                        onPickOpponentVocals = { pickOpponentVocals.launch(arrayOf("*/*")) },
                         onPickIcon = { pickIcon.launch(arrayOf("image/*")) }
                     )
                     else -> StepExport(
@@ -495,6 +500,28 @@ private fun StepSong(vm: WizardViewModel, config: ModConfig) {
         onChange = vm::setWeekColor,
         hint = "Formato #RRGGBB. Se usa para el fondo de la semana y el menú."
     )
+    Spacer(Modifier.height(10.dp))
+    Field(
+        label = "Offset en milisegundos",
+        value = config.offsetMs,
+        onChange = vm::setOffsetMs,
+        keyboardType = KeyboardType.Number,
+        hint = "0 por defecto. Súbelo si tus notas van adelantadas respecto a la música."
+    )
+
+    Spacer(Modifier.height(16.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Mostrar en el modo historia", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Si lo desactivas, la canción aparece solo en Freeplay (lo más seguro).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = config.showInStoryMode, onCheckedChange = vm::setShowInStoryMode)
+    }
     Spacer(Modifier.height(14.dp))
     HelpCard(
         "Los nombres de personajes y escenarios deben existir en el juego; si no, la canción " +
@@ -511,7 +538,8 @@ private fun StepAudio(
     vm: WizardViewModel,
     config: ModConfig,
     onPickInstrumental: () -> Unit,
-    onPickVocals: () -> Unit,
+    onPickPlayerVocals: () -> Unit,
+    onPickOpponentVocals: () -> Unit,
     onPickIcon: () -> Unit
 ) {
     StepHeader(
@@ -528,11 +556,19 @@ private fun StepAudio(
     )
     Spacer(Modifier.height(10.dp))
     AudioRow(
-        title = "Voces (opcional)",
-        audio = config.vocals,
-        emptyText = "Sin pista de voces",
-        onPick = onPickVocals,
-        buttonText = "Elegir voces"
+        title = "Voces del jugador (opcional)",
+        audio = config.vocalsPlayer,
+        emptyText = "Sin voces del jugador",
+        onPick = onPickPlayerVocals,
+        buttonText = "Elegir"
+    )
+    Spacer(Modifier.height(10.dp))
+    AudioRow(
+        title = "Voces del oponente (opcional)",
+        audio = config.vocalsOpponent,
+        emptyText = "Sin voces del oponente",
+        onPick = onPickOpponentVocals,
+        buttonText = "Elegir"
     )
 
     Spacer(Modifier.height(16.dp))
@@ -551,22 +587,27 @@ private fun StepAudio(
 
     Spacer(Modifier.height(16.dp))
     HelpCard(
-        "Consejos:\n" +
-            "• La instrumental y las voces deben tener la misma duración y empezar en el mismo punto.\n" +
-            "• El BPM debe ser el real de la canción; si no, las notas no cuadran con la música.\n" +
-            "• La conversión usa FFmpeg dentro del teléfono: puede tardar unos segundos por minuto de audio.\n" +
-            "• Si ya tienes un .ogg, se copia tal cual (más rápido y sin pérdida de calidad)."
+        "Cómo funcionan las voces (así lo hacen los mods de GameBanana):\n" +
+            "• Dos pistas (jugador + oponente): se guardan como Voices-<personaje>.ogg, " +
+            "que es lo que espera V-Slice. Para Psych se mezclan solas en un Voices.ogg.\n" +
+            "• Una sola pista mezclada: se guarda como Voices.ogg y sirve para los dos motores.\n" +
+            "• Todo debe empezar en el mismo punto y durar lo mismo que la instrumental.\n" +
+            "• El BPM debe ser el real; si no, las notas no cuadran con la música.\n" +
+            "• La conversión usa FFmpeg en el teléfono: unos segundos por minuto de audio.\n" +
+            "• Si ya tienes .ogg, se copia tal cual (más rápido y sin pérdida)."
     )
 
-    if (config.instrumental != null && config.vocals != null) {
-        val diff = config.instrumental.durationMs - config.vocals.durationMs
-        if (config.instrumental.durationMs > 0L && config.vocals.durationMs > 0L && kotlin.math.abs(diff) > 2000L) {
-            Spacer(Modifier.height(10.dp))
-            MessageCard(
-                "Ojo: la instrumental y las voces duran cosas distintas (${config.instrumental.prettyDuration} " +
-                    "vs ${config.vocals.prettyDuration}). Revisa que sean la misma versión de la canción.",
-                error = false
-            )
+    val instrumental = config.instrumental
+    if (instrumental != null && instrumental.durationMs > 0L) {
+        listOf(config.vocalsPlayer, config.vocalsOpponent).filterNotNull().forEach { track ->
+            if (track.durationMs > 0L && kotlin.math.abs(instrumental.durationMs - track.durationMs) > 2000L) {
+                Spacer(Modifier.height(10.dp))
+                MessageCard(
+                    "Ojo: la instrumental dura ${instrumental.prettyDuration} y esta pista de voces " +
+                        "${track.prettyDuration}. Revisa que sean la misma versión de la canción.",
+                    error = false
+                )
+            }
         }
     }
 
@@ -642,7 +683,16 @@ private fun StepExport(vm: WizardViewModel, config: ModConfig, onCreate: () -> U
                 "Instrumental",
                 config.instrumental?.let { if (it.isOgg) "OGG (se copia)" else "se convierte a OGG" } ?: "—"
             )
-            InfoRow("Voces", if (config.vocals != null) "sí" else "no")
+            InfoRow(
+                "Voces",
+                when {
+                    config.hasSplitVocals -> "jugador + oponente"
+                    config.hasVocals -> "una pista"
+                    else -> "no"
+                }
+            )
+            InfoRow("Offset", "${config.offsetMs} ms")
+            InfoRow("Modo historia", if (config.showInStoryMode) "sí" else "solo Freeplay")
             InfoRow("Notas de práctica", if (config.practiceNotes) "sí" else "no")
         }
     }

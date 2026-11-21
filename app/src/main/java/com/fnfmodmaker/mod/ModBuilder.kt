@@ -51,17 +51,47 @@ object ModBuilder {
             }
         }
 
-        config.vocals?.let { vocals ->
-            onProgress(if (vocals.isOgg) "Copiando voces…" else "Convirtiendo voces a OGG…")
-            val voicesTarget = File(songDir, "Voices.ogg")
-            if (vocals.isOgg) {
-                File(vocals.path).copyTo(voicesTarget, overwrite = true)
-            } else {
-                val error = MediaTools.convertToOgg(File(vocals.path), voicesTarget)
-                if (error != null) {
-                    warnings.add("Las voces no se pudieron convertir, el mod se creó sin ellas.")
-                    if (voicesTarget.exists()) voicesTarget.delete()
+        // ---------------- Voces ----------------
+        // V-Slice usa una pista por personaje (Voices-bf.ogg, Voices-dad.ogg),
+        // como los mods reales. Psych solo lee Voices.ogg, así que si hay dos
+        // pistas se mezclan en una.
+        val playerVocals = config.vocalsPlayer
+        val opponentVocals = config.vocalsOpponent
+
+        if (config.hasVocals) {
+            if (config.hasSplitVocals) {
+                if (config.engine.includesVSlice) {
+                    encodeAudio(
+                        playerVocals!!,
+                        File(songDir, "Voices-${characterFileId(config.player)}.ogg"),
+                        "las voces del jugador",
+                        warnings,
+                        onProgress
+                    )
+                    encodeAudio(
+                        opponentVocals!!,
+                        File(songDir, "Voices-${characterFileId(config.opponent)}.ogg"),
+                        "las voces del oponente",
+                        warnings,
+                        onProgress
+                    )
                 }
+                if (config.engine.includesPsych) {
+                    onProgress("Mezclando las dos pistas de voces para Psych…")
+                    val mixed = File(songDir, "Voices.ogg")
+                    val error = MediaTools.mixToOgg(
+                        File(playerVocals!!.path),
+                        File(opponentVocals!!.path),
+                        mixed
+                    )
+                    if (error != null) {
+                        warnings.add("No se pudieron mezclar las voces para Psych: $error")
+                        if (mixed.exists()) mixed.delete()
+                    }
+                }
+            } else {
+                val single = playerVocals ?: opponentVocals!!
+                encodeAudio(single, File(songDir, "Voices.ogg"), "las voces", warnings, onProgress)
             }
         }
 
@@ -91,6 +121,12 @@ object ModBuilder {
                 JsonBuilders.vsliceChart(config, durationMs)
             )
             writeText(root, "data/levels/$modFolder.json", JsonBuilders.vsliceLevel(config))
+
+            onProgress("Generando el título de la semana…")
+            val titleFile = File(root, "images/storymenu/titles/$modFolder.png")
+            if (!MediaTools.makeTitleCard(config.modTitle, config.weekColor, titleFile)) {
+                warnings.add("No se pudo generar la imagen del título de la semana.")
+            }
         }
 
         // ---------------- Psych Engine ----------------
@@ -129,6 +165,35 @@ object ModBuilder {
         }
     }
 
+    /**
+     * Copia el audio tal cual si ya es OGG; si no, lo convierte.
+     * Si falla, deja un aviso y no rompe el resto del mod.
+     */
+    private fun encodeAudio(
+        source: com.fnfmodmaker.model.PickedAudio,
+        target: File,
+        label: String,
+        warnings: MutableList<String>,
+        onProgress: (String) -> Unit
+    ) {
+        onProgress(if (source.isOgg) "Copiando $label…" else "Convirtiendo $label a OGG…")
+        if (source.isOgg) {
+            File(source.path).copyTo(target, overwrite = true)
+            return
+        }
+        val error = MediaTools.convertToOgg(File(source.path), target)
+        if (error != null) {
+            warnings.add("No se pudieron convertir $label, el mod se creó sin esa pista.")
+            if (target.exists()) target.delete()
+        }
+    }
+
+    /** Nombre de archivo válido para Voices-<personaje>.ogg */
+    private fun characterFileId(raw: String): String {
+        val clean = raw.trim().filterNot { it in "/\\:*?\"<>|" }
+        return clean.ifEmpty { "bf" }
+    }
+
     private fun writeText(root: File, relativePath: String, content: String) {
         val file = File(root, relativePath)
         file.parentFile?.mkdirs()
@@ -162,6 +227,18 @@ object ModBuilder {
         output.appendLine("(en Psych: tecla 7 / en V-Slice: menú de debug) y guarda encima.")
         output.appendLine()
         output.appendLine("Dificultades incluidas: ${config.orderedDifficulties.joinToString(", ")}")
+        output.appendLine("Offset: ${config.offsetValue} ms")
+        when {
+            config.hasSplitVocals -> output.appendLine(
+                "Voces: Voices-<personaje>.ogg para V-Slice y Voices.ogg (mezcla) para Psych."
+            )
+            config.hasVocals -> output.appendLine("Voces: una pista Voices.ogg para los dos motores.")
+            else -> output.appendLine("Voces: sin pista de voces.")
+        }
+        output.appendLine(
+            if (config.showInStoryMode) "Aparece en Freeplay y en el modo historia."
+            else "Aparece solo en Freeplay."
+        )
         return output.toString()
     }
 }

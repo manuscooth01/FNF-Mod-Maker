@@ -62,7 +62,7 @@ object JsonBuilders {
             .put("artist", config.artist.trim().ifEmpty { "Desconocido" })
             .put("charter", "FNF Mod Maker")
             .put("timeFormat", "ms")
-            .put("offsets", JSONObject().put("instrumental", 0))
+            .put("offsets", JSONObject().put("instrumental", config.offsetValue))
             .put("timeChanges", JSONArray().put(timeChange))
             .put("playData", playData)
             .put("generatedBy", GENERATED_BY)
@@ -116,9 +116,10 @@ object JsonBuilders {
         return JSONObject()
             .put("version", "1.0.0")
             .put("name", config.modTitle.trim().ifEmpty { "Mi Mod" })
-            .put("titleAsset", "storymenu/titles/week1")
+            // La imagen la genera la app (359x89), igual que los títulos del juego.
+            .put("titleAsset", "storymenu/titles/${config.modFolder}")
             .put("props", JSONArray())
-            .put("visible", true)
+            .put("visible", config.showInStoryMode)
             .put("background", config.weekColor)
             .put("songs", JSONArray().put(config.songFolder))
             .toString(2)
@@ -127,7 +128,9 @@ object JsonBuilders {
     /** `_polymod_meta.json` */
     fun polymodMeta(config: ModConfig): String {
         val contributors = JSONArray().put(
-            JSONObject().put("name", config.author.trim().ifEmpty { "Anónimo" })
+            JSONObject()
+                .put("name", config.author.trim().ifEmpty { "Anónimo" })
+                .put("role", "Creador del mod")
         )
         return JSONObject()
             .put("title", config.modTitle.trim().ifEmpty { "Mi Mod" })
@@ -189,9 +192,9 @@ object JsonBuilders {
             .put("notes", sections)
             .put("events", JSONArray())
             .put("bpm", if (bpm > 0) bpm else 150)
-            .put("needsVoices", config.vocals != null)
+            .put("needsVoices", config.hasVocals)
             .put("speed", config.speedValue)
-            .put("offset", 0)
+            .put("offset", config.offsetValue)
             .put("player1", config.player)
             .put("player2", config.opponent)
             .put("gfVersion", config.girlfriend)
@@ -215,15 +218,15 @@ object JsonBuilders {
                     .put(config.player.trim().ifEmpty { "bf" })
                     .put(config.girlfriend.trim().ifEmpty { "gf" })
             )
-            .put("weekBackground", "stage")
+            // Cadena vacía = el menú de historia no carga imagen de fondo
+            // (Psych lo contempla explícitamente y la oculta).
+            .put("weekBackground", "")
             .put("weekBefore", "")
             .put("storyName", config.modTitle.trim().ifEmpty { "Mi Mod" })
             .put("weekName", config.modFolder)
             .put("startUnlocked", true)
             .put("hiddenUntilUnlocked", false)
-            // De momento el mod aparece en Freeplay; para modo historia
-            // hay que añadir un título propio y poner esto en false.
-            .put("hideStoryMode", true)
+            .put("hideStoryMode", !config.showInStoryMode)
             .put("hideFreeplay", false)
             .put("difficulties", "")
             .toString(2)

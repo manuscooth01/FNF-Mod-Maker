@@ -44,40 +44,17 @@ JSON, que es justo la parte que nadie te explica.
 
 ## 1. Consigue el APK
 
-El proyecto **no incluye** el APK compilado: Android necesita un SDK que no está en este entorno,
-así que se compila en GitHub Actions (gratis) y lo descargas de ahí.
+El APK se compila solo en GitHub Actions en cada push (unos 2 minutos, gratis). No hace falta
+instalar nada ni tener Android Studio.
 
-### Paso obligatorio: subir el workflow
+1. Abre **Actions → Build APK**: <https://github.com/manuscooth01/FNF-Mod-Maker/actions/workflows/build-apk.yml>
+2. Entra en la ejecución más reciente (la que tiene el ✓ verde).
+3. Abajo, en **Artifacts**, descarga **`fnf-mod-maker-apk`**.
+4. Descomprime el ZIP que se descarga: dentro está **`app-debug.apk`** (~29 MB).
+5. Pásalo al teléfono e instálalo (Android te pedirá permitir "instalar apps desconocidas").
 
-GitHub no deja que la integración de Arena suba archivos dentro de `.github/workflows/`
-(falta el permiso `workflows`). El archivo ya está en el proyecto, pero tienes que subirlo tú,
-una sola vez:
-
-1. Abre la rama en GitHub:
-   <https://github.com/manuscooth01/FNF-Mod-Maker/tree/arena/5691df40-fnf-mod-maker>
-2. Botón **Add file** → **Create new file**.
-3. En el nombre escribe exactamente:
-
-   ```
-   .github/workflows/build-apk.yml
-   ```
-
-   (GitHub crea las carpetas solo al escribir las barras.)
-4. Copia el contenido de **`ci/build-apk.yml`** de este proyecto y pégalo
-   (es el mismo workflow; está duplicado ahí porque GitHub no me deja subirlo directamente).
-5. **Commit changes** → *Commit directly to the `arena/5691df40-fnf-mod-maker` branch*.
-
-En cuanto lo commitees, la pestaña **Actions** compilará el APK en ~3-5 minutos.
-
-> Alternativa sin copiar y pegar: si reconectas GitHub en Arena dándole permiso de *workflows*,
-> el archivo se puede subir solo. Dímelo y lo hago.
-
-### Descargar el APK
-
-1. Ve a **Actions** → workflow **Build APK** → la ejecución más reciente.
-2. Abajo, en **Artifacts**, descarga `fnf-mod-maker-apk`.
-3. Descomprime el `.zip`: dentro está `app-debug.apk`.
-4. Cópialo al teléfono e instálalo (Android te pedirá permitir "instalar apps desconocidas").
+> El APK solo incluye binarios ARM (arm64-v8a y armeabi-v7a), que es lo que usan todos los
+> móviles normales. No funciona en emuladores x86.
 
 ### Compilarlo tú mismo (opcional)
 
@@ -231,7 +208,6 @@ los archivos se leen y se guardan con el selector de Android (SAF).
   (DRM, opus dentro de ogg), expórtalo a WAV/MP3 y vuelve a intentarlo.
 - **El APK no instala**: revisa que el teléfono sea ARM (todos los móviles normales lo son); el
   APK no incluye binarios x86 para emuladores.
-- **Sin permisos para subir el workflow**: ver la sección 1.
 
 ## 7. Siguientes pasos sugeridos
 

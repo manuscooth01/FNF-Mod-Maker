@@ -74,7 +74,7 @@ data class ModConfig(
     val stageVSlice: String = "mainStage",
     val stagePsych: String = "stage",
     val weekColor: String = "#C24B99",
-    val difficulties: Set<String> = setOf("normal"),
+    val difficulties: Set<String> = setOf("easy", "normal", "hard"),
     val practiceNotes: Boolean = true,
 
     // Archivos

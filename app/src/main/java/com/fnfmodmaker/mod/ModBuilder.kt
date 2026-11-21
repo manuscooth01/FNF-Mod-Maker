@@ -22,11 +22,13 @@ object ModBuilder {
 
     fun build(
         context: Context,
-        config: ModConfig,
+        rawConfig: ModConfig,
         workRoot: File,
         onProgress: (String) -> Unit
     ): BuildResult {
         val warnings = mutableListOf<String>()
+        // Si hay personaje propio, el chart debe apuntar a él.
+        val config = rawConfig.withCharacter()
         val modFolder = config.modFolder
         val songFolder = config.songFolder
         val root = File(workRoot, modFolder)
@@ -105,6 +107,9 @@ object ModBuilder {
                 warnings.add("El icono no se pudo procesar, el mod se creó sin icono.")
             }
         }
+
+        // ---------------- Personaje propio ----------------
+        CharacterBuilder.build(root, config, onProgress, warnings)
 
         // ---------------- V-Slice ----------------
         if (config.engine.includesVSlice) {
@@ -239,6 +244,12 @@ object ModBuilder {
             if (config.showInStoryMode) "Aparece en Freeplay y en el modo historia."
             else "Aparece solo en Freeplay."
         )
+        if (config.character.enabled) {
+            output.appendLine(
+                "Personaje propio: ${config.character.charFolder} " +
+                    "(lado ${config.character.side.label.lowercase()})."
+            )
+        }
         return output.toString()
     }
 }

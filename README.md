@@ -20,7 +20,7 @@ para los dos juegos (cada uno ignora los archivos del otro).
 
 Esto es la **v1: un asistente**. Hace esto:
 
-- Formulario guiado en 4 pasos (mod → canción → audio → exportar).
+- Formulario guiado en 5 pasos (mod → canción → personaje → audio → exportar).
 - Genera la estructura de carpetas y **todos** los JSON que necesitan los dos motores.
 - **Convierte audio a OGG Vorbis dentro del teléfono** con FFmpeg (MP3, WAV, M4A, FLAC…).
 - Si el archivo ya es `.ogg`, lo copia sin recomprimir.
@@ -33,13 +33,18 @@ Esto es la **v1: un asistente**. Hace esto:
   juego) y te deja elegir entre aparecer **solo en Freeplay** o también en el **modo historia**.
 - Rellena el chart con **notas de práctica** siguiendo el BPM, para que puedas entrar al juego y
   comprobar que el audio, los personajes y el escenario funcionan.
+- **Creador de personajes** (lo que en escritorio hacía falta con el *spritesheet and XML
+  generator*): le das una hoja de sprites en cuadrícula y la app la **corta en frames**, escribe el
+  **XML Sparrow**, el **JSON de personaje para Psych y para V-Slice** y el **icono de vida**
+  300x150. Puede ser el jugador o el oponente.
 - Exporta un `.zip` con la carpeta del mod + un `LEEME.txt` con las instrucciones.
 
 Lo que **todavía no** hace (siguiente fase):
 
 - Editor visual de notas (grilla) dentro de la app.
 - Varias canciones por mod / varias semanas.
-- Personajes y escenarios propios (sprites + JSON/XML): hoy la app usa los del juego base.
+- Escenarios propios (sprites + JSON).
+- Iconos y animaciones *miss* por personaje (la app usa los de `bf`/`dad`).
 - Variaciones (Erect, Pico…) e importar un mod existente para editarlo.
 
 Mientras tanto, el flujo recomendado es: **la app crea el esqueleto y tú charteas en el editor
@@ -93,14 +98,34 @@ Gradle automáticamente la primera vez.
 - **Notas de práctica**: déjalo activado la primera vez.
 - **Avanzado**: escenario y color del mod.
 
-### Paso 3 — Audio e imagen
+### Paso 3 — Personaje (opcional)
+Si quieres tu propio personaje en vez de `bf`/`dad`:
+
+- **Activa "Usar un personaje propio"**.
+- **ID del personaje**: solo minúsculas, números y guiones (`mi-personaje`). Se usa para los
+  nombres de archivo; si lo dejas vacío se saca del nombre visible.
+- **Hoja de sprites**: un PNG con todas las animaciones **en cuadrícula**, cada frame del mismo
+  tamaño y sin huecos. El orden de reparto es `idle`, `singLEFT`, `singDOWN`, `singUP`,
+  `singRIGHT`, de izquierda a derecha y de arriba abajo.
+- **Ancho / alto del frame**: mira el tamaño del PNG (la app lo muestra) y divide. Por ejemplo una
+  hoja de `900x600` con frames de `150x150` son 6 columnas y 4 filas = 24 frames.
+- **Frames por animación**: cuántos cuadros tiene cada una. Los que no uses, ponlos a `0`.
+- **Escala**, **voltear horizontalmente** (`flipX`) y **lado** (jugador u oponente).
+- **Icono de vida** (opcional): la app lo deja en 300x150 con dos frames (normal/perdiendo). Si tu
+  imagen ya trae los dos, los respeta. Si no eliges ninguno, se usa el del personaje base.
+
+La app comprueba que los frames quepan en la hoja antes de dejarte continuar, y luego genera
+`images/characters/<id>.png` + `.xml`, `characters/<id>.json` (Psych),
+`data/characters/<id>.json` (V-Slice) e `images/icons/icon-<id>.png`.
+
+### Paso 4 — Audio e imagen
 - **Instrumental (obligatoria)**: MP3, WAV, M4A, FLAC u OGG.
 - **Voces (opcional)**: pista única con las voces. Si no tienes, el mod funciona igual.
 - **Icono (opcional)**: se convierte a PNG de 512 px.
 
 La conversión ocurre en el teléfono. Un tema de 2 minutos suele tardar entre 10 y 40 segundos.
 
-### Paso 4 — Crear el mod
+### Paso 5 — Crear el mod
 Pulsa **Crear .zip** y elige dónde guardarlo (por ejemplo, `Descargas`). Al terminar verás la lista
 exacta de archivos generados.
 
@@ -189,6 +214,8 @@ mi-mod/
 │     ├─ Voices-dad.ogg            ← si diste voces del oponente (V-Slice)
 │     └─ Voices.ogg                ← pista única, o la mezcla para Psych
 ├─ data/
+│  ├─ characters/
+│  │  └─ mi-personaje.json         ← V-Slice: renderType "sparrow"
 │  ├─ mi-cancion/                  ← Psych
 │  │  ├─ mi-cancion.json           ← dificultad normal
 │  │  ├─ mi-cancion-easy.json
@@ -200,9 +227,16 @@ mi-mod/
 │  └─ levels/
 │     └─ mi-mod.json               ← V-Slice: sin esto no sale en Freeplay
 ├─ images/
+│  ├─ characters/
+│  │  ├─ mi-personaje.png          ← tu hoja de sprites (si creaste personaje)
+│  │  └─ mi-personaje.xml          ← atlas Sparrow con los frames cortados
+│  ├─ icons/
+│  │  └─ icon-mi-personaje.png     ← icono de vida 300x150, dos frames
 │  └─ storymenu/
 │     └─ titles/
 │        └─ mi-mod.png             ← título de la semana (359x89)
+├─ characters/
+│  └─ mi-personaje.json            ← Psych: animaciones + icono
 ├─ weeks/
 │  └─ mi-mod.json                  ← Psych: sin esto no sale en Freeplay
 ├─ _polymod_meta.json              ← V-Slice (nombre, autor, api_version)
@@ -221,6 +255,13 @@ Los detalles técnicos están calcados de los archivos reales del juego:
   con el desplazamiento 0-3 / 4-7 que espera `mustHitSection`, y `offset` en milisegundos.
 - Semana de Psych: array `songs` + `weekCharacters`; `hideStoryMode` activo para que aparezca solo
   en Freeplay y no necesite arte de título.
+- Personaje de V-Slice: esquema `1.0.0`, `renderType: "sparrow"`, `assetPath` sin extensión
+  (`characters/mi-personaje` carga el `.png` + `.xml`), `healthIcon.id`, `flipX`, `offsets`.
+- Personaje de Psych: `image` sin extensión y con comas para varios atlas, `healthicon`,
+  `sing_duration`, `position`, `flip_x`, `healthbar_colors`, y las animaciones
+  `{anim, name, fps, loop, offsets}`.
+- El XML usa `SubTexture` con `name="<id> <animación>0000"` (así Psych encuentra las animaciones
+  con `addByPrefix`) y las coordenadas reales de cada frame en la hoja.
 
 ---
 
@@ -231,13 +272,15 @@ app/src/main/java/com/fnfmodmaker/
 ├─ MainActivity.kt              arranque + tema
 ├─ model/ModConfig.kt           estado del formulario + reglas de nombres (incluye
 │                               la réplica exacta de Psych: formatToSongPath)
+├─ model/CharacterDraft.kt      datos del personaje propio (hoja, frames, lado)
 ├─ media/MediaTools.kt          copiar archivos, duración, FFmpeg → OGG, reescalar PNG
 ├─ mod/JsonBuilders.kt          los JSON de V-Slice y Psych
 ├─ mod/ModBuilder.kt            crea la carpeta del mod y el ZIP
+├─ mod/CharacterBuilder.kt      corta la hoja de sprites, XML Sparrow, JSON e icono
 └─ ui/
    ├─ Theme.kt                  colores tipo FNF
    ├─ WizardViewModel.kt        estado + validación + exportación
-   └─ WizardScreens.kt          las 4 pantallas
+   └─ WizardScreens.kt          las 5 pantallas
 ```
 
 Dependencias: Jetpack Compose (Material 3) y `ffmpeg-kit-audio` (recompilación comunitaria,

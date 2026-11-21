@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -174,6 +175,61 @@ object MediaTools {
             if (output.exists()) output.delete()
         }
         return lastError
+    }
+
+    /** Tamaño real de una imagen, sin cargarla entera en memoria. */
+    fun imageSize(input: File): Pair<Int, Int>? {
+        return try {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(input.absolutePath, bounds)
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+                bounds.outWidth to bounds.outHeight
+            } else {
+                null
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
+     * Icono de vida en formato clásico: 300x150 con dos frames (normal y
+     * "perdiendo"). Es lo que entienden los dos motores:
+     *  - Psych -> images/icons/icon-<id>.png
+     *  - V-Slice -> images/icons/icon-<id>.png (150 px por frame)
+     * Si la imagen de entrada ya trae dos frames, se respetan.
+     */
+    fun prepareHealthIcon(input: File, output: File): Boolean {
+        return try {
+            val source = BitmapFactory.decodeFile(input.absolutePath) ?: return false
+            val looksLikeTwoFrames = source.width >= source.height * 2 - 4
+
+            val first: Bitmap
+            val second: Bitmap
+            if (looksLikeTwoFrames) {
+                val half = source.width / 2
+                first = Bitmap.createBitmap(source, 0, 0, half, source.height)
+                second = Bitmap.createBitmap(source, half, 0, half, source.height)
+            } else {
+                first = source
+                second = source
+            }
+
+            val canvasBitmap = Bitmap.createBitmap(300, 150, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(canvasBitmap)
+            val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+            canvas.drawBitmap(first, null, RectF(0f, 0f, 150f, 150f), paint)
+            canvas.drawBitmap(second, null, RectF(150f, 0f, 300f, 150f), paint)
+
+            output.parentFile?.mkdirs()
+            val ok = output.outputStream().use { stream ->
+                canvasBitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            }
+            canvasBitmap.recycle()
+            ok
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     /** Reescala una imagen a PNG de como máximo [maxSize] px por lado. */

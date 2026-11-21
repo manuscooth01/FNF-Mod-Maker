@@ -44,11 +44,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fnfmodmaker.model.ALL_DIFFICULTIES
 import com.fnfmodmaker.model.AudioSlot
+import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.PickedAudio
 import com.fnfmodmaker.model.TargetEngine
 
-private val STEP_LABELS = listOf("Mod", "Canción", "Audio", "Listo")
+private val STEP_LABELS = listOf("Mod", "Canción", "Personaje", "Audio", "Listo")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +67,12 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
     }
     val pickIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickIcon(uri)
+    }
+    val pickCharSheet = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickCharacterSheet(uri)
+    }
+    val pickCharIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickCharacterIcon(uri)
     }
     val createZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.export(uri)
@@ -100,7 +107,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
                             Text("Atrás")
                         }
                     }
-                    if (vm.step < 3) {
+                    if (vm.step < 4) {
                         Button(
                             onClick = { vm.next() },
                             modifier = Modifier.weight(1f),
@@ -137,7 +144,13 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
                 when (vm.step) {
                     0 -> StepMod(vm, config)
                     1 -> StepSong(vm, config)
-                    2 -> StepAudio(
+                    2 -> StepCharacter(
+                        vm = vm,
+                        config = config,
+                        onPickSheet = { pickCharSheet.launch(arrayOf("image/*")) },
+                        onPickIcon = { pickCharIcon.launch(arrayOf("image/*")) }
+                    )
+                    3 -> StepAudio(
                         vm = vm,
                         config = config,
                         onPickInstrumental = { pickInstrumental.launch(arrayOf("*/*")) },
@@ -538,7 +551,228 @@ private fun StepSong(vm: WizardViewModel, config: ModConfig) {
 }
 
 // ---------------------------------------------------------------------------
-// Paso 3: audio e imagen
+// Paso 3: personaje propio (generador de spritesheet + XML + JSON)
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun StepCharacter(
+    vm: WizardViewModel,
+    config: ModConfig,
+    onPickSheet: () -> Unit,
+    onPickIcon: () -> Unit
+) {
+    val draft = config.character
+
+    StepHeader(
+        "3. Personaje propio (opcional)",
+        "Esto es el equivalente móvil del generador de spritesheets de escritorio: corta tu hoja " +
+            "en frames, escribe el XML Sparrow y crea el JSON del personaje para los dos motores."
+    )
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Usar un personaje propio", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Si lo dejas apagado se usan los personajes del juego (bf, dad, gf).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = draft.enabled, onCheckedChange = vm::setCharacterEnabled)
+    }
+
+    if (!draft.enabled) {
+        Spacer(Modifier.height(14.dp))
+        HelpCard(
+            "Para hacer un personaje necesitas una hoja de sprites en cuadrícula: todas las " +
+                "animaciones una detrás de otra, cada frame del mismo tamaño. La app la corta, " +
+                "genera el .xml y los .json, y coloca el icono de vida.\n\n" +
+                "Orden habitual de los frames: idle, singLEFT, singDOWN, singUP, singRIGHT."
+        )
+        return
+    }
+
+    Spacer(Modifier.height(14.dp))
+    Field(
+        label = "ID del personaje",
+        value = draft.charId,
+        onChange = vm::setCharId,
+        hint = "Nombre de archivo: minúsculas, números y guiones (ej. mi-personaje)."
+    )
+    Spacer(Modifier.height(10.dp))
+    Field(
+        label = "Nombre visible",
+        value = draft.displayName,
+        onChange = vm::setCharName,
+        hint = "Cómo se llama en el editor del juego."
+    )
+
+    SectionTitle("Hoja de sprites")
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(draft.sheet?.displayName ?: "Sin imagen todavía", fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (draft.sheet != null) "${draft.sheetWidth} x ${draft.sheetHeight} px"
+                    else "PNG con la cuadrícula de animaciones",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            OutlinedButton(onClick = onPickSheet, enabled = !vm.busy) { Text("Elegir PNG") }
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(
+            label = "Ancho del frame",
+            value = draft.frameWidth,
+            onChange = vm::setCharFrameWidth,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+        Field(
+            label = "Alto del frame",
+            value = draft.frameHeight,
+            onChange = vm::setCharFrameHeight,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+    }
+
+    if (draft.columns > 0 && draft.rows > 0) {
+        Spacer(Modifier.height(8.dp))
+        InfoRow("Cuadrícula", "${draft.columns} columnas x ${draft.rows} filas")
+        InfoRow("Frames disponibles", "${draft.availableFrames}")
+        InfoRow("Frames que usa el personaje", "${draft.totalFrames}")
+        if (draft.availableFrames < draft.totalFrames) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "No caben: sobran ${draft.totalFrames - draft.availableFrames} frames. " +
+                    "Baja los frames por animación o corrige el tamaño del frame.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+    }
+
+    SectionTitle("Animaciones (frames por animación)")
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(
+            label = "idle",
+            value = draft.idleFrames,
+            onChange = vm::setCharIdleFrames,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+        Field(
+            label = "singLEFT",
+            value = draft.leftFrames,
+            onChange = vm::setCharLeftFrames,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Spacer(Modifier.height(10.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(
+            label = "singDOWN",
+            value = draft.downFrames,
+            onChange = vm::setCharDownFrames,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+        Field(
+            label = "singUP",
+            value = draft.upFrames,
+            onChange = vm::setCharUpFrames,
+            keyboardType = KeyboardType.Number,
+            modifier = Modifier.weight(1f)
+        )
+    }
+    Spacer(Modifier.height(10.dp))
+    Field(
+        label = "singRIGHT",
+        value = draft.rightFrames,
+        onChange = vm::setCharRightFrames,
+        keyboardType = KeyboardType.Number
+    )
+    Spacer(Modifier.height(8.dp))
+    HelpCard(
+        "Los frames se reparten en ese orden, de izquierda a derecha y de arriba abajo. " +
+            "Si tu hoja empieza por otra animación, pon 0 en las que no uses y ordena los números " +
+            "según lo que haya en la imagen."
+    )
+
+    SectionTitle("Ajustes del personaje")
+    Field(
+        label = "Escala",
+        value = draft.scale,
+        onChange = vm::setCharScale,
+        keyboardType = KeyboardType.Decimal,
+        hint = "1.0 = tamaño original. Súbelo si tu personaje sale pequeño."
+    )
+
+    Spacer(Modifier.height(12.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Voltear horizontalmente", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Actívalo si tu personaje mira al lado contrario del que debería.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = draft.flipX, onCheckedChange = vm::setCharFlipX)
+    }
+
+    Spacer(Modifier.height(14.dp))
+    Text("¿Quién lo usa?", fontWeight = FontWeight.SemiBold)
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        CharacterSide.entries.forEach { side ->
+            FilterChip(
+                selected = draft.side == side,
+                onClick = { vm.setCharSide(side) },
+                label = { Text(side.label) }
+            )
+        }
+    }
+
+    Spacer(Modifier.height(16.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Icono de vida", fontWeight = FontWeight.SemiBold)
+            Text(
+                draft.icon?.displayName
+                    ?: "Sin icono: se usará el del personaje base de ese lado",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        OutlinedButton(onClick = onPickIcon, enabled = !vm.busy) { Text("Elegir") }
+    }
+    Spacer(Modifier.height(10.dp))
+    HelpCard(
+        "El icono se convierte a 300x150 con dos frames (normal y perdiendo), que es el formato " +
+            "que leen Psych y V-Slice. Si tu imagen ya viene con los dos cuadros, se respetan."
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Paso 4: audio e imagen
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -551,7 +785,7 @@ private fun StepAudio(
     onPickIcon: () -> Unit
 ) {
     StepHeader(
-        "3. Audio e imagen",
+        "4. Audio e imagen",
         "El juego solo reproduce OGG. Si eliges MP3 o WAV, la app lo convierte sola."
     )
 
@@ -671,7 +905,7 @@ private fun AudioRow(
 @Composable
 private fun StepExport(vm: WizardViewModel, config: ModConfig, onCreate: () -> Unit) {
     StepHeader(
-        "4. Crear el mod",
+        "5. Crear el mod",
         "Se generará un ZIP con la carpeta del mod lista para copiar al juego."
     )
 
@@ -697,6 +931,14 @@ private fun StepExport(vm: WizardViewModel, config: ModConfig, onCreate: () -> U
                     config.hasSplitVocals -> "jugador + oponente"
                     config.hasVocals -> "una pista"
                     else -> "no"
+                }
+            )
+            InfoRow(
+                "Personaje propio",
+                if (config.character.enabled) {
+                    "${config.character.charFolder} (${config.character.side.label.lowercase()})"
+                } else {
+                    "no"
                 }
             )
             InfoRow("Offset", "${config.offsetMs} ms")

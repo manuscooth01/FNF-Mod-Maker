@@ -85,6 +85,9 @@ data class ModConfig(
     /** Si es true, la semana también aparece en el modo historia, no solo en Freeplay. */
     val showInStoryMode: Boolean = false,
 
+    /** Personaje propio opcional (spritesheet + JSON) */
+    val character: CharacterDraft = CharacterDraft(),
+
     // Archivos
     val instrumental: PickedAudio? = null,
     val vocalsPlayer: PickedAudio? = null,
@@ -116,6 +119,21 @@ data class ModConfig(
 
     val orderedDifficulties: List<String>
         get() = ALL_DIFFICULTIES.filter { it in difficulties }.ifEmpty { listOf("normal") }
+
+    /**
+     * Si hay un personaje propio activo, el chart debe apuntar a él en el lado
+     * elegido. Se aplica antes de escribir los JSON.
+     */
+    fun withCharacter(): ModConfig {
+        val draft = character
+        if (!draft.enabled) return this
+        val id = draft.charFolder
+        return if (draft.side == CharacterSide.PLAYER) {
+            copy(player = id)
+        } else {
+            copy(opponent = id)
+        }
+    }
 }
 
 /** Slug ASCII para nombres de carpeta del mod. */

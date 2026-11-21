@@ -9,6 +9,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.AudioSlot
+import com.fnfmodmaker.model.CharacterDraft
+import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.PickedAudio
 import com.fnfmodmaker.model.PickedImage
@@ -55,7 +57,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 config.bpmValue in 1..400 &&
                 config.speedValue > 0f &&
                 config.difficulties.isNotEmpty()
-            2 -> config.instrumental != null
+            2 -> config.character.isReady
+            3 -> config.instrumental != null
             else -> false
         }
 
@@ -65,7 +68,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------- Navegación ----------------
 
     fun next() {
-        if (step < 3 && canAdvance) {
+        if (step < 4 && canAdvance) {
             step += 1
             error = null
         }
@@ -79,7 +82,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun goTo(target: Int) {
-        if (target in 0..3 && target <= step) step = target
+        if (target in 0..4 && target <= step) step = target
     }
 
     fun reset() {
@@ -187,6 +190,46 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         config = config.copy(practiceNotes = enabled)
     }
 
+    // ---------------- Personaje propio ----------------
+
+    private fun updateCharacter(block: (CharacterDraft) -> CharacterDraft) {
+        config = config.copy(character = block(config.character))
+    }
+
+    fun setCharacterEnabled(enabled: Boolean) = updateCharacter { it.copy(enabled = enabled) }
+
+    fun setCharId(value: String) = updateCharacter { it.copy(charId = slugify(value)) }
+
+    fun setCharName(value: String) = updateCharacter { it.copy(displayName = value) }
+
+    fun setCharSide(side: CharacterSide) = updateCharacter { it.copy(side = side) }
+
+    fun setCharFrameWidth(value: String) =
+        updateCharacter { it.copy(frameWidth = value.filter { c -> c.isDigit() }.take(4)) }
+
+    fun setCharFrameHeight(value: String) =
+        updateCharacter { it.copy(frameHeight = value.filter { c -> c.isDigit() }.take(4)) }
+
+    fun setCharScale(value: String) =
+        updateCharacter { it.copy(scale = value.filter { c -> c.isDigit() || c == '.' || c == ',' }.replace(',', '.').take(5)) }
+
+    fun setCharFlipX(enabled: Boolean) = updateCharacter { it.copy(flipX = enabled) }
+
+    fun setCharIdleFrames(value: String) =
+        updateCharacter { it.copy(idleFrames = value.filter { c -> c.isDigit() }.take(2)) }
+
+    fun setCharLeftFrames(value: String) =
+        updateCharacter { it.copy(leftFrames = value.filter { c -> c.isDigit() }.take(2)) }
+
+    fun setCharDownFrames(value: String) =
+        updateCharacter { it.copy(downFrames = value.filter { c -> c.isDigit() }.take(2)) }
+
+    fun setCharUpFrames(value: String) =
+        updateCharacter { it.copy(upFrames = value.filter { c -> c.isDigit() }.take(2)) }
+
+    fun setCharRightFrames(value: String) =
+        updateCharacter { it.copy(rightFrames = value.filter { c -> c.isDigit() }.take(2)) }
+
     // ---------------- Archivos ----------------
 
     fun pickAudio(uri: Uri, slot: AudioSlot) {
@@ -247,6 +290,62 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 config = config.copy(icon = picked)
             }.onFailure {
                 error = it.message ?: "No se pudo leer la imagen elegida."
+            }
+            status = ""
+            busy = false
+        }
+    }
+
+    fun pickCharacterSheet(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Copiando hoja de sprites…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = MediaTools.displayName(app, uri)
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "spritesheet.png" }
+                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    MediaTools.copyTo(app, uri, target)
+                    val size = MediaTools.imageSize(target)
+                        ?: throw IllegalStateException("No se pudo leer la imagen de la hoja de sprites.")
+                    PickedImage(uri = uri, displayName = displayName, path = target.absolutePath) to size
+                }
+            }
+            result.onSuccess { (picked, size) ->
+                updateCharacter {
+                    it.copy(sheet = picked, sheetWidth = size.first, sheetHeight = size.second)
+                }
+            }.onFailure {
+                error = it.message ?: "No se pudo leer la hoja de sprites."
+            }
+            status = ""
+            busy = false
+        }
+    }
+
+    fun pickCharacterIcon(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Copiando icono…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = MediaTools.displayName(app, uri)
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "icono.png" }
+                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    MediaTools.copyTo(app, uri, target)
+                    PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
+                }
+            }
+            result.onSuccess { picked ->
+                updateCharacter { it.copy(icon = picked) }
+            }.onFailure {
+                error = it.message ?: "No se pudo leer la imagen del icono."
             }
             status = ""
             busy = false

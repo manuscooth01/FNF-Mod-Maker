@@ -123,7 +123,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------- Canción ----------------
 
     fun setSongName(value: String) {
-        config = config.copy(songName = value)
+        // Estos caracteres no pueden formar parte de una ruta de archivo:
+        // si se colasen, la carpeta de la canción quedaría rota.
+        val clean = value.filterNot { it in "/\\|:*?\"<>" }
+        config = config.copy(songName = clean)
     }
 
     fun setArtist(value: String) {
@@ -255,6 +258,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val workRoot = File(app.cacheDir, "modmaker")
+                    // Evita que se acumulen los audios de exportaciones anteriores.
+                    if (workRoot.exists()) workRoot.deleteRecursively()
                     val built = ModBuilder.build(app, config, workRoot) { message -> status = message }
                     val stream = app.contentResolver.openOutputStream(uri)
                         ?: throw IllegalStateException("No se pudo abrir el destino elegido.")

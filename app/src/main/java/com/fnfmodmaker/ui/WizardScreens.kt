@@ -77,6 +77,8 @@ import com.fnfmodmaker.model.PickedImage
 import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.TargetEngine
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.platform.LocalConfiguration
 
 private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Chart", "Listo")
 
@@ -94,7 +96,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WizardScreen(vm: WizardViewModel) {
+internal fun WizardScreen(vm: WizardViewModel) {
     val config = vm.config
 
     val pickActiveSongAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -392,7 +394,7 @@ private fun VariationEditorModal(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun StepBar(current: Int, onSelect: (Int) -> Unit) {
+internal fun StepBar(current: Int, onSelect: (Int) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

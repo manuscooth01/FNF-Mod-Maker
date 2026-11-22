@@ -46,38 +46,6 @@ import com.fnfmodmaker.model.StageDraft
 import com.fnfmodmaker.model.StageSprite
 import com.fnfmodmaker.model.TargetEngine
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ToolTopBar(
-    title: String,
-    subtitle: String = "",
-    onHome: (() -> Unit)? = null
-) {
-    TopAppBar(
-        navigationIcon = {
-            if (onHome != null) {
-                TextButton(onClick = onHome) { Text("‹ Inicio") }
-            }
-        },
-        title = {
-            Column {
-                Text(title, fontWeight = FontWeight.Bold)
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface
-        )
-    )
-}
-
 // ---------------------------------------------------------------------------
 // Inicio: elegir herramienta
 // ---------------------------------------------------------------------------

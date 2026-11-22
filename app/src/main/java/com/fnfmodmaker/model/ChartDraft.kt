@@ -23,6 +23,37 @@ data class ChartNote(
     val isHold: Boolean get() = lengthMs > 0
 }
 
+/** Evento de chart (cámara, BPM change, speed change, etc.). */
+data class ChartEvent(
+    val timeMs: Long = 0L,
+    val type: EventType = EventType.CAMERA,
+    val value1: Float = 0f,  // zoom, bpm, speed, etc.
+    val value2: Float = 0f,  // param adicional
+    val value3: Float = 0f,  // param adicional
+    val durationMs: Long = 0L // para transiciones
+) {
+    enum class EventType(val label: String) {
+        CAMERA("Cámara"),
+        BPM_CHANGE("Cambio BPM"),
+        SPEED_CHANGE("Cambio Speed"),
+        CAMERA_SHAKE("Shake Cámara"),
+        FLASH("Flash"),
+        BG_COLOR("Color Fondo"),
+        CUSTOM("Personalizado")
+    }
+}
+
+/** Sección de chart (para Psych: mustHit, altAnim, gfSection). */
+data class ChartSection(
+    val startTimeMs: Long = 0L,
+    val lengthMs: Long = 0L,
+    val mustHit: Boolean = true,
+    val altAnim: Boolean = false,
+    val gfSection: Boolean = false,
+    val bpm: Float = 150f,
+    val speed: Float = 2.0f
+)
+
 /**
  * Chart editable para una canción y dificultad específica.
  * Se guarda como JSON y se usa para sobrescribir el chart generado.
@@ -31,6 +62,8 @@ data class ChartDraft(
     val songFolder: String = "",
     val difficulty: String = "normal",
     val notes: List<ChartNote> = emptyList(),
+    val events: List<ChartEvent> = emptyList(),
+    val sections: List<ChartSection> = emptyList(),
     val scrollSpeed: Float = 2.0f,
     val bpm: Int = 150,
     val offsetMs: Int = 0,

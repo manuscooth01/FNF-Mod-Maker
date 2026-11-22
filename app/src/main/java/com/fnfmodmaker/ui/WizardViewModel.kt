@@ -248,6 +248,52 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         chartEditorState = chartEditorState.copy(snapResolution = resolution)
     }
 
+    // ---------------- Eventos y Secciones ----------------
+
+    /** Agrega o actualiza un evento en el chart activo. */
+    fun addChartEvent(event: com.fnfmodmaker.model.ChartEvent) {
+        val draft = activeChartDraft
+        val updatedEvents = draft.events.toMutableList()
+        val existingIndex = updatedEvents.indexOfFirst { it.timeMs == event.timeMs && it.type == event.type }
+        if (existingIndex >= 0) {
+            updatedEvents[existingIndex] = event
+        } else {
+            updatedEvents.add(event)
+        }
+        val updatedDraft = draft.copy(events = updatedEvents.sortedBy { it.timeMs })
+        pushHistoryAndSave(updatedDraft)
+    }
+
+    /** Elimina un evento del chart activo. */
+    fun removeChartEvent(timeMs: Long, type: com.fnfmodmaker.model.ChartEvent.EventType) {
+        val draft = activeChartDraft
+        val updatedEvents = draft.events.filterNot { it.timeMs == timeMs && it.type == type }
+        val updatedDraft = draft.copy(events = updatedEvents)
+        pushHistoryAndSave(updatedDraft)
+    }
+
+    /** Agrega o actualiza una sección en el chart activo. */
+    fun addChartSection(section: com.fnfmodmaker.model.ChartSection) {
+        val draft = activeChartDraft
+        val updatedSections = draft.sections.toMutableList()
+        val existingIndex = updatedSections.indexOfFirst { it.startTimeMs == section.startTimeMs }
+        if (existingIndex >= 0) {
+            updatedSections[existingIndex] = section
+        } else {
+            updatedSections.add(section)
+        }
+        val updatedDraft = draft.copy(sections = updatedSections.sortedBy { it.startTimeMs })
+        pushHistoryAndSave(updatedDraft)
+    }
+
+    /** Elimina una sección del chart activo. */
+    fun removeChartSection(startTimeMs: Long) {
+        val draft = activeChartDraft
+        val updatedSections = draft.sections.filterNot { it.startTimeMs == startTimeMs }
+        val updatedDraft = draft.copy(sections = updatedSections)
+        pushHistoryAndSave(updatedDraft)
+    }
+
     // ---------------- Reproducción de Audio (MediaPlayer) ----------------
 
     private var mediaPlayer: MediaPlayer? = null

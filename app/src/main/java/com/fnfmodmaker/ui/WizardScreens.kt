@@ -1206,6 +1206,110 @@ private fun StepChart(vm: WizardViewModel) {
         }
     }
 
+    Spacer(Modifier.height(8.dp))
+
+    // Toolbar terciaria: Eventos y Secciones
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Eventos rápidos en tiempo actual
+        OutlinedButton(onClick = {
+            val event = com.fnfmodmaker.model.ChartEvent(
+                timeMs = editorState.currentTimeMs,
+                type = com.fnfmodmaker.model.ChartEvent.EventType.CAMERA,
+                value1 = 1f // zoom normal
+            )
+            vm.addChartEvent(event)
+        }, enabled = !vm.busy) { Text("📷 Cámara") }
+        OutlinedButton(onClick = {
+            val event = com.fnfmodmaker.model.ChartEvent(
+                timeMs = editorState.currentTimeMs,
+                type = com.fnfmodmaker.model.ChartEvent.EventType.BPM_CHANGE,
+                value1 = activeSong.bpmValue.toFloat()
+            )
+            vm.addChartEvent(event)
+        }, enabled = !vm.busy) { Text("🎵 BPM") }
+        OutlinedButton(onClick = {
+            val event = com.fnfmodmaker.model.ChartEvent(
+                timeMs = editorState.currentTimeMs,
+                type = com.fnfmodmaker.model.ChartEvent.EventType.SPEED_CHANGE,
+                value1 = activeSong.speedValue
+            )
+            vm.addChartEvent(event)
+        }, enabled = !vm.busy) { Text("⚡ Speed") }
+        OutlinedButton(onClick = {
+            val event = com.fnfmodmaker.model.ChartEvent(
+                timeMs = editorState.currentTimeMs,
+                type = com.fnfmodmaker.model.ChartEvent.EventType.CAMERA_SHAKE,
+                value1 = 5f // intensidad
+            )
+            vm.addChartEvent(event)
+        }, enabled = !vm.busy) { Text("🌊 Shake") }
+        OutlinedButton(onClick = {
+            val event = com.fnfmodmaker.model.ChartEvent(
+                timeMs = editorState.currentTimeMs,
+                type = com.fnfmodmaker.model.ChartEvent.EventType.FLASH,
+                value1 = 1f
+            )
+            vm.addChartEvent(event)
+        }, enabled = !vm.busy) { Text("⚡ Flash") }
+        Spacer(Modifier.weight(1f))
+        Text("Eventos: ${draft.events.size}  ·  Secciones: ${draft.sections.size}",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    // Secciones (mustHit/altAnim/gfSection) - agregar sección en tiempo actual
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedButton(onClick = {
+            val section = com.fnfmodmaker.model.ChartSection(
+                startTimeMs = editorState.currentTimeMs,
+                lengthMs = 4000, // 4 beats default
+                mustHit = true,
+                altAnim = false,
+                gfSection = false,
+                bpm = activeSong.bpmValue.toFloat(),
+                speed = activeSong.speedValue
+            )
+            vm.addChartSection(section)
+        }, enabled = !vm.busy) { Text("➕ Sección mustHit") }
+        OutlinedButton(onClick = {
+            val section = com.fnfmodmaker.model.ChartSection(
+                startTimeMs = editorState.currentTimeMs,
+                lengthMs = 4000,
+                mustHit = false,
+                altAnim = false,
+                gfSection = false,
+                bpm = activeSong.bpmValue.toFloat(),
+                speed = activeSong.speedValue
+            )
+            vm.addChartSection(section)
+        }, enabled = !vm.busy) { Text("➕ Sección opp") }
+        OutlinedButton(onClick = {
+            val section = com.fnfmodmaker.model.ChartSection(
+                startTimeMs = editorState.currentTimeMs,
+                lengthMs = 4000,
+                mustHit = true,
+                altAnim = true,
+                gfSection = false,
+                bpm = activeSong.bpmValue.toFloat(),
+                speed = activeSong.speedValue
+            )
+            vm.addChartSection(section)
+        }, enabled = !vm.busy) { Text("➕ AltAnim") }
+        Spacer(Modifier.weight(1f))
+        OutlinedButton(onClick = {
+            // Limpiar todas las secciones
+            val updatedDraft = draft.copy(sections = emptyList())
+            vm.saveChartDraft(updatedDraft)
+        }, enabled = !vm.busy && draft.sections.isNotEmpty()) { Text("🗑 Limpiar secciones") }
+    }
+
     Spacer(Modifier.height(12.dp))
 
     // Info line

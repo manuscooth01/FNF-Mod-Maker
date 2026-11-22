@@ -40,7 +40,9 @@ object ModImporter {
         extractDir.mkdirs()
 
         ZipFile(zipFile).use { zip ->
-            zip.entries().forEach { entry ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
                 val outFile = File(extractDir, entry.name)
                 if (entry.isDirectory) {
                     outFile.mkdirs()

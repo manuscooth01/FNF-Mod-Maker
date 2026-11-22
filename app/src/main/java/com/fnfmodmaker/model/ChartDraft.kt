@@ -162,6 +162,14 @@ data class SelectedNote(
     val noteIndex: Int // índice en la lista de notas del draft
 )
 
+/** Resolución de snap (subdivisiones por beat). */
+enum class SnapResolution(val label: String, val divisionsPerBeat: Int) {
+    QUARTER("1/4", 4),
+    EIGHTH("1/8", 8),
+    SIXTEENTH("1/16", 16),
+    THIRTYSECOND("1/32", 32)
+}
+
 /** Estado del editor de chart para una canción. */
 data class ChartEditorState(
     val songFolder: String = "",
@@ -176,7 +184,9 @@ data class ChartEditorState(
     val dragState: DragState? = null,
     // Historial para undo/redo
     val history: List<ChartDraft> = emptyList(),
-    val historyIndex: Int = -1
+    val historyIndex: Int = -1,
+    // Snap configurado
+    val snapResolution: SnapResolution = SnapResolution.SIXTEENTH
 ) {
     val visibleTimeRangeMs: Long get() = (4000 / zoom).toLong()
     val startTimeMs: Long get() = (scrollX * 100).toLong()

@@ -243,6 +243,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         chartEditorState = chartEditorState.copy(zoom = zoom, scrollX = scrollX)
     }
 
+    /** Actualiza la resolución de snap (grid). */
+    fun updateSnapResolution(resolution: com.fnfmodmaker.model.SnapResolution) {
+        chartEditorState = chartEditorState.copy(snapResolution = resolution)
+    }
+
     // ---------------- Reproducción de Audio (MediaPlayer) ----------------
 
     private var mediaPlayer: MediaPlayer? = null

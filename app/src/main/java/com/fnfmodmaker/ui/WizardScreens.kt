@@ -1131,6 +1131,18 @@ private fun StepChart(vm: WizardViewModel) {
         OutlinedButton(onClick = { vm.updateChartView((editorState.zoom * 1.5f).coerceIn(0.25f, 8f), editorState.scrollX) }) { Text("🔍+") }
         OutlinedButton(onClick = { vm.updateChartView((editorState.zoom / 1.5f).coerceIn(0.25f, 8f), editorState.scrollX) }) { Text("🔍-") }
         Text("Zoom: ${"%.1f".format(editorState.zoom)}x", style = MaterialTheme.typography.labelSmall)
+        Spacer(Modifier.width(16.dp))
+        // Snap Resolution
+        Text("Snap:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            com.fnfmodmaker.model.SnapResolution.entries.forEach { res ->
+                FilterChip(
+                    selected = editorState.snapResolution == res,
+                    onClick = { vm.updateSnapResolution(res) },
+                    label = { Text(res.label, style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+        }
         Spacer(Modifier.width(8.dp))
         // Actions
         OutlinedButton(onClick = { vm.generatePracticeNotes() }, enabled = !vm.busy) { Text("Generar práctica") }
@@ -1430,10 +1442,10 @@ private fun PianoRoll(
         val lane = (laneY / laneHeight.value).toInt().coerceIn(0, laneCount - 1)
         val beatX = x / (beatWidthBase.value * zoom)
         val timeMs = (beatX * beatMs * 4).roundToLong()
-        val snappedTimeMs = snapToGrid(timeMs, beatMs)
+        val snappedTimeMs = snapToGrid(timeMs, beatMs, editorState.snapResolution)
         
-        // Buscar nota en esa posición (con tolerancia)
-        val toleranceMs = (beatMs / 4).roundToLong() // 1/4 beat tolerance
+        // Buscar nota en esa posición (con tolerancia basada en resolución)
+        val toleranceMs = (beatMs / editorState.snapResolution.divisionsPerBeat).roundToLong()
         return draft.notes
             .mapIndexed { index, note -> note to index }
             .firstOrNull { (note, _) ->
@@ -1447,7 +1459,7 @@ private fun PianoRoll(
         val lane = (laneY / laneHeight.value).toInt().coerceIn(0, laneCount - 1)
         val beatX = x / (beatWidthBase.value * zoom)
         val timeMs = (beatX * beatMs * 4).roundToLong()
-        val snappedTimeMs = snapToGrid(timeMs, beatMs)
+        val snappedTimeMs = snapToGrid(timeMs, beatMs, editorState.snapResolution)
         
         // Si hay selección activa y tap en nota seleccionada -> toggle selection
         val existingSel = selectedNotes.indexOfFirst { it.timeMs == snappedTimeMs && it.lane == lane }
@@ -1466,14 +1478,15 @@ private fun PianoRoll(
         val lane = (laneY / laneHeight.value).toInt().coerceIn(0, laneCount - 1)
         val beatX = x / (beatWidthBase.value * zoom)
         val timeMs = (beatX * beatMs * 4).roundToLong()
-        val snappedTimeMs = snapToGrid(timeMs, beatMs)
+        val snappedTimeMs = snapToGrid(timeMs, beatMs, editorState.snapResolution)
         onNoteTap(snappedTimeMs, lane, true) // hold start
         vm.clearSelection()
     }
 
-    fun snapToGrid(timeMs: Long, beatMs: Double): Long {
-        val beat = (timeMs / beatMs).roundToLong()
-        return (beat * beatMs).roundToLong()
+    fun snapToGrid(timeMs: Long, beatMs: Double, resolution: com.fnfmodmaker.model.SnapResolution): Long {
+        val divisionMs = beatMs / resolution.divisionsPerBeat
+        val tick = (timeMs / divisionMs).roundToLong()
+        return (tick * divisionMs).roundToLong()
     }
 
     // Canvas drawing

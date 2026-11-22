@@ -125,6 +125,14 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 badge = null,
                 onClick = { vm.openTool(Tool.AUDIO) }
             )
+            Spacer(Modifier.height(12.dp))
+            ToolCard(
+                glyph = "📥",
+                title = "Importar mod existente",
+                description = "Carga un ZIP de mod (V-Slice o Psych) y edítalo: canciones, charts, personajes, audio.",
+                badge = "Nuevo",
+                onClick = { vm.openTool(Tool.IMPORT) }
+            )
 
             Spacer(Modifier.height(20.dp))
             Surface(
@@ -183,9 +191,111 @@ private fun ToolCard(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onPrimary
                             )
+}
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Herramienta: importar mod existente
+// ---------------------------------------------------------------------------
+
+@Composable
+internal fun ImportScreen(vm: WizardViewModel) {
+    val pickImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importMod(uri)
+    }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            ToolTopBar(
+                title = "Importar mod existente",
+                subtitle = "Carga un ZIP de V-Slice o Psych Engine",
+                onHome = vm::goHome
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Importar mod",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Selecciona un archivo .zip de un mod de FNF (V-Slice o Psych Engine). " +
+                    "La app leerá la estructura, canciones, charts, personajes y audio " +
+                    "para que puedas editarlo y re-exportarlo.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(16.dp))
+
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Archivo ZIP del mod", fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Debe contener _polymod_meta.json (V-Slice) o pack.json (Psych)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        OutlinedButton(onClick = { pickImport.launch(arrayOf("application/zip")) }, enabled = !vm.busy) {
+                            Text("Elegir ZIP")
                         }
                     }
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HelpCard(
+                "Formatos soportados:\n" +
+                "• V-Slice (FNF 0.8.x Android): _polymod_meta.json, data/songs/, data/levels/\n" +
+                "• Psych Engine: pack.json, weeks/, data/, songs/\n" +
+                "• Ambos: si el ZIP tiene los dos, se detectan automáticamente\n\n" +
+                "Qué se importa:\n" +
+                "• Metadatos del mod (nombre, autor, descripción, color)\n" +
+                "• Canciones: nombre, artista, BPM, offset, speed, dificultades\n" +
+                "• Audio: instrumental y voces (se copian, no se reconvierten)\n" +
+                "• Charts: notas existentes (se cargan en el editor de chart)\n" +
+                "• Personaje propio: spritesheet, XML, JSON, icono de vida\n" +
+                "• Icono del mod\n\n" +
+                "Limitaciones:\n" +
+                "• Escenarios (stages) no se importan aún\n" +
+                "• Eventos de cámara / cambios de BPM no se leen\n" +
+                "• Múltiples semanas por mod: se intenta detectar"
+            )
+
+            Spacer(Modifier.height(16.dp))
+            ToolStatus(
+                status = vm.status,
+                error = vm.error,
+                saved = null,
+                warnings = vm.warnings,
+                savedLabel = ""
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
                 Spacer(Modifier.height(4.dp))
                 Text(
                     description,

@@ -87,6 +87,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
         Tool.MOD -> WizardScreen(vm)
         Tool.CHARACTER -> CharacterToolScreen(vm)
         Tool.AUDIO -> AudioToolScreen(vm)
+        Tool.IMPORT -> ImportScreen(vm)
     }
 }
 
@@ -120,6 +121,9 @@ private fun WizardScreen(vm: WizardViewModel) {
     }
     val createZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.export(uri)
+    }
+    val pickImportZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importMod(uri)
     }
 
     Scaffold(

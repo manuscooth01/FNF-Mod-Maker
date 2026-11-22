@@ -22,13 +22,14 @@ import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.TargetEngine
 import com.fnfmodmaker.model.slugify
 import com.fnfmodmaker.mod.ModBuilder
+import com.fnfmodmaker.mod.ModImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
-enum class Tool { HOME, MOD, CHARACTER, AUDIO }
+enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT }
 
 class WizardViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -260,10 +261,54 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 e.printStackTrace()
                 release()
                 return@apply null
-            }
+}
         }
-        return mp
     }
+
+    // ---------------- Importar Mod ----------------
+
+    /** Importa un mod desde un ZIP y carga el config en el wizard. */
+    fun importMod(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Importando mod…"
+        warnings = emptyList()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val workRoot = File(app.cacheDir, "modimport")
+                    if (workRoot.exists()) workRoot.deleteRecursively()
+                    workRoot.mkdirs()
+                    // Copiar ZIP a archivo temporal
+                    val tempZip = File(workRoot, "import_${System.currentTimeMillis()}.zip")
+                    app.contentResolver.openInputStream(uri)?.use { input ->
+                        tempZip.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    val imported = ModImporter.importFromZip(app, tempZip, workRoot) { message -> status = message }
+                    imported
+                }
+            }
+            result.onSuccess { imported ->
+                config = imported.config
+                warnings = imported.warnings
+                // Ir al wizard (paso 0 = Mod)
+                tool = Tool.MOD
+                step = 0
+                activeSongIndex = 0
+                activeChartSongIndex = 0
+                activeChartDifficulty = config.songs.firstOrNull()?.orderedDifficulties?.firstOrNull() ?: "normal"
+                initChartHistory()
+                status = "¡Mod importado! Revisa los datos y edita lo que necesites."
+            }.onFailure {
+                status = ""
+                error = it.message ?: "No se pudo importar el mod: ${it}"
+            }
+            busy = false
+        }
+    }
+}
 
     /** Inicia o reanuda la reproducción. */
     fun startPlayback() {
@@ -607,6 +652,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             characterSaved = null
         }
         if (target == Tool.AUDIO) toolAudioSaved = null
+        if (target == Tool.IMPORT) {
+            // Import no necesita setup previo, el file picker está en la pantalla
+        }
         tool = target
     }
 

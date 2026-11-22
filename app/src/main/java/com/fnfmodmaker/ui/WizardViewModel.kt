@@ -104,13 +104,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---------------- Navegación de canciones ----------------
 
-    fun addSong() {
+    internal fun addSong() {
         if (busy) return
         config = config.copy(songs = config.songs + SongConfig())
         activeSongIndex = config.songs.lastIndex
     }
 
-    fun removeSong(index: Int) {
+    internal fun removeSong(index: Int) {
         if (busy || config.songs.size <= 1) return
         val updated = config.songs.toMutableList()
         updated.removeAt(index)
@@ -118,14 +118,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         config = config.copy(songs = updated)
     }
 
-    fun selectSong(index: Int) {
+    internal fun selectSong(index: Int) {
         if (busy) return
         activeSongIndex = index.coerceIn(0, config.songs.lastIndex)
     }
 
     // ---------------- Navegación de chart ----------------
 
-    fun selectChartSong(index: Int) {
+    internal fun selectChartSong(index: Int) {
         if (busy) return
         releaseMediaPlayer()
         activeChartSongIndex = index.coerceIn(0, config.songs.lastIndex)
@@ -135,7 +135,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         initChartHistory()
     }
 
-    fun selectChartDifficulty(difficulty: String) {
+    internal fun selectChartDifficulty(difficulty: String) {
         if (busy) return
         // No liberar MediaPlayer al cambiar dificultad de la misma canción
         activeChartDifficulty = difficulty
@@ -157,7 +157,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------- Edición de notas ----------------
 
     /** Agrega o actualiza una nota en el chart activo. */
-    fun addChartNote(note: com.fnfmodmaker.model.ChartNote) {
+    internal fun addChartNote(note: com.fnfmodmaker.model.ChartNote) {
         val draft = activeChartDraft
         val updatedNotes = draft.notes.toMutableList()
         // Buscar si ya hay nota en misma posición (mismo timeMs y lane)
@@ -172,7 +172,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Elimina una nota del chart activo. */
-    fun removeChartNote(timeMs: Long, lane: Int) {
+    internal fun removeChartNote(timeMs: Long, lane: Int) {
         val draft = activeChartDraft
         val updatedNotes = draft.notes.filterNot { it.timeMs == timeMs && it.lane == lane }
         val updatedDraft = draft.copy(notes = updatedNotes)
@@ -180,7 +180,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Genera notas de práctica automáticas para el chart activo. */
-    fun generatePracticeNotes() {
+    internal fun generatePracticeNotes() {
         val song = config.songs.getOrElse(activeChartSongIndex) { return }
         val difficulty = activeChartDifficulty
         val bpm = song.bpmValue
@@ -218,7 +218,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Limpia el chart activo. */
-    fun clearChart() {
+    internal fun clearChart() {
         val song = config.songs.getOrElse(activeChartSongIndex) { return }
         val difficulty = activeChartDifficulty
         val draft = com.fnfmodmaker.model.ChartDraft(
@@ -238,24 +238,24 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Actualiza el tiempo de reproducción actual. */
-    fun updatePlaybackTime(timeMs: Long) {
+    internal fun updatePlaybackTime(timeMs: Long) {
         chartEditorState = chartEditorState.copy(currentTimeMs = timeMs)
     }
 
     /** Actualiza zoom y scroll del editor. */
-    fun updateChartView(zoom: Float, scrollX: Float) {
+    internal fun updateChartView(zoom: Float, scrollX: Float) {
         chartEditorState = chartEditorState.copy(zoom = zoom, scrollX = scrollX)
     }
 
     /** Actualiza la resolución de snap (grid). */
-    fun updateSnapResolution(resolution: com.fnfmodmaker.model.SnapResolution) {
+    internal fun updateSnapResolution(resolution: com.fnfmodmaker.model.SnapResolution) {
         chartEditorState = chartEditorState.copy(snapResolution = resolution)
     }
 
     // ---------------- Eventos y Secciones ----------------
 
     /** Agrega o actualiza un evento en el chart activo. */
-    fun addChartEvent(event: com.fnfmodmaker.model.ChartEvent) {
+    internal fun addChartEvent(event: com.fnfmodmaker.model.ChartEvent) {
         val draft = activeChartDraft
         val updatedEvents = draft.events.toMutableList()
         val existingIndex = updatedEvents.indexOfFirst { it.timeMs == event.timeMs && it.type == event.type }
@@ -269,7 +269,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Elimina un evento del chart activo. */
-    fun removeChartEvent(timeMs: Long, type: com.fnfmodmaker.model.ChartEvent.EventType) {
+    internal fun removeChartEvent(timeMs: Long, type: com.fnfmodmaker.model.ChartEvent.EventType) {
         val draft = activeChartDraft
         val updatedEvents = draft.events.filterNot { it.timeMs == timeMs && it.type == type }
         val updatedDraft = draft.copy(events = updatedEvents)
@@ -277,7 +277,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Agrega o actualiza una sección en el chart activo. */
-    fun addChartSection(section: com.fnfmodmaker.model.ChartSection) {
+    internal fun addChartSection(section: com.fnfmodmaker.model.ChartSection) {
         val draft = activeChartDraft
         val updatedSections = draft.sections.toMutableList()
         val existingIndex = updatedSections.indexOfFirst { it.startTimeMs == section.startTimeMs }
@@ -291,7 +291,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Elimina una sección del chart activo. */
-    fun removeChartSection(startTimeMs: Long) {
+    internal fun removeChartSection(startTimeMs: Long) {
         val draft = activeChartDraft
         val updatedSections = draft.sections.filterNot { it.startTimeMs == startTimeMs }
         val updatedDraft = draft.copy(sections = updatedSections)
@@ -323,7 +323,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------- Importar Mod ----------------
 
     /** Importa un mod desde un ZIP y carga el config en el wizard. */
-    fun importMod(uri: Uri) {
+    internal fun importMod(uri: Uri) {
         if (busy) return
         val app = getApplication<Application>()
         busy = true
@@ -363,7 +363,6 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             busy = false
         }
     }
-}
 
     /** Inicia o reanuda la reproducción. */
     fun startPlayback() {
@@ -418,13 +417,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Busca a una posición específica (ms). */
-    fun seekTo(timeMs: Long) {
+    internal fun seekTo(timeMs: Long) {
         mediaPlayer?.seekTo(timeMs.toInt())
         chartEditorState = chartEditorState.copy(currentTimeMs = timeMs)
     }
 
     /** Limpia MediaPlayer al cambiar de canción o cerrar. */
-    fun releaseMediaPlayer() {
+    internal fun releaseMediaPlayer() {
         playbackJob?.cancel()
         mediaPlayer?.apply {
             if (isPlaying) pause()
@@ -439,14 +438,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------- Chart Editor: Selección, Drag, Undo/Redo ----------------
 
     /** Inicia drag de scroll (pan). */
-    fun startScrollDrag(startX: Float, startScroll: Float) {
+    internal fun startScrollDrag(startX: Float, startScroll: Float) {
         chartEditorState = chartEditorState.copy(
             dragState = com.fnfmodmaker.model.ChartEditorState.DragState.Scroll(startX, startScroll)
         )
     }
 
     /** Actualiza drag de scroll. */
-    fun updateScrollDrag(currentX: Float) {
+    internal fun updateScrollDrag(currentX: Float) {
         val state = chartEditorState.dragState
         if (state is com.fnfmodmaker.model.ChartEditorState.DragState.Scroll) {
             val newScroll = (state.startScroll - (currentX - state.startX)).coerceIn(0f, Float.MAX_VALUE)
@@ -455,12 +454,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Termina drag de scroll. */
-    fun endScrollDrag() {
+    internal fun endScrollDrag() {
         chartEditorState = chartEditorState.copy(dragState = null)
     }
 
     /** Inicia drag de resize hold note. */
-    fun startHoldResize(noteIndex: Int, startTimeMs: Long, lane: Int, startLengthMs: Long, dragStartX: Float) {
+    internal fun startHoldResize(noteIndex: Int, startTimeMs: Long, lane: Int, startLengthMs: Long, dragStartX: Float) {
         chartEditorState = chartEditorState.copy(
             dragState = com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize(
                 noteIndex, startTimeMs, lane, startLengthMs, dragStartX
@@ -469,7 +468,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Actualiza drag de resize hold note. */
-    fun updateHoldResize(currentX: Float, beatWidthPx: Float, beatMs: Double) {
+    internal fun updateHoldResize(currentX: Float, beatWidthPx: Float, beatMs: Double) {
         val state = chartEditorState.dragState
         if (state is com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize) {
             val deltaX = currentX - state.dragStartX
@@ -489,12 +488,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Termina drag de hold resize. */
-    fun endHoldResize() {
+    internal fun endHoldResize() {
         chartEditorState = chartEditorState.copy(dragState = null)
     }
 
     /** Inicia selección múltiple (box selection). */
-    fun startSelectionBox(startX: Float, startY: Float) {
+    internal fun startSelectionBox(startX: Float, startY: Float) {
         chartEditorState = chartEditorState.copy(
             dragState = com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox(startX, startY),
             selectedNotes = emptyList()
@@ -502,14 +501,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Actualiza selección múltiple. */
-    fun updateSelectionBox(currentX: Float, currentY: Float, beatWidthPx: Float, beatMs: Double, laneHeightPx: Float, timeRulerHeightPx: Float, headerHeightPx: Float) {
+    internal fun updateSelectionBox(currentX: Float, currentY: Float, beatWidthPx: Float, beatMs: Double, laneHeightPx: Float, timeRulerHeightPx: Float, headerHeightPx: Float) {
         val state = chartEditorState.dragState
         if (state is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox) {
             val draft = activeChartDraft
             val minX = minOf(state.startX, currentX)
             val maxX = maxOf(state.startX, currentX)
-            val minY = minOf(state.startY, currentY)
-            val maxY = maxOf(state.startY, currentY)
 
             // Convertir a tiempo y lanes
             val startTimeMs = ((minX / beatWidthPx * 4) * beatMs).roundToLong()
@@ -531,7 +528,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Termina selección múltiple. */
-    fun endSelectionBox() {
+    internal fun endSelectionBox() {
         val state = chartEditorState.dragState
         if (state is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox) {
             chartEditorState = chartEditorState.copy(dragState = null)
@@ -539,7 +536,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Inicia drag de notas seleccionadas. */
-    fun startMultiDrag(dragStartX: Float, dragStartY: Float) {
+    internal fun startMultiDrag(dragStartX: Float, dragStartY: Float) {
         val selected = chartEditorState.selectedNotes
         if (selected.isNotEmpty()) {
             chartEditorState = chartEditorState.copy(
@@ -549,7 +546,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Actualiza drag de notas seleccionadas. */
-    fun updateMultiDrag(currentX: Float, currentY: Float, beatWidthPx: Float, beatMs: Double, laneHeightPx: Float) {
+    internal fun updateMultiDrag(currentX: Float, currentY: Float, beatWidthPx: Float, beatMs: Double, laneHeightPx: Float) {
         val state = chartEditorState.dragState
         if (state is com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag) {
             val deltaX = currentX - state.dragStartX
@@ -582,12 +579,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Termina drag de notas seleccionadas. */
-    fun endMultiDrag() {
+    internal fun endMultiDrag() {
         chartEditorState = chartEditorState.copy(dragState = null)
     }
 
     /** Agrega nota a selección (toggle). */
-    fun toggleNoteSelection(timeMs: Long, lane: Int) {
+    internal fun toggleNoteSelection(timeMs: Long, lane: Int) {
         val draft = activeChartDraft
         val noteIndex = draft.notes.indexOfFirst { it.timeMs == timeMs && it.lane == lane }
         if (noteIndex >= 0) {
@@ -603,14 +600,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Limpia selección. */
-    fun clearSelection() {
+    internal fun clearSelection() {
         chartEditorState = chartEditorState.copy(selectedNotes = emptyList())
     }
 
     /** Copia notas seleccionadas al portapapeles interno. */
     private var clipboardNotes: List<com.fnfmodmaker.model.ChartNote> = emptyList()
 
-    fun copySelectedNotes() {
+    internal fun copySelectedNotes() {
         val draft = activeChartDraft
         clipboardNotes = chartEditorState.selectedNotes
             .map { sel -> draft.notes.getOrNull(sel.noteIndex) }
@@ -619,7 +616,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Pega notas del portapapeles en la posición actual del playhead. */
-    fun pasteNotes() {
+    internal fun pasteNotes() {
         if (clipboardNotes.isEmpty()) return
         val draft = activeChartDraft
         val pasteTime = chartEditorState.currentTimeMs
@@ -643,12 +640,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Sobrescribe saveChartDraft para no duplicar historial cuando se llama desde UI. */
-    fun saveChartDraft(chart: com.fnfmodmaker.model.ChartDraft) {
+    internal fun saveChartDraft(chart: com.fnfmodmaker.model.ChartDraft) {
         config = config.withChart(chart.songFolder, chart.difficulty, chart)
     }
 
     /** Undo. */
-    fun undo() {
+    internal fun undo() {
         if (chartEditorState.canUndo) {
             val newIndex = chartEditorState.historyIndex - 1
             val prevDraft = chartEditorState.history[newIndex]
@@ -658,7 +655,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Redo. */
-    fun redo() {
+    internal fun redo() {
         if (chartEditorState.canRedo) {
             val newIndex = chartEditorState.historyIndex + 1
             val nextDraft = chartEditorState.history[newIndex]
@@ -668,7 +665,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Al cambiar de canción/dificultad, inicializa historial con el chart actual. */
-    fun initChartHistory() {
+    internal fun initChartHistory() {
         val draft = activeChartDraft
         chartEditorState = chartEditorState.copy(
             history = listOf(draft),
@@ -698,7 +695,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             return (slugify(base).ifEmpty { "audio" }) + ".ogg"
         }
 
-    fun openTool(target: Tool) {
+    internal fun openTool(target: Tool) {
         if (busy) return
         error = null
         status = ""
@@ -716,7 +713,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         tool = target
     }
 
-    fun goHome() {
+    internal fun goHome() {
         if (busy) return
         error = null
         status = ""
@@ -811,28 +808,28 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---------------- Navegación ----------------
 
-    fun next() {
+    internal fun next() {
         if (step < 5 && canAdvance) {
             step += 1
             error = null
         }
     }
 
-    fun back() {
+    internal fun back() {
         if (step > 0) {
             step -= 1
             error = null
         }
     }
 
-    fun goTo(target: Int) {
+    internal fun goTo(target: Int) {
         if (target in 0..5) {
             step = target
             error = null
         }
     }
 
-    fun reset() {
+    internal fun reset() {
         config = ModConfig()
         activeSongIndex = 0
         modIdEdited = false
@@ -847,11 +844,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---------------- Datos del mod ----------------
 
-    fun setEngine(engine: TargetEngine) {
+    internal fun setEngine(engine: TargetEngine) {
         config = config.copy(engine = engine)
     }
 
-    fun setModTitle(value: String) {
+    internal fun setModTitle(value: String) {
         config = if (modIdEdited) {
             config.copy(modTitle = value)
         } else {
@@ -859,78 +856,78 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun setModId(value: String) {
+    internal fun setModId(value: String) {
         modIdEdited = true
         config = config.copy(modId = value)
     }
 
-    fun setAuthor(value: String) {
+    internal fun setAuthor(value: String) {
         config = config.copy(author = value)
     }
 
-    fun setDescription(value: String) {
+    internal fun setDescription(value: String) {
         config = config.copy(description = value)
     }
 
-    fun setWeekColor(value: String) {
+    internal fun setWeekColor(value: String) {
         config = config.copy(weekColor = value)
     }
 
-    fun setShowInStoryMode(enabled: Boolean) {
+    internal fun setShowInStoryMode(enabled: Boolean) {
         config = config.copy(showInStoryMode = enabled)
     }
 
     // ---------------- Canción activa ----------------
 
-    fun setActiveSongName(value: String) {
+    internal fun setActiveSongName(value: String) {
         val clean = value.filterNot { it in "/\\|:*?\"<>" }
         updateActiveSong { it.copy(songName = clean) }
     }
 
-    fun setActiveSongArtist(value: String) {
+    internal fun setActiveSongArtist(value: String) {
         updateActiveSong { it.copy(artist = value) }
     }
 
-    fun setActiveSongBpm(value: String) {
+    internal fun setActiveSongBpm(value: String) {
         updateActiveSong { it.copy(bpm = value.filter { it.isDigit() }.take(3)) }
     }
 
-    fun setActiveSongSpeed(value: String) {
+    internal fun setActiveSongSpeed(value: String) {
         val filtered = value.filter { it.isDigit() || it == '.' || it == ',' }.replace(',', '.').take(5)
         updateActiveSong { it.copy(speed = filtered) }
     }
 
-    fun setActiveSongPlayer(value: String) {
+    internal fun setActiveSongPlayer(value: String) {
         updateActiveSong { it.copy(player = value) }
     }
 
-    fun setActiveSongGirlfriend(value: String) {
+    internal fun setActiveSongGirlfriend(value: String) {
         updateActiveSong { it.copy(girlfriend = value) }
     }
 
-    fun setActiveSongOpponent(value: String) {
+    internal fun setActiveSongOpponent(value: String) {
         updateActiveSong { it.copy(opponent = value) }
     }
 
-    fun setActiveSongStageVSlice(value: String) {
+    internal fun setActiveSongStageVSlice(value: String) {
         updateActiveSong { it.copy(stageVSlice = value) }
     }
 
-    fun setActiveSongStagePsych(value: String) {
+    internal fun setActiveSongStagePsych(value: String) {
         updateActiveSong { it.copy(stagePsych = value) }
     }
 
-    fun setActiveSongWeekColor(value: String) {
+    internal fun setActiveSongWeekColor(value: String) {
         updateActiveSong { it.copy(weekColor = value) }
     }
 
-    fun setActiveSongOffsetMs(value: String) {
+    internal fun setActiveSongOffsetMs(value: String) {
         val filtered = value.filter { it.isDigit() || it == '-' }.take(6)
         val clean = if (filtered.startsWith("-")) "-" + filtered.drop(1).filter { it.isDigit() } else filtered
         updateActiveSong { it.copy(offsetMs = clean) }
     }
 
-    fun toggleActiveSongDifficulty(difficulty: String) {
+    internal fun toggleActiveSongDifficulty(difficulty: String) {
         updateActiveSong { song ->
             val current = song.difficulties
             val updated = if (difficulty in current) current - difficulty else current + difficulty
@@ -938,7 +935,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun setActiveSongPracticeNotes(enabled: Boolean) {
+    internal fun setActiveSongPracticeNotes(enabled: Boolean) {
         updateActiveSong { it.copy(practiceNotes = enabled) }
     }
 
@@ -955,26 +952,26 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         config = config.copy(character = block(config.character))
     }
 
-    fun setCharacterEnabled(enabled: Boolean) = updateCharacter { it.copy(enabled = enabled) }
+    internal fun setCharacterEnabled(enabled: Boolean) = updateCharacter { it.copy(enabled = enabled) }
 
-    fun setCharId(value: String) = updateCharacter { it.copy(charId = slugify(value)) }
+    internal fun setCharId(value: String) = updateCharacter { it.copy(charId = slugify(value)) }
 
-    fun setCharName(value: String) = updateCharacter { it.copy(displayName = value) }
+    internal fun setCharName(value: String) = updateCharacter { it.copy(displayName = value) }
 
-    fun setCharSide(side: CharacterSide) = updateCharacter { it.copy(side = side) }
+    internal fun setCharSide(side: CharacterSide) = updateCharacter { it.copy(side = side) }
 
-    fun setCharFrameWidth(value: String) =
+    internal fun setCharFrameWidth(value: String) =
         updateCharacter { it.copy(frameWidth = value.filter { c -> c.isDigit() }.take(4)) }
 
-    fun setCharFrameHeight(value: String) =
+    internal fun setCharFrameHeight(value: String) =
         updateCharacter { it.copy(frameHeight = value.filter { c -> c.isDigit() }.take(4)) }
 
-    fun setCharScale(value: String) =
+    internal fun setCharScale(value: String) =
         updateCharacter { it.copy(scale = value.filter { c -> c.isDigit() || c == '.' || c == ',' }.replace(',', '.').take(5)) }
 
-    fun setCharFlipX(enabled: Boolean) = updateCharacter { it.copy(flipX = enabled) }
+    internal fun setCharFlipX(enabled: Boolean) = updateCharacter { it.copy(flipX = enabled) }
 
-    fun setCharIdleFrames(value: String) =
+    internal fun setCharIdleFrames(value: String) =
         updateCharacter { it.copy(idleFrames = value.filter { c -> c.isDigit() }.take(2)) }
 
     fun setCharLeftFrames(value: String) =

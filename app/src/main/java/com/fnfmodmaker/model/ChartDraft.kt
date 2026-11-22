@@ -5,6 +5,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.roundToLong
 
 /**
  * Representa una nota en el chart.

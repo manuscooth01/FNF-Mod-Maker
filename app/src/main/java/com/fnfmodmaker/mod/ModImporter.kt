@@ -154,15 +154,6 @@ object ModImporter {
         }
     }
 
-    data class ModMetaResult(
-        val modTitle: String,
-        val modFolder: String,
-        val author: String,
-        val description: String,
-        val weekColor: String,
-        val showInStoryMode: Boolean
-    )
-
     private fun readModMeta(dir: File, engine: TargetEngine): ModMetaResult {
         var modTitle = "Mod Importado"
         var modFolder = "mod-importado"

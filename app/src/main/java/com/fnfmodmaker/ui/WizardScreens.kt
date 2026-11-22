@@ -31,6 +31,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -1133,6 +1135,42 @@ private fun StepChart(vm: WizardViewModel) {
     }
 
     Spacer(Modifier.height(8.dp))
+
+    // Seek Bar / Progress Bar (clickeable para seek)
+    val song = activeSong
+    val durationMs = song.instrumental?.durationMs ?: 0L
+    if (durationMs > 0) {
+        val progress = if (durationMs > 0) editorState.currentTimeMs.toFloat() / durationMs else 0f
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Barra de progreso
+            Slider(
+                value = progress.coerceIn(0f, 1f),
+                onValueChange = { newProgress ->
+                    val seekMs = (newProgress * durationMs).roundToLong()
+                    vm.seekTo(seekMs)
+                },
+                onValueChangeFinished = {},
+                enabled = !vm.busy,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            )
+            // Labels de tiempo
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(formatTime(editorState.currentTimeMs), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(formatTime(durationMs), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
 
     // Toolbar secundaria: Undo/Redo, Copy/Paste, Selection
     Row(

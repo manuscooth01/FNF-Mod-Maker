@@ -49,10 +49,6 @@ import com.fnfmodmaker.model.TargetEngine
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ToolTopBar(
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ToolTopBar(
     title: String,
     subtitle: String = "",
     onHome: (() -> Unit)? = null

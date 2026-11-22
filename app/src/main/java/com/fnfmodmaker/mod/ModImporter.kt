@@ -56,7 +56,13 @@ object ModImporter {
         // Detectar motor(es) y leer metadatos
         onProgress("Leyendo metadatos…")
         val engine = detectEngine(extractDir)
-        val (modTitle, modFolder, author, description, weekColor, showInStoryMode) = readModMeta(extractDir, engine)
+        val meta = readModMeta(extractDir, engine)
+        val modTitle = meta.modTitle
+        val modFolder = meta.modFolder
+        val author = meta.author
+        val description = meta.description
+        val weekColor = meta.weekColor
+        val showInStoryMode = meta.showInStoryMode
         val iconFile = findIcon(extractDir)
 
         // Leer canciones (V-Slice: data/songs/*, Psych: data/* + weeks/*)
@@ -98,7 +104,16 @@ object ModImporter {
         }
     }
 
-    private fun readModMeta(dir: File, engine: TargetEngine): Pair<String, Pair<String, Pair<String, Pair<String, Pair<String, Boolean>>>>> {
+    data class ModMetaResult(
+    val modTitle: String,
+    val modFolder: String,
+    val author: String,
+    val description: String,
+    val weekColor: String,
+    val showInStoryMode: Boolean
+)
+
+    private fun readModMeta(dir: File, engine: TargetEngine): ModMetaResult {
         var modTitle = "Mod Importado"
         var modFolder = "mod-importado"
         var author = "Desconocido"
@@ -141,7 +156,7 @@ object ModImporter {
             }
         }
 
-        return modTitle to (modFolder to (author to (description to (weekColor to showInStoryMode))))
+        return ModMetaResult(modTitle, modFolder, author, description, weekColor, false)
     }
 
     private fun findIcon(dir: File): File? {

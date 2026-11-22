@@ -6,6 +6,8 @@ import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.StageDraft
 import com.fnfmodmaker.model.StageSprite
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.OutputStream
@@ -465,9 +467,6 @@ object StageBuilder {
     }
 
     private fun generateVSliceStageJson(stage: StageDraft, stageFolder: String): String {
-        import org.json.JSONArray
-        import org.json.JSONObject
-
         val camera = stage.cameraPosition
         val bounds = camera.bounds
 
@@ -492,9 +491,6 @@ object StageBuilder {
     }
 
     private fun generatePsychStageJson(stage: StageDraft, stageFolder: String): String {
-        import org.json.JSONArray
-        import org.json.JSONObject
-
         val camera = stage.cameraPosition
 
         val spritesArray = JSONArray()

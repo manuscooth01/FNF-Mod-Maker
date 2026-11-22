@@ -226,10 +226,25 @@ object CharacterBuilder {
                     .put("offsets", JSONArray().put(0).put(0))
             )
         }
-        val (scaleValue, flipX, colors) = when (charData) {
-            is CharacterDraft -> charData.scaleValue to charData.flipX to hexToRgb(config.weekColor)
-            is com.fnfmodmaker.model.CharacterVariation -> charData.scaleValue to charData.flipX to hexToRgb(config.weekColor)
-            else -> 1.0f to false to hexToRgb(config.weekColor)
+        val scaleValue: Float
+        val flipX: Boolean
+        val colors: List<Int>
+        when (charData) {
+            is CharacterDraft -> {
+                scaleValue = charData.scaleValue
+                flipX = charData.flipX
+                colors = hexToRgb(config.weekColor)
+            }
+            is com.fnfmodmaker.model.CharacterVariation -> {
+                scaleValue = charData.scaleValue
+                flipX = charData.flipX
+                colors = hexToRgb(config.weekColor)
+            }
+            else -> {
+                scaleValue = 1.0f
+                flipX = false
+                colors = hexToRgb(config.weekColor)
+            }
         }
         return JSONObject()
             .put("animations", animationArray)

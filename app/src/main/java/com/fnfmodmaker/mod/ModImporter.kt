@@ -9,11 +9,14 @@ import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.PickedAudio
 import com.fnfmodmaker.model.PickedImage
 import com.fnfmodmaker.model.SongConfig
+import com.fnfmodmaker.model.StageDraft
+import com.fnfmodmaker.model.StageSprite
 import com.fnfmodmaker.model.TargetEngine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.zip.ZipFile
+import java.util.zip.ZipEntry
 
 /**
  * Importa un mod existente desde un ZIP y reconstruye el ModConfig
@@ -26,6 +29,15 @@ object ModImporter {
         val warnings: List<String>
     )
 
+    data class ModMetaResult(
+        val modTitle: String,
+        val modFolder: String,
+        val author: String,
+        val description: String,
+        val weekColor: String,
+        val showInStoryMode: Boolean
+    )
+
     fun importFromZip(
         context: Context,
         zipFile: File,
@@ -34,7 +46,6 @@ object ModImporter {
     ): ImportResult {
         val warnings = mutableListOf<String>()
 
-        // Extraer ZIP a carpeta temporal
         onProgress("Extrayendo ZIP…")
         val extractDir = File(workRoot, "import_${System.currentTimeMillis()}")
         if (extractDir.exists()) extractDir.deleteRecursively()
@@ -56,44 +67,79 @@ object ModImporter {
             }
         }
 
-        // Detectar motor(es) y leer metadatos
         onProgress("Leyendo metadatos…")
         val engine = detectEngine(extractDir)
         val meta = readModMeta(extractDir, engine)
-        val modTitle = meta.modTitle
-        val modFolder = meta.modFolder
-        val author = meta.author
-        val description = meta.description
-        val weekColor = meta.weekColor
-        val showInStoryMode = meta.showInStoryMode
         val iconFile = findIcon(extractDir)
 
-        // Leer canciones (V-Slice: data/songs/*, Psych: data/* + weeks/*)
         onProgress("Detectando canciones…")
         val songs = readSongs(extractDir, engine, warnings)
 
-        // Leer personaje propio si existe
         onProgress("Buscando personaje propio…")
         val characterDraft = readCharacter(extractDir, engine, warnings)
 
-        // Reconstruir ModConfig
+        onProgress("Buscando stage propio…")
+        val stageDraft = readStage(extractDir, warnings)
+
+        val processedIcon = iconFile?.let { src ->
+            val target = File(context.cacheDir, "import_icon.png")
+            if (MediaTools.preparePng(src, target, 512)) {
+                PickedImage(Uri.fromFile(target), target.name, target.absolutePath)
+            } else null
+        }
+
         val config = ModConfig(
             engine = engine,
-            modTitle = modTitle,
-            modId = modFolder,
-            author = author,
-            description = description,
+            modTitle = meta.modTitle,
+            modId = meta.modFolder,
+            author = meta.author,
+            description = meta.description,
             songs = songs,
-            weekColor = weekColor,
-            showInStoryMode = showInStoryMode,
+            weekColor = meta.weekColor,
+            showInStoryMode = meta.showInStoryMode,
             character = characterDraft,
-            icon = iconFile?.let { MediaTools.preparePng(it, File(context.cacheDir, "import_icon.png"), 512)?.let { PickedImage(Uri.fromFile(it), it.name, it.absolutePath) } }
+            stageDraft = stageDraft,
+            icon = processedIcon
         )
 
-        // Limpiar carpeta temporal
         extractDir.deleteRecursively()
 
         return ImportResult(config, warnings)
+    }
+
+    fun importStageFromZip(
+        context: Context,
+        zipFile: File,
+        workRoot: File,
+        onProgress: (String) -> Unit
+    ): StageDraft {
+        val warnings = mutableListOf<String>()
+
+        onProgress("Extrayendo stage…")
+        val extractDir = File(workRoot, "import_stage_${System.currentTimeMillis()}")
+        if (extractDir.exists()) extractDir.deleteRecursively()
+        extractDir.mkdirs()
+
+        ZipFile(zipFile).use { zip ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entry = entries.nextElement()
+                val outFile = File(extractDir, entry.name)
+                if (entry.isDirectory) {
+                    outFile.mkdirs()
+                } else {
+                    outFile.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { input ->
+                        outFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            }
+        }
+
+        val stage = readStage(extractDir, warnings)
+
+        extractDir.deleteRecursively()
+        return stage
     }
 
     private fun detectEngine(dir: File): TargetEngine {
@@ -103,18 +149,9 @@ object ModImporter {
             hasVSlice && hasPsych -> TargetEngine.BOTH
             hasVSlice -> TargetEngine.VSLICE
             hasPsych -> TargetEngine.PSYCH
-            else -> TargetEngine.BOTH // default
+            else -> TargetEngine.BOTH
         }
     }
-
-    data class ModMetaResult(
-    val modTitle: String,
-    val modFolder: String,
-    val author: String,
-    val description: String,
-    val weekColor: String,
-    val showInStoryMode: Boolean
-)
 
     private fun readModMeta(dir: File, engine: TargetEngine): ModMetaResult {
         var modTitle = "Mod Importado"
@@ -124,7 +161,6 @@ object ModImporter {
         var weekColor = "#C24B99"
         var showInStoryMode = false
 
-        // V-Slice: _polymod_meta.json
         if (engine.includesVSlice) {
             val polymodFile = File(dir, "_polymod_meta.json")
             if (polymodFile.exists()) {
@@ -140,7 +176,6 @@ object ModImporter {
             }
         }
 
-        // Psych: pack.json
         if (engine.includesPsych) {
             val packFile = File(dir, "pack.json")
             if (packFile.exists()) {
@@ -177,7 +212,8 @@ object ModImporter {
         if (engine.includesVSlice) {
             val songsDir = File(dir, "data/songs")
             if (songsDir.exists()) {
-                songsDir.listFiles()?.filter { it.isDirectory }?.forEach { songDir ->
+                val dirs = songsDir.listFiles()?.filter { it.isDirectory } ?: emptyArray()
+                for (songDir in dirs) {
                     val song = readVSliceSong(songDir, warnings)
                     if (song != null) songs.add(song)
                 }
@@ -188,20 +224,19 @@ object ModImporter {
             val dataDir = File(dir, "data")
             val weeksDir = File(dir, "weeks")
             if (dataDir.exists() && weeksDir.exists()) {
-                weeksDir.listFiles()?.filter { it.extension == "json" }?.forEach { weekFile ->
+                val weekFiles = weeksDir.listFiles()?.filter { it.extension == "json" } ?: emptyArray()
+                for (weekFile in weekFiles) {
                     val song = readPsychSong(weekFile, dataDir, warnings)
                     if (song != null) songs.add(song)
                 }
             }
         }
 
-        // Si no se detectaron canciones, crear una vacía
         if (songs.isEmpty()) {
             songs.add(SongConfig())
             warnings.add("No se detectaron canciones en el mod; se creó una vacía.")
         }
 
-        // Deduplicar por songFolder
         return songs.distinctBy { it.songFolder }
     }
 
@@ -219,11 +254,15 @@ object ModImporter {
             val artist = meta.optString("artist", "Desconocido")
             val bpm = meta.optJSONObject("playData")?.optInt("bpm") ?: meta.optInt("bpm") ?: 150
             val offset = meta.optJSONObject("offsets")?.optInt("instrumental") ?: 0
-            val speed = meta.optJSONObject("playData")?.optJSONObject("scrollSpeed")?.keys()?.firstOrNull()?.toIntOrNull()?.toDouble()?.let { (it / 100.0).toString() } ?: "2.0"
+            val speed = meta.optJSONObject("playData")?.optJSONObject("scrollSpeed")?.keys()?.firstOrNull()?.toIntOrNull()?.let { (it / 100.0).toString() } ?: "2.0"
 
             val playData = meta.optJSONObject("playData")
             val difficulties = mutableSetOf<String>()
-            playData?.optJSONArray("difficulties")?.forEachIndexed { _, v -> difficulties.add(v.toString()) }
+            playData?.optJSONArray("difficulties")?.let { arr ->
+                for (i in 0 until arr.length()) {
+                    difficulties.add(arr.getString(i))
+                }
+            }
             if (difficulties.isEmpty()) difficulties.addAll(setOf("easy", "normal", "hard"))
 
             val characters = playData?.optJSONObject("characters")
@@ -269,8 +308,6 @@ object ModImporter {
             val songFolder = songName.lowercase().replace(" ", "-").replace(Regex("[^a-z0-9-]"), "")
             val songDataDir = File(dataDir, songFolder)
             val chartFile = songDataDir.listFiles()?.firstOrNull { it.name == "$songFolder.json" || it.name.startsWith("$songFolder-") && it.extension == "json" }
-            val audioFile = File(songDataDir, "Inst.ogg") // Psych usa data/<song>/Inst.ogg? No, usa songs/<song>/Inst.ogg
-            // Buscar audio en songs/
             val songsDir = File(dataDir.parentFile, "songs/$songFolder")
             val audioFileReal = songsDir.listFiles()?.firstOrNull { it.name == "Inst.ogg" }
             val voicesFile = songsDir.listFiles()?.firstOrNull { it.name == "Voices.ogg" }
@@ -328,29 +365,27 @@ object ModImporter {
     }
 
     private fun readCharacter(dir: File, engine: TargetEngine, warnings: MutableList<String>): com.fnfmodmaker.model.CharacterDraft {
-        // Buscar personaje en images/characters/ y data/characters/
         val charDirs = if (engine.includesVSlice) File(dir, "data/characters") else File(dir, "characters")
         if (!charDirs.exists()) return com.fnfmodmaker.model.CharacterDraft()
 
-        val charFiles = charDirs.listFiles()?.filter { it.extension == "json" } ?: return com.fnfmodmaker.model.CharacterDraft()
+        val charFiles = charDirs.listFiles()?.filter { it.extension == "json" } ?: emptyArray()
         val charFile = charFiles.firstOrNull() ?: return com.fnfmodmaker.model.CharacterDraft()
 
         try {
             val json = JSONObject(charFile.readText())
             val name = json.optString("name", charFile.nameWithoutExtension)
             val id = json.optString("name", charFile.nameWithoutExtension).lowercase().replace(" ", "-")
-            val scale = json.optDouble("scale", 1.0)
-            val flipX = json.optBoolean("flipX", false)
+            val scale = json.optDouble("scale", 1.0).toFloat()
+            val flipX = json.optBoolean("flip_x", false)
             val healthIcon = json.optString("healthicon", json.optString("healthIcon", ""))
 
-            // Leer animaciones
             val animations = json.optJSONArray("animations")
             var idleFrames = "2"
             var leftFrames = "1"
             var downFrames = "1"
             var upFrames = "1"
             var rightFrames = "1"
-            animations?.forEach { anim ->
+            animations?.forEachIndexed { _, anim ->
                 val a = anim as JSONObject
                 val animName = a.optString("name", a.optString("anim", ""))
                 when (animName) {
@@ -362,7 +397,6 @@ object ModImporter {
                 }
             }
 
-            // Buscar spritesheet e icono
             val spritesheet = File(dir, "images/characters/${charFile.nameWithoutExtension}.png")
             val iconFile = File(dir, "images/icons/icon-${charFile.nameWithoutExtension}.png")
 
@@ -391,42 +425,7 @@ object ModImporter {
         }
     }
 
-    /** Importa un stage (escenario) personalizado desde ZIP. */
-    fun importStageFromZip(
-        context: Context,
-        zipFile: File,
-        workRoot: File,
-        onProgress: (String) -> Unit
-    ): com.fnfmodmaker.model.StageDraft {
-        val warnings = mutableListOf<String>()
-
-        onProgress("Extrayendo stage…")
-        val extractDir = File(workRoot, "import_stage_${System.currentTimeMillis()}")
-        if (extractDir.exists()) extractDir.deleteRecursively()
-        extractDir.mkdirs()
-
-        ZipFile(zipFile).use { zip ->
-            zip.entries().forEach { entry ->
-                val outFile = File(extractDir, entry.name)
-                if (entry.isDirectory) {
-                    outFile.mkdirs()
-                } else {
-                    outFile.parentFile?.mkdirs()
-                    zip.getInputStream(entry).use { input ->
-                        outFile.outputStream().use { output -> input.copyTo(output) }
-                    }
-                }
-            }
-        }
-
-        val stage = readStage(extractDir, warnings)
-
-        extractDir.deleteRecursively()
-        return stage
-    }
-
-    private fun readStage(dir: File, warnings: MutableList<String>): com.fnfmodmaker.model.StageDraft {
-        // Buscar stage en data/stages/ (V-Slice) o stages/ (Psych)
+    private fun readStage(dir: File, warnings: MutableList<String>): StageDraft {
         val vsliceStageDir = File(dir, "data/stages")
         val psychStageDir = File(dir, "stages")
         val imagesStagesDir = File(dir, "images/stages")
@@ -434,18 +433,17 @@ object ModImporter {
         val stageDir = if (vsliceStageDir.exists()) vsliceStageDir else psychStageDir
         if (!stageDir.exists()) {
             warnings.add("No se encontró carpeta de stage en el ZIP")
-            return com.fnfmodmaker.model.StageDraft()
+            return StageDraft()
         }
 
-        // Buscar archivo JSON del stage
         val stageJsonFile = stageDir.listFiles()?.firstOrNull { it.extension == "json" }
-            ?: return com.fnfmodmaker.model.StageDraft()
+            ?: return StageDraft()
 
         val stageId = stageJsonFile.nameWithoutExtension
         var stageName = stageId
-        var backgroundImage: com.fnfmodmaker.model.PickedImage? = null
+        var backgroundImage: PickedImage? = null
         var backgroundColor = "#000000"
-        val sprites = mutableListOf<com.fnfmodmaker.model.StageSprite>()
+        val sprites = mutableListOf<StageSprite>()
         val cameraPosition = com.fnfmodmaker.model.CameraPosition()
         var baseStageVSlice = "mainStage"
         var baseStagePsych = "stage"
@@ -453,17 +451,15 @@ object ModImporter {
         try {
             val json = JSONObject(stageJsonFile.readText())
             stageName = json.optString("name", stageId)
-            
-            // V-Slice format
+
             if (json.has("background")) {
                 val bgPath = json.optString("background", "").replace("stages/", "").replace("/", "")
                 val bgFile = File(imagesStagesDir, "$bgPath/background.png")
                 if (bgFile.exists()) {
-                    backgroundImage = com.fnfmodmaker.model.PickedImage(Uri.fromFile(bgFile), bgFile.name, bgFile.absolutePath)
+                    backgroundImage = PickedImage(Uri.fromFile(bgFile), bgFile.name, bgFile.absolutePath)
                 }
                 baseStageVSlice = json.optString("baseStage", "mainStage")
-                
-                // Camera
+
                 val cam = json.optJSONObject("cameraPosition")
                 if (cam != null) {
                     cameraPosition = com.fnfmodmaker.model.CameraPosition(
@@ -483,21 +479,20 @@ object ModImporter {
                     }
                 }
             }
-            
-            // Psych format
+
             if (json.has("background") && json.has("sprites")) {
                 val spritesArray = json.optJSONArray("sprites")
-                spritesArray?.forEach { spriteJson ->
+                spritesArray?.forEachIndexed { _, spriteJson ->
                     val sprite = spriteJson as JSONObject
                     val spriteId = sprite.optString("name", sprite.optString("spriteId", ""))
                     val spriteDisplayName = spriteId
                     val spriteImagePath = sprite.optString("image", "").replace("stages/", "").replace("/", "")
                     val spriteFile = File(imagesStagesDir, "$spriteImagePath.png")
                     val spriteImage = if (spriteFile.exists()) {
-                        com.fnfmodmaker.model.PickedImage(Uri.fromFile(spriteFile), spriteFile.name, spriteFile.absolutePath)
+                        PickedImage(Uri.fromFile(spriteFile), spriteFile.name, spriteFile.absolutePath)
                     } else null
-                    
-                    sprites.add(com.fnfmodmaker.model.StageSprite(
+
+                    sprites.add(StageSprite(
                         spriteId = spriteId,
                         displayName = spriteDisplayName,
                         image = spriteImage,
@@ -509,12 +504,11 @@ object ModImporter {
                         animationFrames = sprite.optInt("frames", 1),
                         animationFps = sprite.optInt("fps", 24),
                         animationLoop = sprite.optBoolean("loop", true),
-                        layer = com.fnfmodmaker.model.StageSprite.Layer.valueOf(sprite.optString("layer", "FOREGROUND").uppercase())
+                        layer = StageSprite.Layer.valueOf(sprite.optString("layer", "FOREGROUND").uppercase())
                     ))
                 }
                 baseStagePsych = json.optString("baseStage", "stage")
-                
-                // Camera Psych
+
                 val cam = json.optJSONObject("camera")
                 if (cam != null) {
                     cameraPosition = com.fnfmodmaker.model.CameraPosition(
@@ -534,12 +528,11 @@ object ModImporter {
                     }
                 }
             }
-            
+
         } catch (e: Exception) {
             warnings.add("Error leyendo stage JSON: ${e.message}")
         }
 
-        // Buscar fondo si no se encontró en JSON
         if (backgroundImage == null) {
             val bgCandidates = listOf(
                 File(imagesStagesDir, "$stageId/background.png"),
@@ -547,11 +540,11 @@ object ModImporter {
                 File(dir, "_polymod_icon.png")
             )
             backgroundImage = bgCandidates.firstOrNull { it.exists() }?.let {
-                com.fnfmodmaker.model.PickedImage(Uri.fromFile(it), it.name, it.absolutePath)
+                PickedImage(Uri.fromFile(it), it.name, it.absolutePath)
             }
         }
 
-        return com.fnfmodmaker.model.StageDraft(
+        return StageDraft(
             enabled = true,
             stageId = stageId,
             displayName = stageName,

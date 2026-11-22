@@ -71,9 +71,9 @@ data class StageSprite(
         if (!animated || animationFrames <= 1) return 0
         val frameMs = 1000L / animationFps
         val frame = if (animationLoop) {
-            (elapsedMs / frameMs) % animationFrames
+            (elapsedMs / frameMs) % animationFrames.toLong()
         } else {
-            (elapsedMs / frameMs).coerceAtMost(animationFrames - 1)
+            (elapsedMs / frameMs).coerceAtMost((animationFrames - 1).toLong())
         }
         return frame.toInt()
     }
@@ -98,22 +98,3 @@ data class CameraBounds(
     val top: Float = -500f,
     val bottom: Float = 500f
 )
-
-/** Extensión a ModConfig para incluir stage personalizado. */
-data class ModConfig(
-    // ... campos existentes ...
-) {
-    // Agregar stageDraft como propiedad
-    val stageDraft: StageDraft = StageDraft()
-    
-    // Método para obtener el stageDraft (compatibilidad)
-    fun getStageDraft(): StageDraft = stageDraft
-}
-
-/** Agregar a ModConfig las propiedades de stage. 
- * Nota: Como ModConfig es data class, se debe agregar stageDraft en la definición real.
- * Aquí solo documentamos la estructura.
- */
-
-// En ModConfig.kt real, agregar:
-// val stageDraft: StageDraft = StageDraft()

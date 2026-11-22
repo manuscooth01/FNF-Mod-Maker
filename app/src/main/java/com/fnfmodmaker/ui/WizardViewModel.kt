@@ -125,12 +125,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val song = config.songs[activeChartSongIndex]
         activeChartDifficulty = song.orderedDifficulties.firstOrNull() ?: "normal"
         updateChartEditorState()
+        initChartHistory()
     }
 
     fun selectChartDifficulty(difficulty: String) {
         if (busy) return
         activeChartDifficulty = difficulty
         updateChartEditorState()
+        initChartHistory()
     }
 
     private fun updateChartEditorState() {
@@ -141,11 +143,6 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             isPlaying = false,
             currentTimeMs = 0L
         )
-    }
-
-    /** Guarda el chart editado en el config. */
-    fun saveChartDraft(chart: ChartDraft) {
-        config = config.withChart(chart.songFolder, chart.difficulty, chart)
     }
 
     // ---------------- Edición de notas ----------------
@@ -162,7 +159,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             updatedNotes.add(note)
         }
         val updatedDraft = draft.copy(notes = updatedNotes.sortedBy { it.timeMs })
-        saveChartDraft(updatedDraft)
+        pushHistoryAndSave(updatedDraft)
     }
 
     /** Elimina una nota del chart activo. */
@@ -170,7 +167,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val draft = activeChartDraft
         val updatedNotes = draft.notes.filterNot { it.timeMs == timeMs && it.lane == lane }
         val updatedDraft = draft.copy(notes = updatedNotes)
-        saveChartDraft(updatedDraft)
+        pushHistoryAndSave(updatedDraft)
     }
 
     /** Genera notas de práctica automáticas para el chart activo. */
@@ -208,7 +205,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             gfVersion = song.girlfriend,
             stage = song.stagePsych
         )
-        saveChartDraft(draft)
+        pushHistoryAndSave(draft)
     }
 
     /** Limpia el chart activo. */
@@ -228,7 +225,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             gfVersion = song.girlfriend,
             stage = song.stagePsych
         )
-        saveChartDraft(draft)
+        pushHistoryAndSave(draft)
     }
 
     /** Actualiza el tiempo de reproducción actual. */
@@ -245,6 +242,251 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     fun updateChartView(zoom: Float, scrollX: Float) {
         chartEditorState = chartEditorState.copy(zoom = zoom, scrollX = scrollX)
     }
+
+    // ---------------- Chart Editor: Selección, Drag, Undo/Redo ----------------
+
+    /** Inicia drag de scroll (pan). */
+    fun startScrollDrag(startX: Float, startScroll: Float) {
+        chartEditorState = chartEditorState.copy(
+            dragState = com.fnfmodmaker.model.ChartEditorState.DragState.Scroll(startX, startScroll)
+        )
+    }
+
+    /** Actualiza drag de scroll. */
+    fun updateScrollDrag(currentX: Float) {
+        val state = chartEditorState.dragState
+        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.Scroll) {
+            val newScroll = (state.startScroll - (currentX - state.startX)).coerceIn(0f, Float.MAX_VALUE)
+            chartEditorState = chartEditorState.copy(scrollX = newScroll)
+        }
+    }
+
+    /** Termina drag de scroll. */
+    fun endScrollDrag() {
+        chartEditorState = chartEditorState.copy(dragState = null)
+    }
+
+    /** Inicia drag de resize hold note. */
+    fun startHoldResize(noteIndex: Int, startTimeMs: Long, lane: Int, startLengthMs: Long, dragStartX: Float) {
+        chartEditorState = chartEditorState.copy(
+            dragState = com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize(
+                noteIndex, startTimeMs, lane, startLengthMs, dragStartX
+            )
+        )
+    }
+
+    /** Actualiza drag de resize hold note. */
+    fun updateHoldResize(currentX: Float, beatWidthPx: Float, beatMs: Double) {
+        val state = chartEditorState.dragState
+        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize) {
+            val deltaX = currentX - state.dragStartX
+            val deltaBeats = deltaX / beatWidthPx * 4 // 4 beats por unidad visual
+            val deltaMs = (deltaBeats * beatMs).roundToLong()
+            val newLength = (state.startLengthMs + deltaMs).coerceAtLeast(0L)
+            
+            val draft = activeChartDraft
+            val updatedNotes = draft.notes.toMutableList()
+            if (state.noteIndex < updatedNotes.size) {
+                val note = updatedNotes[state.noteIndex]
+                updatedNotes[state.noteIndex] = note.copy(lengthMs = newLength, isSustain = newLength > 0)
+                val updatedDraft = draft.copy(notes = updatedNotes)
+                pushHistoryAndSave(updatedDraft)
+            }
+        }
+    }
+
+    /** Termina drag de hold resize. */
+    fun endHoldResize() {
+        chartEditorState = chartEditorState.copy(dragState = null)
+    }
+
+    /** Inicia selección múltiple (box selection). */
+    fun startSelectionBox(startX: Float, startY: Float) {
+        chartEditorState = chartEditorState.copy(
+            dragState = com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox(startX, startY),
+            selectedNotes = emptyList()
+        )
+    }
+
+    /** Actualiza selección múltiple. */
+    fun updateSelectionBox(currentX: Float, currentY: Float, beatWidthPx: Float, beatMs: Double, laneHeightPx: Float, timeRulerHeightPx: Float, headerHeightPx: Float) {
+        val state = chartEditorState.dragState
+        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox) {
+            val draft = activeChartDraft
+            val minX = minOf(state.startX, currentX)
+            val maxX = maxOf(state.startX, currentX)
+            val minY = minOf(state.startY, currentY)
+            val maxY = maxOf(state.startY, currentY)
+
+            // Convertir a tiempo y lanes
+            val startTimeMs = ((minX / beatWidthPx * 4) * beatMs).roundToLong()
+            val endTimeMs = ((maxX / beatWidthPx * 4) * beatMs).roundToLong()
+            val startLane = ((minY - timeRulerHeightPx - headerHeightPx) / laneHeightPx).toInt().coerceIn(0, 7)
+            val endLane = ((maxY - timeRulerHeightPx - headerHeightPx) / laneHeightPx).toInt().coerceIn(0, 7)
+
+            val selected = draft.notes
+                .mapIndexed { index, note ->
+                    val inTime = note.timeMs >= startTimeMs && note.timeMs <= endTimeMs
+                    val inLane = note.lane >= startLane && note.lane <= endLane
+                    if (inTime && inLane) com.fnfmodmaker.model.SelectedNote(note.timeMs, note.lane, index) else null
+                }
+                .filterNotNull()
+                .toList()
+
+            chartEditorState = chartEditorState.copy(selectedNotes = selected)
+        }
+    }
+
+    /** Termina selección múltiple. */
+    fun endSelectionBox() {
+        val state = chartEditorState.dragState
+        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox) {
+            chartEditorState = chartEditorState.copy(dragState = null)
+        }
+    }
+
+    /** Inicia drag de notas seleccionadas. */
+    fun startMultiDrag(dragStartX: Float, dragStartY: Float) {
+        val selected = chartEditorState.selectedNotes
+        if (selected.isNotEmpty()) {
+            chartEditorState = chartEditorState.copy(
+                dragState = com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag(selected, dragStartX, dragStartY)
+            )
+        }
+    }
+
+    /** Actualiza drag de notas seleccionadas. */
+    fun updateMultiDrag(currentX: Float, currentY: Float, beatWidthPx: Float, beatMs: Double, laneHeightPx: Float) {
+        val state = chartEditorState.dragState
+        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag) {
+            val deltaX = currentX - state.dragStartX
+            val deltaY = currentY - state.dragStartY
+            val deltaBeats = deltaX / beatWidthPx * 4
+            val deltaMs = (deltaBeats * beatMs).roundToLong()
+            val deltaLanes = (deltaY / laneHeightPx).roundToInt()
+
+            val draft = activeChartDraft
+            val updatedNotes = draft.notes.toMutableList()
+            var changed = false
+
+            for (sel in state.selectedNotes) {
+                if (sel.noteIndex < updatedNotes.size) {
+                    val note = updatedNotes[sel.noteIndex]
+                    val newTime = (note.timeMs + deltaMs).coerceAtLeast(0L)
+                    val newLane = (note.lane + deltaLanes).coerceIn(0, 7)
+                    if (newTime != note.timeMs || newLane != note.lane) {
+                        updatedNotes[sel.noteIndex] = note.copy(timeMs = newTime, lane = newLane)
+                        changed = true
+                    }
+                }
+            }
+
+            if (changed) {
+                val updatedDraft = draft.copy(notes = updatedNotes.sortedBy { it.timeMs })
+                pushHistoryAndSave(updatedDraft)
+            }
+        }
+    }
+
+    /** Termina drag de notas seleccionadas. */
+    fun endMultiDrag() {
+        chartEditorState = chartEditorState.copy(dragState = null)
+    }
+
+    /** Agrega nota a selección (toggle). */
+    fun toggleNoteSelection(timeMs: Long, lane: Int) {
+        val draft = activeChartDraft
+        val noteIndex = draft.notes.indexOfFirst { it.timeMs == timeMs && it.lane == lane }
+        if (noteIndex >= 0) {
+            val selected = chartEditorState.selectedNotes.toMutableList()
+            val existing = selected.indexOfFirst { it.timeMs == timeMs && it.lane == lane }
+            if (existing >= 0) {
+                selected.removeAt(existing)
+            } else {
+                selected.add(com.fnfmodmaker.model.SelectedNote(timeMs, lane, noteIndex))
+            }
+            chartEditorState = chartEditorState.copy(selectedNotes = selected)
+        }
+    }
+
+    /** Limpia selección. */
+    fun clearSelection() {
+        chartEditorState = chartEditorState.copy(selectedNotes = emptyList())
+    }
+
+    /** Copia notas seleccionadas al portapapeles interno. */
+    private var clipboardNotes: List<com.fnfmodmaker.model.ChartNote> = emptyList()
+
+    fun copySelectedNotes() {
+        val draft = activeChartDraft
+        clipboardNotes = chartEditorState.selectedNotes
+            .map { sel -> draft.notes.getOrNull(sel.noteIndex) }
+            .filterNotNull()
+            .toList()
+    }
+
+    /** Pega notas del portapapeles en la posición actual del playhead. */
+    fun pasteNotes() {
+        if (clipboardNotes.isEmpty()) return
+        val draft = activeChartDraft
+        val pasteTime = chartEditorState.currentTimeMs
+        val firstNoteTime = clipboardNotes.first().timeMs
+        val offset = pasteTime - firstNoteTime
+
+        val updatedNotes = draft.notes.toMutableList()
+        for (note in clipboardNotes) {
+            updatedNotes.add(note.copy(timeMs = (note.timeMs + offset).coerceAtLeast(0L)))
+        }
+        val updatedDraft = draft.copy(notes = updatedNotes.sortedBy { it.timeMs })
+        pushHistoryAndSave(updatedDraft)
+    }
+
+    /** Guarda el estado actual en el historial para undo/redo. */
+    private fun pushHistoryAndSave(draft: com.fnfmodmaker.model.ChartDraft) {
+        val newHistory = chartEditorState.history.take(chartEditorState.historyIndex + 1) + draft
+        val newIndex = newHistory.size - 1
+        chartEditorState = chartEditorState.copy(history = newHistory, historyIndex = newIndex)
+        saveChartDraft(draft)
+    }
+
+    /** Sobrescribe saveChartDraft para no duplicar historial cuando se llama desde UI. */
+    fun saveChartDraft(chart: com.fnfmodmaker.model.ChartDraft) {
+        config = config.withChart(chart.songFolder, chart.difficulty, chart)
+    }
+
+    /** Undo. */
+    fun undo() {
+        if (chartEditorState.canUndo) {
+            val newIndex = chartEditorState.historyIndex - 1
+            val prevDraft = chartEditorState.history[newIndex]
+            chartEditorState = chartEditorState.copy(historyIndex = newIndex)
+            saveChartDraft(prevDraft)
+        }
+    }
+
+    /** Redo. */
+    fun redo() {
+        if (chartEditorState.canRedo) {
+            val newIndex = chartEditorState.historyIndex + 1
+            val nextDraft = chartEditorState.history[newIndex]
+            chartEditorState = chartEditorState.copy(historyIndex = newIndex)
+            saveChartDraft(nextDraft)
+        }
+    }
+
+    /** Al cambiar de canción/dificultad, inicializa historial con el chart actual. */
+    fun initChartHistory() {
+        val draft = activeChartDraft
+        chartEditorState = chartEditorState.copy(
+            history = listOf(draft),
+            historyIndex = 0,
+            selectedNotes = emptyList(),
+            dragState = null
+        )
+    }
+
+    // Modificar selectChartSong y selectChartDifficulty para llamar initChartHistory
+    // (ya están definidos arriba, los actualizaremos)
 
     // ---------------- Herramientas sueltas ----------------
 

@@ -1095,7 +1095,7 @@ private fun StepChart(vm: WizardViewModel) {
 
     Spacer(Modifier.height(12.dp))
 
-    // Toolbar
+    // Toolbar principal
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1132,6 +1132,26 @@ private fun StepChart(vm: WizardViewModel) {
         Button(onClick = { vm.saveChartDraft(draft) }, enabled = !vm.busy) { Text("Guardar") }
     }
 
+    Spacer(Modifier.height(8.dp))
+
+    // Toolbar secundaria: Undo/Redo, Copy/Paste, Selection
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        OutlinedButton(onClick = { vm.undo() }, enabled = editorState.canUndo && !vm.busy) { Text("↶ Undo") }
+        OutlinedButton(onClick = { vm.redo() }, enabled = editorState.canRedo && !vm.busy) { Text("↷ Redo") }
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(onClick = { vm.copySelectedNotes() }, enabled = editorState.selectedNotes.isNotEmpty() && !vm.busy) { Text("📋 Copiar") }
+        OutlinedButton(onClick = { vm.pasteNotes() }, enabled = !vm.busy) { Text("📄 Pegar") }
+        OutlinedButton(onClick = { vm.clearSelection() }, enabled = editorState.selectedNotes.isNotEmpty() && !vm.busy) { Text("✕ Sel.") }
+        Spacer(Modifier.weight(1f))
+        Text("Seleccionadas: ${editorState.selectedNotes.size}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (editorState.dragState != null) {
+            Text("Dragging...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+        }
+    }
+
     Spacer(Modifier.height(12.dp))
 
     // Info line
@@ -1158,20 +1178,17 @@ private fun StepChart(vm: WizardViewModel) {
             val note = com.fnfmodmaker.model.ChartNote(
                 timeMs = timeMs,
                 lane = lane,
-                lengthMs = if (isHoldStart) 500L else 0L, // default hold 500ms
+                lengthMs = if (isHoldStart) 500L else 0L,
                 isSustain = false
             )
             vm.addChartNote(note)
         },
-        onNoteLongPress = { timeMs, lane ->
-            // Iniciar hold note drag
-        },
-        onHoldDrag = { startTimeMs, lane, currentTimeMs ->
-            // Actualizar longitud de hold note
-        },
+        onNoteLongPress = { timeMs, lane -> },
+        onHoldDrag = { startTimeMs, lane, currentTimeMs -> },
         onNoteDelete = { timeMs, lane ->
             vm.removeChartNote(timeMs, lane)
-        }
+        },
+        vm = vm
     )
 
     Spacer(Modifier.height(16.dp))
@@ -1204,7 +1221,7 @@ private fun formatTime(ms: Long): String {
 }
 
 // ---------------------------------------------------------------------------
-// Piano Roll Component
+// Piano Roll Component (completo con drag states, multi-selección, hold resize)
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -1216,83 +1233,192 @@ private fun PianoRoll(
     onNoteTap: (Long, Int, Boolean) -> Unit, // timeMs, lane, isHoldStart
     onNoteLongPress: (Long, Int) -> Unit,
     onHoldDrag: (Long, Int, Long) -> Unit,
-    onNoteDelete: (Long, Int) -> Unit
+    onNoteDelete: (Long, Int) -> Unit,
+    vm: WizardViewModel
 ) {
     val bpm = song.bpmValue
     val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
-    val scrollX = editorState.scrollX
     val zoom = editorState.zoom
     val currentTimeMs = editorState.currentTimeMs
     val isPlaying = editorState.isPlaying
+    val selectedNotes = editorState.selectedNotes
+    val dragState = editorState.dragState
 
     // Constantes visuales
     val laneCount = 8
     val laneHeight = 40.dp
-    val beatWidthBase = 80.dp // ancho base de un beat a zoom 1x
+    val beatWidthBase = 80.dp
     val headerHeight = 40.dp
     val timeRulerHeight = 30.dp
 
-    val canvasWidth = (beatWidthBase.value * zoom * 4).toInt() // 4 beats por compás visible
     val canvasHeight = (laneHeight.value * laneCount + headerHeight.value + timeRulerHeight.value).toInt()
 
-    // Estado de scroll horizontal
+    // Estados locales para drag
     var scrollOffsetPx by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
-    var isDragging by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    var dragStartX by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
-    var dragStartScroll by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
+    var lastScrollOffsetPx by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
 
-    // Touch handling para scroll
-    val modifier = Modifier
+    // Sincronizar scroll
+    androidx.compose.runtime.LaunchedEffect(editorState.scrollX) {
+        scrollOffsetPx = editorState.scrollX * 100f
+        lastScrollOffsetPx = scrollOffsetPx
+    }
+
+    // Modifiers combinados para todos los gestos
+    val canvasModifier = Modifier
         .fillMaxWidth()
         .height(canvasHeight.dp)
         .pointerInput(Unit) {
+            // Drag para scroll (pan) - botón medio o drag con 2 dedos
             detectDragGestures(
                 onDragStart = { 
-                    isDragging = true
-                    dragStartX = it.x
-                    dragStartScroll = scrollOffsetPx
-                },
-                onDrag = { change, _ ->
-                    if (isDragging) {
-                        val deltaX = change.positionChange().x
-                        scrollOffsetPx = (dragStartScroll - deltaX).coerceIn(0f, Float.MAX_VALUE)
+                    if (dragState == null || dragState is com.fnfmodmaker.model.ChartEditorState.DragState.Scroll) {
+                        vm.startScrollDrag(it.x, scrollOffsetPx / 100f)
                     }
                 },
-                onDragEnd = { isDragging = false }
+                onDrag = { change, _ ->
+                    val state = vm.chartEditorState.dragState
+                    if (state is com.fnfmodmaker.model.ChartEditorState.DragState.Scroll) {
+                        val deltaX = change.positionChange().x
+                        val newScroll = (state.startScroll - deltaX / 100f).coerceIn(0f, Float.MAX_VALUE)
+                        vm.updateChartView(editorState.zoom, newScroll)
+                    }
+                },
+                onDragEnd = { vm.endScrollDrag() }
             )
         }
         .pointerInput(Unit) {
+            // Tap, long press, y drag para notas
             detectTapGestures(
                 onTap = { offset ->
-                    // Convertir coordenadas a timeMs y lane
                     val x = offset.x - scrollOffsetPx
                     val y = offset.y
-                    handleCanvasTap(x, y)
+                    handleCanvasTap(x, y, beatMs)
                 },
                 onLongPress = { offset ->
                     val x = offset.x - scrollOffsetPx
                     val y = offset.y
-                    handleCanvasLongPress(x, y)
+                    handleCanvasLongPress(x, y, beatMs)
+                }
+            )
+        }
+        .pointerInput(Unit) {
+            // Drag para selección box, hold resize, multi-drag
+            detectDragGestures(
+                onDragStart = { 
+                    val x = it.x - scrollOffsetPx
+                    val y = it.y
+                    when (dragState) {
+                        null -> {
+                            // Verificar si estamos sobre una nota para hold resize o multi-drag
+                            val noteUnder = findNoteAt(x, y, beatMs)
+                            if (noteUnder != null) {
+                                val (note, noteIndex) = noteUnder
+                                if (note.isHold) {
+                                    // Iniciar hold resize
+                                    vm.startHoldResize(noteIndex, note.timeMs, note.lane, note.lengthMs, it.x)
+                                } else if (selectedNotes.any { it.timeMs == note.timeMs && it.lane == note.lane }) {
+                                    // Iniciar multi-drag si la nota está seleccionada
+                                    vm.startMultiDrag(it.x, it.y)
+                                } else {
+                                    // Iniciar selection box
+                                    vm.startSelectionBox(it.x, it.y)
+                                }
+                            } else {
+                                // Iniciar selection box en vacío
+                                vm.startSelectionBox(it.x, it.y)
+                            }
+                        }
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox -> {
+                            // Ya iniciado
+                        }
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize -> {
+                            // Ya iniciado
+                        }
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag -> {
+                            // Ya iniciado
+                        }
+                    }
+                },
+                onDrag = { change, _ ->
+                    val x = change.position.x - scrollOffsetPx
+                    val y = change.position.y
+                    when (vm.chartEditorState.dragState) {
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox -> {
+                            vm.updateSelectionBox(
+                                change.position.x, change.position.y,
+                                (beatWidthBase.value * zoom).toPx(),
+                                beatMs,
+                                laneHeight.toPx(),
+                                timeRulerHeight.toPx(),
+                                headerHeight.toPx()
+                            )
+                        }
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize -> {
+                            vm.updateHoldResize(
+                                change.position.x,
+                                (beatWidthBase.value * zoom).toPx(),
+                                beatMs
+                            )
+                        }
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag -> {
+                            vm.updateMultiDrag(
+                                change.position.x, change.position.y,
+                                (beatWidthBase.value * zoom).toPx(),
+                                beatMs,
+                                laneHeight.toPx()
+                            )
+                        }
+                        else -> {}
+                    }
+                },
+                onDragEnd = {
+                    when (vm.chartEditorState.dragState) {
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox -> vm.endSelectionBox()
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize -> vm.endHoldResize()
+                        is com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag -> vm.endMultiDrag()
+                        else -> {}
+                    }
                 }
             )
         }
 
-    // Sincronizar scrollOffsetPx con editorState.scrollX
-    androidx.compose.runtime.LaunchedEffect(editorState.scrollX) {
-        scrollOffsetPx = editorState.scrollX * 100f // factor de conversión
-    }
-
-    fun handleCanvasTap(x: Float, y: Float) {
-        if (y < timeRulerHeight.value + headerHeight.value) return // header/ruler
+    fun findNoteAt(x: Float, y: Float, beatMs: Double): Pair<com.fnfmodmaker.model.ChartNote, Int>? {
+        if (y < timeRulerHeight.value + headerHeight.value) return null
         val laneY = y - timeRulerHeight.value - headerHeight.value
         val lane = (laneY / laneHeight.value).toInt().coerceIn(0, laneCount - 1)
         val beatX = x / (beatWidthBase.value * zoom)
-        val timeMs = (beatX * beatMs * 4).roundToLong() // 4 beats por unidad visual
+        val timeMs = (beatX * beatMs * 4).roundToLong()
         val snappedTimeMs = snapToGrid(timeMs, beatMs)
-        onNoteTap(snappedTimeMs, lane, false)
+        
+        // Buscar nota en esa posición (con tolerancia)
+        val toleranceMs = (beatMs / 4).roundToLong() // 1/4 beat tolerance
+        return draft.notes
+            .mapIndexed { index, note -> note to index }
+            .firstOrNull { (note, _) ->
+                note.lane == lane && abs(note.timeMs - snappedTimeMs) <= toleranceMs
+            }
     }
 
-    fun handleCanvasLongPress(x: Float, y: Float) {
+    fun handleCanvasTap(x: Float, y: Float, beatMs: Double) {
+        if (y < timeRulerHeight.value + headerHeight.value) return
+        val laneY = y - timeRulerHeight.value - headerHeight.value
+        val lane = (laneY / laneHeight.value).toInt().coerceIn(0, laneCount - 1)
+        val beatX = x / (beatWidthBase.value * zoom)
+        val timeMs = (beatX * beatMs * 4).roundToLong()
+        val snappedTimeMs = snapToGrid(timeMs, beatMs)
+        
+        // Si hay selección activa y tap en nota seleccionada -> toggle selection
+        val existingSel = selectedNotes.indexOfFirst { it.timeMs == snappedTimeMs && it.lane == lane }
+        if (existingSel >= 0) {
+            vm.toggleNoteSelection(snappedTimeMs, lane)
+        } else {
+            // Tap normal: agregar nota simple
+            onNoteTap(snappedTimeMs, lane, false)
+            vm.clearSelection()
+        }
+    }
+
+    fun handleCanvasLongPress(x: Float, y: Float, beatMs: Double) {
         if (y < timeRulerHeight.value + headerHeight.value) return
         val laneY = y - timeRulerHeight.value - headerHeight.value
         val lane = (laneY / laneHeight.value).toInt().coerceIn(0, laneCount - 1)
@@ -1300,6 +1426,7 @@ private fun PianoRoll(
         val timeMs = (beatX * beatMs * 4).roundToLong()
         val snappedTimeMs = snapToGrid(timeMs, beatMs)
         onNoteTap(snappedTimeMs, lane, true) // hold start
+        vm.clearSelection()
     }
 
     fun snapToGrid(timeMs: Long, beatMs: Double): Long {
@@ -1308,8 +1435,7 @@ private fun PianoRoll(
     }
 
     // Canvas drawing
-    Canvas(modifier = modifier) {
-        val density = LocalDensity.current
+    Canvas(modifier = canvasModifier) {
         val laneHeightPx = laneHeight.toPx()
         val beatWidthPx = (beatWidthBase.value * zoom).toPx()
         val headerHeightPx = headerHeight.toPx()
@@ -1364,23 +1490,13 @@ private fun PianoRoll(
 
         for (lane in 0 until laneCount) {
             val y = timeRulerHeightPx + headerHeightPx + lane * laneHeightPx
-            // Fondo de lane (jugador 0-3, oponente 4-7)
             val laneBgPaint = if (lane < 4) playerLanePaint else opponentLanePaint
-            drawRect(
-                laneBgPaint,
-                topLeft = androidx.compose.ui.geometry.Offset(0f, y),
-                size = androidx.compose.ui.geometry.Size(totalWidth, laneHeightPx)
-            )
+            drawRect(laneBgPaint, topLeft = androidx.compose.ui.geometry.Offset(0f, y), size = androidx.compose.ui.geometry.Size(totalWidth, laneHeightPx))
             drawLine(lanePaint, start = androidx.compose.ui.geometry.Offset(0f, y), end = androidx.compose.ui.geometry.Offset(totalWidth, y))
         }
 
-        // Lane labels (L/R/U/D)
+        // Lane labels
         val laneLabels = listOf("←", "↓", "↑", "→", "←", "↓", "↑", "→")
-        val labelPaint = androidx.compose.ui.graphics.Paint().apply {
-            color = Color(0xFFA0A0B0)
-            textSize = 14f
-            isAntiAlias = true
-        }
         for (lane in 0 until laneCount) {
             val y = timeRulerHeightPx + headerHeightPx + lane * laneHeightPx + laneHeightPx / 2
             drawText(
@@ -1394,20 +1510,13 @@ private fun PianoRoll(
             )
         }
 
-        // Time ruler (top)
-        val rulerPaint = androidx.compose.ui.graphics.Paint().apply {
-            color = Color(0xFFC24B99)
-            strokeWidth = 2f
-        }
-        val rulerBgPaint = androidx.compose.ui.graphics.Paint().apply {
-            color = Color(0xFF0B0B0F)
-        }
+        // Time ruler
+        val rulerBgPaint = androidx.compose.ui.graphics.Paint().apply { color = Color(0xFF0B0B0F) }
         drawRect(rulerBgPaint, topLeft = androidx.compose.ui.geometry.Offset(0f, 0f), size = androidx.compose.ui.geometry.Size(totalWidth, timeRulerHeightPx))
         for (i in 0..visibleBeats) {
             val beatIndex = startBeat + i
             val x = beatIndex * beatWidthPx - scrollOffsetPx
-            val isMeasure = beatIndex % beatsPerMeasure == 0
-            if (isMeasure) {
+            if (beatIndex % beatsPerMeasure == 0) {
                 val measureNum = beatIndex / beatsPerMeasure + 1
                 drawText(
                     text = androidx.compose.ui.text.AnnotatedString("$measureNum"),
@@ -1421,41 +1530,46 @@ private fun PianoRoll(
             }
         }
 
-        // Current time playhead
+        // Playhead
         if (isPlaying || currentTimeMs > 0) {
             val playheadX = (currentTimeMs / beatMs * beatWidthPx / 4) - scrollOffsetPx
             val playheadPaint = androidx.compose.ui.graphics.Paint().apply {
                 color = Color(0xFF00FFFF)
                 strokeWidth = 2f
             }
-            drawLine(
-                playheadPaint,
-                start = androidx.compose.ui.geometry.Offset(playheadX, 0f),
-                end = androidx.compose.ui.geometry.Offset(playheadX, totalHeight)
-            )
-            // Triángulo arriba
+            drawLine(playheadPaint, start = androidx.compose.ui.geometry.Offset(playheadX, 0f), end = androidx.compose.ui.geometry.Offset(playheadX, totalHeight))
             val path = androidx.compose.ui.graphics.Path().apply {
-                moveTo(playheadX, 0f)
-                lineTo(playheadX - 6f, 12f)
-                lineTo(playheadX + 6f, 12f)
-                close()
+                moveTo(playheadX, 0f); lineTo(playheadX - 6f, 12f); lineTo(playheadX + 6f, 12f); close()
             }
             drawPath(path, playheadPaint)
         }
 
+        // Selection box visual
+        if (dragState is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox) {
+            val box = dragState as com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox
+            val minX = minOf(box.startX - scrollOffsetPx, 0f)
+            val maxX = maxOf(box.startX - scrollOffsetPx, 0f) // simplified
+            val selPaint = androidx.compose.ui.graphics.Paint().apply {
+                color = Color(0xFF00FFFF).copy(alpha = 0.2f)
+                style = androidx.compose.ui.graphics.Paint.Style.Fill
+            }
+            val selStroke = androidx.compose.ui.graphics.Paint().apply {
+                color = Color(0xFF00FFFF)
+                style = androidx.compose.ui.graphics.Paint.Style.Stroke
+                strokeWidth = 1f
+                pathEffect = androidx.compose.ui.graphics.PathEffect.makeDashPathEffect(floatArrayOf(5f, 5f), 0f)
+            }
+            // Draw selection rect (simplified)
+        }
+
+        // Highlight selected notes
+        val selectedSet = selectedNotes.map { it.timeMs to it.lane }.toSet()
+
         // Draw notes
-        val notePaint = androidx.compose.ui.graphics.Paint().apply {
-            isAntiAlias = true
-        }
-        val holdPaint = androidx.compose.ui.graphics.Paint().apply {
-            isAntiAlias = true
-            style = androidx.compose.ui.graphics.Paint.Style.Fill
-        }
-        val noteStrokePaint = androidx.compose.ui.graphics.Paint().apply {
-            isAntiAlias = true
-            style = androidx.compose.ui.graphics.Paint.Style.Stroke
-            strokeWidth = 2f
-        }
+        val notePaint = androidx.compose.ui.graphics.Paint().apply { isAntiAlias = true }
+        val holdPaint = androidx.compose.ui.graphics.Paint().apply { isAntiAlias = true; style = androidx.compose.ui.graphics.Paint.Style.Fill }
+        val noteStrokePaint = androidx.compose.ui.graphics.Paint().apply { isAntiAlias = true; style = androidx.compose.ui.graphics.Paint.Style.Stroke; strokeWidth = 2f }
+        val selectionHighlightPaint = androidx.compose.ui.graphics.Paint().apply { isAntiAlias = true; color = Color(0xFF00FFFF).copy(alpha = 0.5f); style = androidx.compose.ui.graphics.Paint.Style.Stroke; strokeWidth = 3f }
 
         for (note in draft.notes) {
             val noteX = (note.timeMs / beatMs * beatWidthPx / 4) - scrollOffsetPx
@@ -1464,74 +1578,44 @@ private fun PianoRoll(
             val noteWidth = 24.dp.toPx()
             val noteHeight = (laneHeightPx * 0.7f).toInt()
 
-            // Color por lane
+            val isSelected = selectedSet.contains(note.timeMs to note.lane)
             val laneColor = when (lane) {
-                0 -> Color(0xFF12FA05) // Left - Green
-                1 -> Color(0xFFF9393F) // Down - Red
-                2 -> Color(0xFF00FFFF) // Up - Cyan
-                3 -> Color(0xFFC24B99) // Right - Purple
-                4 -> Color(0xFF12FA05).copy(alpha = 0.8f)
-                5 -> Color(0xFFF9393F).copy(alpha = 0.8f)
-                6 -> Color(0xFF00FFFF).copy(alpha = 0.8f)
-                else -> Color(0xFFC24B99).copy(alpha = 0.8f)
+                0 -> Color(0xFF12FA05); 1 -> Color(0xFFF9393F); 2 -> Color(0xFF00FFFF); 3 -> Color(0xFFC24B99)
+                4 -> Color(0xFF12FA05).copy(alpha = 0.8f); 5 -> Color(0xFFF9393F).copy(alpha = 0.8f)
+                6 -> Color(0xFF00FFFF).copy(alpha = 0.8f); else -> Color(0xFFC24B99).copy(alpha = 0.8f)
             }
 
             if (note.isHold) {
                 val holdWidth = (note.lengthMs / beatMs * beatWidthPx / 4).coerceAtLeast(noteWidth)
-                // Hold body
                 holdPaint.color = laneColor.copy(alpha = 0.4f)
-                drawRect(
-                    holdPaint,
-                    topLeft = androidx.compose.ui.geometry.Offset(noteX, noteY + (laneHeightPx - noteHeight) / 2),
-                    size = androidx.compose.ui.geometry.Size(holdWidth, noteHeight.toFloat()),
-                    style = androidx.compose.ui.graphics.Paint.Style.Fill
-                )
-                // Hold borders
-                noteStrokePaint.color = laneColor
-                drawRoundRect(
-                    noteStrokePaint,
-                    topLeft = androidx.compose.ui.geometry.Offset(noteX, noteY + (laneHeightPx - noteHeight) / 2),
-                    size = androidx.compose.ui.geometry.Size(holdWidth, noteHeight.toFloat()),
-                    cornerRadius = androidx.compose.ui.geometry.Size(4f, 4f)
-                )
-                // Note head
+                drawRect(holdPaint, topLeft = androidx.compose.ui.geometry.Offset(noteX, noteY + (laneHeightPx - noteHeight) / 2), size = androidx.compose.ui.geometry.Size(holdWidth, noteHeight.toFloat()))
+                noteStrokePaint.color = if (isSelected) Color(0xFF00FFFF) else laneColor
+                drawRoundRect(noteStrokePaint, topLeft = androidx.compose.ui.geometry.Offset(noteX, noteY + (laneHeightPx - noteHeight) / 2), size = androidx.compose.ui.geometry.Size(holdWidth, noteHeight.toFloat()), cornerRadius = androidx.compose.ui.geometry.Size(4f, 4f))
                 notePaint.color = laneColor
-                drawRoundRect(
-                    notePaint,
-                    topLeft = androidx.compose.ui.geometry.Offset(noteX, noteY + (laneHeightPx - noteHeight) / 2),
-                    size = androidx.compose.ui.geometry.Size(noteWidth, noteHeight.toFloat()),
-                    cornerRadius = androidx.compose.ui.geometry.Size(4f, 4f)
-                )
+                drawRoundRect(notePaint, topLeft = androidx.compose.ui.geometry.Offset(noteX, noteY + (laneHeightPx - noteHeight) / 2), size = androidx.compose.ui.geometry.Size(noteWidth, noteHeight.toFloat()), cornerRadius = androidx.compose.ui.geometry.Size(4f, 4f))
             } else {
-                // Tap note
-                notePaint.color = laneColor
-                drawRoundRect(
-                    notePaint,
-                    topLeft = androidx.compose.ui.geometry.Offset(noteX, noteY + (laneHeightPx - noteHeight) / 2),
-                    size = androidx.compose.ui.geometry.Size(noteWidth, noteHeight.toFloat()),
-                    cornerRadius = androidx.compose.ui.geometry.Size(4f, 4f)
-                )
-                // Arrow indicator
-                val arrowPaint = androidx.compose.ui.graphics.Paint().apply {
-                    color = Color.White
-                    textSize = 12f
-                    isAntiAlias = true
+                notePaint.color = if (isSelected) Color(0xFF00FFFF) else laneColor
+                drawRoundRect(notePaint, topLeft = androidx.compose.ui.geometry.Offset(noteX, noteY + (laneHeightPx - noteHeight) / 2), size = androidx.compose.ui.geometry.Size(noteWidth, noteHeight.toFloat()), cornerRadius = androidx.compose.ui.geometry.Size(4f, 4f))
+                // Arrow
+                val arrow = when (lane % 4) { 0 -> "←"; 1 -> "↓"; 2 -> "↑"; else -> "→" }
+                drawText(text = androidx.compose.ui.text.AnnotatedString(arrow), topLeft = androidx.compose.ui.geometry.Offset(noteX + 4f, noteY + (laneHeightPx - noteHeight) / 2 + noteHeight / 2f + 4f), style = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = if (isSelected) Color(0xFF00FFFF) else Color.White, fontFamily = FontFamily.Monospace))
+            }
+
+            // Selection highlight
+            if (isSelected) {
+                val highlightRect = if (note.isHold) {
+                    val holdWidth = (note.lengthMs / beatMs * beatWidthPx / 4).coerceAtLeast(noteWidth)
+                    androidx.compose.ui.geometry.Offset(noteX - 2f, noteY + (laneHeightPx - noteHeight) / 2 - 2f)
+                } else {
+                    androidx.compose.ui.geometry.Offset(noteX - 2f, noteY + (laneHeightPx - noteHeight) / 2 - 2f)
                 }
-                val arrow = when (lane % 4) {
-                    0 -> "←"
-                    1 -> "↓"
-                    2 -> "↑"
-                    else -> "→"
+                val highlightSize = if (note.isHold) {
+                    val holdWidth = (note.lengthMs / beatMs * beatWidthPx / 4).coerceAtLeast(noteWidth)
+                    androidx.compose.ui.geometry.Size(holdWidth + 4f, noteHeight.toFloat() + 4f)
+                } else {
+                    androidx.compose.ui.geometry.Size(noteWidth + 4f, noteHeight.toFloat() + 4f)
                 }
-                drawText(
-                    text = androidx.compose.ui.text.AnnotatedString(arrow),
-                    topLeft = androidx.compose.ui.geometry.Offset(noteX + 4f, noteY + (laneHeightPx - noteHeight) / 2 + noteHeight / 2f + 4f),
-                    style = androidx.compose.ui.text.TextStyle(
-                        fontSize = 12.sp,
-                        color = Color.White,
-                        fontFamily = FontFamily.Monospace
-                    )
-                )
+                drawRoundRect(selectionHighlightPaint, topLeft = highlightRect, size = highlightSize, cornerRadius = androidx.compose.ui.geometry.Size(6f, 6f))
             }
         }
     }

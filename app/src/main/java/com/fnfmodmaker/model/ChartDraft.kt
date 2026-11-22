@@ -155,6 +155,13 @@ data class ChartDraft(
     }
 }
 
+/** Nota seleccionada en el editor (para multi-selección). */
+data class SelectedNote(
+    val timeMs: Long,
+    val lane: Int,
+    val noteIndex: Int // índice en la lista de notas del draft
+)
+
 /** Estado del editor de chart para una canción. */
 data class ChartEditorState(
     val songFolder: String = "",
@@ -164,8 +171,23 @@ data class ChartEditorState(
     val isPlaying: Boolean = false,
     val currentTimeMs: Long = 0L,
     val selectionStartMs: Long? = null,
-    val selectionEndMs: Long? = null
+    val selectionEndMs: Long? = null,
+    val selectedNotes: List<SelectedNote> = emptyList(),
+    val dragState: DragState? = null,
+    // Historial para undo/redo
+    val history: List<ChartDraft> = emptyList(),
+    val historyIndex: Int = -1
 ) {
-    val visibleTimeRangeMs: Long get() = (4000 / zoom).toLong() // 4 segundos base
-    val startTimeMs: Long get() = (scrollX * 100).toLong() // aprox
+    val visibleTimeRangeMs: Long get() = (4000 / zoom).toLong()
+    val startTimeMs: Long get() = (scrollX * 100).toLong()
+    val canUndo: Boolean get() = historyIndex > 0
+    val canRedo: Boolean get() = historyIndex < history.size - 1
+}
+
+/** Estado de drag activo. */
+sealed interface DragState {
+    data class Scroll(val startX: Float, val startScroll: Float) : DragState
+    data class HoldResize(val noteIndex: Int, val startTimeMs: Long, val lane: Int, val startLengthMs: Long, val dragStartX: Float) : DragState
+    data class SelectionBox(val startX: Float, val startY: Float) : DragState
+    data class MultiDrag(val selectedNotes: List<SelectedNote>, val dragStartX: Float, val dragStartY: Float) : DragState
 }

@@ -46,19 +46,9 @@ import com.fnfmodmaker.model.StageDraft
 import com.fnfmodmaker.model.StageSprite
 import com.fnfmodmaker.model.TargetEngine
 
-private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Chart", "Listo")
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
-    when (vm.tool) {
-        Tool.HOME -> HomeScreen(vm)
-        Tool.MOD -> WizardScreen(vm)
-        Tool.CHARACTER -> CharacterToolScreen(vm)
-        Tool.AUDIO -> AudioToolScreen(vm)
-        Tool.IMPORT -> ImportScreen(vm)
-        Tool.STAGE -> StageToolScreen(vm)
-    }
-}
+private fun ToolTopBar(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

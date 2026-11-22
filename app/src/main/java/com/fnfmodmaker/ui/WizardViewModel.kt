@@ -34,11 +34,11 @@ enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT, STAGE }
 class WizardViewModel(application: Application) : AndroidViewModel(application) {
 
     var tool by mutableStateOf(Tool.HOME)
-        private set
+        internal set
 
     /** Índice de la canción que se está editando en el asistente. */
     var activeSongIndex by mutableStateOf(0)
-        private set
+        internal set
 
     /** ¿Qué falta para poder exportar el mod completo? */
     val missingForExport: List<String>
@@ -68,19 +68,19 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Índice de la canción que se está charteando. */
     var activeChartSongIndex by mutableStateOf(0)
-        private set
+        internal set
 
     /** Dificultad que se está charteando. */
     var activeChartDifficulty by mutableStateOf("normal")
-        private set
+        internal set
 
     /** Índice de la variación que se está editando. */
     var activeVariationIndex by mutableStateOf<Int?>(null)
-        private set
+        internal set
 
     /** Estado del editor de chart. */
     var chartEditorState by mutableStateOf(ChartEditorState())
-        private set
+        internal set
 
     /** Chart actual que se está editando (crea uno nuevo basado en notas de práctica si no existe). */
     val activeChartDraft: ChartDraft

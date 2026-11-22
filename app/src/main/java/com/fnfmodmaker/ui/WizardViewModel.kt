@@ -11,6 +11,7 @@ import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.AudioSlot
 import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.ChartEditorState
+import com.fnfmodmaker.model.ChartNote
 import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
@@ -145,6 +146,104 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Guarda el chart editado en el config. */
     fun saveChartDraft(chart: ChartDraft) {
         config = config.withChart(chart.songFolder, chart.difficulty, chart)
+    }
+
+    // ---------------- Edición de notas ----------------
+
+    /** Agrega o actualiza una nota en el chart activo. */
+    fun addChartNote(note: com.fnfmodmaker.model.ChartNote) {
+        val draft = activeChartDraft
+        val updatedNotes = draft.notes.toMutableList()
+        // Buscar si ya hay nota en misma posición (mismo timeMs y lane)
+        val existingIndex = updatedNotes.indexOfFirst { it.timeMs == note.timeMs && it.lane == note.lane }
+        if (existingIndex >= 0) {
+            updatedNotes[existingIndex] = note
+        } else {
+            updatedNotes.add(note)
+        }
+        val updatedDraft = draft.copy(notes = updatedNotes.sortedBy { it.timeMs })
+        saveChartDraft(updatedDraft)
+    }
+
+    /** Elimina una nota del chart activo. */
+    fun removeChartNote(timeMs: Long, lane: Int) {
+        val draft = activeChartDraft
+        val updatedNotes = draft.notes.filterNot { it.timeMs == timeMs && it.lane == lane }
+        val updatedDraft = draft.copy(notes = updatedNotes)
+        saveChartDraft(updatedDraft)
+    }
+
+    /** Genera notas de práctica automáticas para el chart activo. */
+    fun generatePracticeNotes() {
+        val song = config.songs.getOrElse(activeChartSongIndex) { return }
+        val difficulty = activeChartDifficulty
+        val bpm = song.bpmValue
+        if (bpm <= 0) return
+        val instrumental = song.instrumental
+        val durationMs = instrumental?.durationMs ?: 120000L // 2 min default
+        val beatMs = 60000.0 / bpm
+        val beats = (durationMs / beatMs).toInt().coerceIn(8..2000)
+        val notes = mutableListOf<com.fnfmodmaker.model.ChartNote>()
+        for (beat in 0 until beats) {
+            val isPlayerSide = beat % 2 == 0
+            val lane = beat % 4
+            val data = if (isPlayerSide) lane else lane + 4
+            notes.add(com.fnfmodmaker.model.ChartNote(
+                timeMs = (beat * beatMs).roundToLong(),
+                lane = data,
+                lengthMs = 0L,
+                isSustain = false
+            ))
+        }
+        val draft = com.fnfmodmaker.model.ChartDraft(
+            songFolder = song.songFolder,
+            difficulty = difficulty,
+            notes = notes,
+            scrollSpeed = song.speedValue,
+            bpm = bpm,
+            offsetMs = song.offsetValue,
+            needsVoices = song.hasVocals,
+            player1 = song.player,
+            player2 = song.opponent,
+            gfVersion = song.girlfriend,
+            stage = song.stagePsych
+        )
+        saveChartDraft(draft)
+    }
+
+    /** Limpia el chart activo. */
+    fun clearChart() {
+        val song = config.songs.getOrElse(activeChartSongIndex) { return }
+        val difficulty = activeChartDifficulty
+        val draft = com.fnfmodmaker.model.ChartDraft(
+            songFolder = song.songFolder,
+            difficulty = difficulty,
+            notes = emptyList(),
+            scrollSpeed = song.speedValue,
+            bpm = song.bpmValue,
+            offsetMs = song.offsetValue,
+            needsVoices = song.hasVocals,
+            player1 = song.player,
+            player2 = song.opponent,
+            gfVersion = song.girlfriend,
+            stage = song.stagePsych
+        )
+        saveChartDraft(draft)
+    }
+
+    /** Actualiza el tiempo de reproducción actual. */
+    fun updatePlaybackTime(timeMs: Long) {
+        chartEditorState = chartEditorState.copy(currentTimeMs = timeMs)
+    }
+
+    /** Alterna reproducción. */
+    fun togglePlayback() {
+        chartEditorState = chartEditorState.copy(isPlaying = !chartEditorState.isPlaying)
+    }
+
+    /** Actualiza zoom y scroll del editor. */
+    fun updateChartView(zoom: Float, scrollX: Float) {
+        chartEditorState = chartEditorState.copy(zoom = zoom, scrollX = scrollX)
     }
 
     // ---------------- Herramientas sueltas ----------------

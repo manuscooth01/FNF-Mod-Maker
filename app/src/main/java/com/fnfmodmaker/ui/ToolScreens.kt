@@ -474,6 +474,9 @@ internal fun StageToolScreen(vm: WizardViewModel) {
             ) {
                 sprites.forEachIndexed { index, sprite ->
                     val isSelected = selectedSpriteIndex == index
+                    val playState = sprite.animated ?: false
+                    val currentFrame = if (sprite.animated) sprite.getCurrentFrame(System.currentTimeMillis() % sprite.animationDurationMs) else 0
+                    
                     Surface(
                         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(12.dp),
@@ -483,61 +486,155 @@ internal fun StageToolScreen(vm: WizardViewModel) {
                             .clickable { selectedSpriteIndex = if (isSelected) null else index }
                             .padding(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            // Miniatura del sprite
-                            sprite.image?.let { img ->
-                                Box(
-                                    modifier = Modifier
-                                        .size(60.dp)
-                                        .background(Color(0xFF16161F), RoundedCornerShape(8.dp))
-                                ) {
-                                    // Placeholder para imagen
-                                    Text(
-                                        sprite.displayName.take(2).uppercase(),
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.align(Alignment.Center)
-                                    )
-                                }
-                            }
-                            // Info
-                            Column(Modifier.weight(1f)) {
-                                Text(sprite.displayName, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "ID: ${sprite.spriteId}  ·  Layer: ${sprite.layer.label}  ·  Pos: (${"%.0f".format(sprite.x)}, ${"%.0f".format(sprite.y)})  ·  Scale: ${"%.2f".format(sprite.scale)}  ·  Rot: ${"%.0f".format(sprite.rotation)}°",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            // Controles rápidos
-                            Column(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                // Layer selector
-                                OutlinedButton(onClick = {
-                                    val layers = com.fnfmodmaker.model.StageSprite.Layer.entries.toList()
-                                    val currentIdx = layers.indexOf(sprite.layer)
-                                    val nextLayer = layers[(currentIdx + 1) % layers.size]
-                                    val updated = sprites.toMutableList()
-                                    updated[index] = sprite.copy(layer = nextLayer)
-                                    vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
-                                }, enabled = !vm.busy) {
-                                    Text(sprite.layer.label, style = MaterialTheme.typography.labelSmall)
+                                // Miniatura del sprite
+                                sprite.image?.let { img ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(60.dp)
+                                            .background(Color(0xFF16161F), RoundedCornerShape(8.dp))
+                                    ) {
+                                        // Mostrar frame actual si está animado
+                                        if (sprite.animated) {
+                                            Text(
+                                                "Frame ${currentFrame + 1}/${sprite.animationFrames}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.align(Alignment.Center)
+                                            )
+                                        } else {
+                                            Text(
+                                                sprite.displayName.take(2).uppercase(),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                modifier = Modifier.align(Alignment.Center)
+                                            )
+                                        }
+                                    }
                                 }
-                                // Delete
-                                OutlinedButton(onClick = {
-                                    val updated = sprites.toMutableList()
-                                    updated.removeAt(index)
-                                    if (selectedSpriteIndex == index) selectedSpriteIndex = null
-                                    else if (selectedSpriteIndex != null && selectedSpriteIndex! > index) selectedSpriteIndex = selectedSpriteIndex!! - 1
-                                    vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
-                                }, enabled = !vm.busy, colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                                    Text("🗑", style = MaterialTheme.typography.labelSmall)
+                                // Info
+                                Column(Modifier.weight(1f)) {
+                                    Text(sprite.displayName, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "ID: ${sprite.spriteId}  ·  Layer: ${sprite.layer.label}  ·  Pos: (${"%.0f".format(sprite.x)}, ${"%.0f".format(sprite.y)})  ·  Scale: ${"%.2f".format(sprite.scale)}  ·  Rot: ${"%.0f".format(sprite.rotation)}°",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    if (sprite.animated) {
+                                        Text(
+                                            "Animado: ${sprite.animationFrames} frames @ ${sprite.animationFps}fps  ·  ${if (sprite.animationLoop) "Loop" else "Once"}  ·  Dur: ${sprite.animationDurationMs}ms  ·  Frame: ${currentFrame + 1}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                                // Controles
+                                Column(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // Animation toggle
+                                    OutlinedButton(onClick = {
+                                        val updated = sprites.toMutableList()
+                                        updated[index] = sprite.copy(animated = !sprite.animated)
+                                        vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                    }, enabled = !vm.busy) {
+                                        Text(if (sprite.animated) "⏸ Anim" else "▶ Anim", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    // Layer selector
+                                    OutlinedButton(onClick = {
+                                        val layers = com.fnfmodmaker.model.StageSprite.Layer.entries.toList()
+                                        val currentIdx = layers.indexOf(sprite.layer)
+                                        val nextLayer = layers[(currentIdx + 1) % layers.size]
+                                        val updated = sprites.toMutableList()
+                                        updated[index] = sprite.copy(layer = nextLayer)
+                                        vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                    }, enabled = !vm.busy) {
+                                        Text(sprite.layer.label, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    // Delete
+                                    OutlinedButton(onClick = {
+                                        val updated = sprites.toMutableList()
+                                        updated.removeAt(index)
+                                        if (selectedSpriteIndex == index) selectedSpriteIndex = null
+                                        else if (selectedSpriteIndex != null && selectedSpriteIndex! > index) selectedSpriteIndex = selectedSpriteIndex!! - 1
+                                        vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                    }, enabled = !vm.busy, colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                                        Text("🗑", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                        // Animation controls (expanded when selected and animated)
+                        if (isSelected && sprite.animated) {
+                            Spacer(Modifier.height(8.dp))
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp)
+                            ) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text("Controles de animación", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Field(
+                                            label = "Frames",
+                                            value = sprite.animationFrames.toString(),
+                                            onChange = { 
+                                                val v = it.toIntOrNull()?.coerceIn(1, 128) ?: 1
+                                                val updated = sprites.toMutableList()
+                                                updated[index] = sprite.copy(animationFrames = v)
+                                                vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                            },
+                                            keyboardType = KeyboardType.Number,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Field(
+                                            label = "FPS",
+                                            value = sprite.animationFps.toString(),
+                                            onChange = { 
+                                                val v = it.toIntOrNull()?.coerceIn(1, 60) ?: 24
+                                                val updated = sprites.toMutableList()
+                                                updated[index] = sprite.copy(animationFps = v)
+                                                vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                            },
+                                            keyboardType = KeyboardType.Number,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Loop:", style = MaterialTheme.typography.bodySmall)
+                                            Spacer(Modifier.width(8.dp))
+                                            Switch(checked = sprite.animationLoop, onCheckedChange = { loop ->
+                                                val updated = sprites.toMutableList()
+                                                updated[index] = sprite.copy(animationLoop = loop)
+                                                vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                            })
+                                        }
+                                        Spacer(Modifier.width(16.dp))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Frame actual: ${currentFrame + 1}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.primary)
+                                        }
+                                        Spacer(Modifier.weight(1f))
+                                        OutlinedButton(onClick = {
+                                            // Reset animation to frame 0
+                                            val updated = sprites.toMutableList()
+                                            vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                        }) { Text("↺ Reset") }
+                                    }
                                 }
                             }
                         }
@@ -639,6 +736,9 @@ internal fun StageToolScreen(vm: WizardViewModel) {
         onSpriteScale: (Int, Float) -> Unit,
         onSpriteRotate: (Int, Float) -> Unit
     ) {
+        // Animación: tiempo actual para frame
+        val currentTimeMs = System.currentTimeMillis()
+        
         Canvas(modifier = Modifier.fillMaxSize()) {
             val width = size.width
             val height = size.height
@@ -687,12 +787,57 @@ internal fun StageToolScreen(vm: WizardViewModel) {
                     val halfW = 50f * s
                     val halfH = 50f * s
 
+                    // Frame actual si está animado
+                    val currentFrame = if (sprite.animated) sprite.getCurrentFrame(currentTimeMs) else 0
+
                     // Transformación: translate + rotate + scale
                     androidx.compose.runtime.save()
                     translate(sx, sy)
                     rotate(rot)
+                    
+                    // Dibujar rect principal
                     drawRect(paint, topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH), size = androidx.compose.ui.geometry.Size(halfW * 2, halfH * 2))
                     drawRect(strokePaint, topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH), size = androidx.compose.ui.geometry.Size(halfW * 2, halfH * 2))
+
+                    // Indicador de frame si animado
+                    if (sprite.animated) {
+                        val framePaint = androidx.compose.ui.graphics.Paint().apply {
+                            color = Color(0xFF00FFFF)
+                            style = androidx.compose.ui.graphics.Paint.Style.Fill
+                            isAntiAlias = true
+                        }
+                        val frameStroke = androidx.compose.ui.graphics.Paint().apply {
+                            color = Color(0xFF00FFFF)
+                            style = androidx.compose.ui.graphics.Paint.Style.Stroke
+                            strokeWidth = 2f
+                            isAntiAlias = true
+                        }
+                        // Mini barra de progreso de frame
+                        val barWidth = halfW * 2
+                        val barHeight = 4f
+                        val progress = if (sprite.animationFrames > 1) (currentFrame + 1).toFloat() / sprite.animationFrames else 1f
+                        drawRect(
+                            frameStroke,
+                            topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH - barHeight - 4f),
+                            size = androidx.compose.ui.geometry.Size(barWidth, barHeight)
+                        )
+                        drawRect(
+                            framePaint,
+                            topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH - barHeight - 4f),
+                            size = androidx.compose.ui.geometry.Size(barWidth * (currentFrame.toFloat() / (sprite.animationFrames - 1).coerceAtLeast(1)), barHeight)
+                        )
+                        // Número de frame
+                        val frameTextPaint = androidx.compose.ui.graphics.Paint().apply {
+                            color = Color(0xFF00FFFF)
+                            textSize = 10f
+                            isAntiAlias = true
+                        }
+                        drawText(
+                            text = androidx.compose.ui.text.AnnotatedString("F${currentFrame + 1}/${sprite.animationFrames}"),
+                            topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH - barHeight - 18f),
+                            style = androidx.compose.ui.text.TextStyle(fontSize = 10.sp, color = Color(0xFF00FFFF))
+                        )
+                    }
 
                     // Label
                     val textPaint = androidx.compose.ui.graphics.Paint().apply {
@@ -702,7 +847,7 @@ internal fun StageToolScreen(vm: WizardViewModel) {
                     }
                     drawText(
                         text = androidx.compose.ui.text.AnnotatedString(sprite.spriteId),
-                        topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH - 16f),
+                        topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH - (if (sprite.animated) 36f else 16f)),
                         style = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White)
                     )
                     androidx.compose.runtime.restore()

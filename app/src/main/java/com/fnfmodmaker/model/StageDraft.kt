@@ -52,6 +52,7 @@ data class StageSprite(
     val animated: Boolean = false,
     val animationFrames: Int = 1,
     val animationFps: Int = 24,
+    val animationLoop: Boolean = true,
     val layer: Layer = Layer.FOREGROUND
 ) {
     enum class Layer(val label: String, val zIndex: Int) {
@@ -60,6 +61,26 @@ data class StageSprite(
         FOREGROUND("Frente", 2),
         HUD("HUD", 3)
     }
+    
+    /** Duración total de la animación en ms. */
+    val animationDurationMs: Long
+        get() = if (animationFrames > 0 && animationFps > 0) (animationFrames * 1000L / animationFps) else 0L
+    
+    /** Frame actual basado en tiempo transcurrido. */
+    fun getCurrentFrame(elapsedMs: Long): Int {
+        if (!animated || animationFrames <= 1) return 0
+        val frameMs = 1000L / animationFps
+        val frame = if (animationLoop) {
+            (elapsedMs / frameMs) % animationFrames
+        } else {
+            (elapsedMs / frameMs).coerceAtMost(animationFrames - 1)
+        }
+        return frame.toInt()
+    }
+}
+
+enum class AnimationPlayState {
+    STOPPED, PLAYING, PAUSED
 }
 
 /** Posición y comportamiento de cámara. */

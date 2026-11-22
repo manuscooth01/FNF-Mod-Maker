@@ -1,6 +1,7 @@
 package com.fnfmodmaker.mod
 
 import android.content.Context
+import android.net.Uri
 import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.ChartNote

@@ -48,9 +48,11 @@ import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.PickedAudio
+import com.fnfmodmaker.model.PickedImage
+import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.TargetEngine
 
-private val STEP_LABELS = listOf("Mod", "Canción", "Personaje", "Audio", "Listo")
+private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Listo")
 
 @Composable
 fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
@@ -67,14 +69,19 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
 private fun WizardScreen(vm: WizardViewModel) {
     val config = vm.config
 
+    val pickActiveSongAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            // Determinar qué slot según el paso actual (se maneja en StepAudio)
+        }
+    }
     val pickInstrumental = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.pickAudio(uri, AudioSlot.INSTRUMENTAL)
+        if (uri != null) vm.pickActiveSongAudio(uri, AudioSlot.INSTRUMENTAL)
     }
     val pickPlayerVocals = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.pickAudio(uri, AudioSlot.VOICES_PLAYER)
+        if (uri != null) vm.pickActiveSongAudio(uri, AudioSlot.VOICES_PLAYER)
     }
     val pickOpponentVocals = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.pickAudio(uri, AudioSlot.VOICES_OPPONENT)
+        if (uri != null) vm.pickActiveSongAudio(uri, AudioSlot.VOICES_OPPONENT)
     }
     val pickIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickIcon(uri)
@@ -152,7 +159,12 @@ private fun WizardScreen(vm: WizardViewModel) {
                 Spacer(Modifier.height(8.dp))
                 when (vm.step) {
                     0 -> StepMod(vm, config)
-                    1 -> StepSong(vm, config)
+                    1 -> StepSongs(
+                        vm = vm,
+                        onAddSong = { vm.addSong() },
+                        onRemoveSong = { vm.removeSong(it) },
+                        onSelectSong = { vm.selectSong(it) }
+                    )
                     2 -> StepCharacter(
                         vm = vm,
                         config = config,
@@ -161,7 +173,7 @@ private fun WizardScreen(vm: WizardViewModel) {
                     )
                     3 -> StepAudio(
                         vm = vm,
-                        config = config,
+                        activeSong = vm.activeSong,
                         onPickInstrumental = { pickInstrumental.launch(arrayOf("*/*")) },
                         onPickPlayerVocals = { pickPlayerVocals.launch(arrayOf("*/*")) },
                         onPickOpponentVocals = { pickOpponentVocals.launch(arrayOf("*/*")) },
@@ -401,58 +413,146 @@ private fun StepMod(vm: WizardViewModel, config: ModConfig) {
         }
     }
 
+    Spacer(Modifier.height(12.dp))
+    Field(
+        label = "Color del mod",
+        value = config.weekColor,
+        onChange = vm::setWeekColor,
+        hint = "Formato #RRGGBB. Se usa para el fondo de la semana y el menú."
+    )
+
+    Spacer(Modifier.height(16.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Mostrar en el modo historia", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Si lo desactivas, la canción aparece solo en Freeplay (lo más seguro).",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = config.showInStoryMode, onCheckedChange = vm::setShowInStoryMode)
+    }
     Spacer(Modifier.height(14.dp))
     HelpCard(
-        "V-Slice es el FNF oficial de Android (versión 0.8.x). Psych Engine es el motor de mods " +
+        "Aquí definís la identidad del mod. Las canciones se agregan en el siguiente paso. " +
+            "V-Slice es el FNF oficial de Android (versión 0.8.x). Psych Engine es el motor de mods " +
             "más usado, tanto en Android como en PC. Si tienes dudas, elige \"Ambos\": la misma " +
             "carpeta funciona en los dos juegos."
     )
 }
 
 // ---------------------------------------------------------------------------
-// Paso 2: canción
+// Paso 2: lista de canciones y edición de la canción activa
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun StepSong(vm: WizardViewModel, config: ModConfig) {
+private fun StepSongs(
+    vm: WizardViewModel,
+    onAddSong: () -> Unit,
+    onRemoveSong: (Int) -> Unit,
+    onSelectSong: (Int) -> Unit
+) {
+    val config = vm.config
+    val activeIndex = vm.activeSongIndex
+    val songs = config.songs
+
     StepHeader(
-        "2. La canción",
-        "Estos datos definen cómo se ve y se juega tu canción."
+        "2. Canciones (${songs.size})",
+        "Agregá una o varias canciones. Cada una tendrá su propio audio, BPM, dificultades y chart. " +
+            "Tocá una para editarla."
     )
+
+    // Lista de canciones
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        songs.forEachIndexed { index, song ->
+            val isActive = index == activeIndex
+            Surface(
+                color = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(
+                    width = if (isActive) 2.dp else 1.dp,
+                    color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectSong(index) }
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            song.songName.ifBlank { "Canción ${index + 1}" },
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "BPM: ${song.bpm.ifEmpty { "—" }} · Dificultades: ${song.orderedDifficulties.joinToString(", ")}" +
+                                " · ${song.instrumental?.let { if (it.isOgg) "OGG" else "convertir a OGG" } ?: "sin instrumental"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (songs.size > 1) {
+                        OutlinedButton(
+                            onClick = { onRemoveSong(index) },
+                            enabled = !vm.busy,
+                            modifier = Modifier.padding(start = 8.dp)
+                        ) {
+                            Text("Eliminar")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    // Botón agregar canción
+    OutlinedButton(onClick = onAddSong, enabled = !vm.busy) {
+        Text("+ Agregar otra canción")
+    }
+
+    Spacer(Modifier.height(16.dp))
+    // Formulario de la canción activa
+    val activeSong = songs.getOrElse(activeIndex) { SongConfig() }
+    SectionTitle("Editar: \"${activeSong.songName.ifBlank { "Canción ${activeIndex + 1}" }}\"")
 
     Field(
         label = "Nombre de la canción",
-        value = config.songName,
-        onChange = vm::setSongName,
+        value = activeSong.songName,
+        onChange = vm::setActiveSongName,
         hint = "El nombre que verás en Freeplay. Evita acentos si quieres máxima compatibilidad."
     )
     Spacer(Modifier.height(8.dp))
-    InfoRow("Carpeta de la canción", config.songFolder)
+    InfoRow("Carpeta de la canción", activeSong.songFolder)
     Spacer(Modifier.height(12.dp))
     Field(
         label = "Artista",
-        value = config.artist,
-        onChange = vm::setArtist
+        value = activeSong.artist,
+        onChange = vm::setActiveSongArtist
     )
 
     Spacer(Modifier.height(12.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Field(
             label = "BPM",
-            value = config.bpm,
-            onChange = vm::setBpm,
+            value = activeSong.bpm,
+            onChange = vm::setActiveSongBpm,
             keyboardType = KeyboardType.Number,
             modifier = Modifier.weight(1f)
         )
         Field(
             label = "Velocidad",
-            value = config.speed,
-            onChange = vm::setSpeed,
+            value = activeSong.speed,
+            onChange = vm::setActiveSongSpeed,
             keyboardType = KeyboardType.Decimal,
             modifier = Modifier.weight(1f)
         )
     }
-    if (config.bpmValue !in 1..400) {
+    if (activeSong.bpmValue !in 1..400) {
         Spacer(Modifier.height(6.dp))
         Text(
             "El BPM debe estar entre 1 y 400.",
@@ -462,23 +562,23 @@ private fun StepSong(vm: WizardViewModel, config: ModConfig) {
     }
 
     SectionTitle("Personajes")
-    Field(label = "Jugador", value = config.player, onChange = vm::setPlayer, hint = "Por defecto: bf")
+    Field(label = "Jugador", value = activeSong.player, onChange = vm::setActiveSongPlayer, hint = "Por defecto: bf")
     Spacer(Modifier.height(10.dp))
-    Field(label = "Novia / GF", value = config.girlfriend, onChange = vm::setGirlfriend, hint = "Por defecto: gf")
+    Field(label = "Novia / GF", value = activeSong.girlfriend, onChange = vm::setActiveSongGirlfriend, hint = "Por defecto: gf")
     Spacer(Modifier.height(10.dp))
-    Field(label = "Oponente", value = config.opponent, onChange = vm::setOpponent, hint = "Por defecto: dad")
+    Field(label = "Oponente", value = activeSong.opponent, onChange = vm::setActiveSongOpponent, hint = "Por defecto: dad")
 
     SectionTitle("Dificultades")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ALL_DIFFICULTIES.forEach { difficulty ->
             FilterChip(
-                selected = difficulty in config.difficulties,
-                onClick = { vm.toggleDifficulty(difficulty) },
+                selected = difficulty in activeSong.difficulties,
+                onClick = { vm.toggleActiveSongDifficulty(difficulty) },
                 label = { Text(difficulty.replaceFirstChar { it.uppercase() }) }
             )
         }
     }
-    if (config.difficulties.isEmpty()) {
+    if (activeSong.difficulties.isEmpty()) {
         Spacer(Modifier.height(6.dp))
         Text(
             "Elige al menos una dificultad.",
@@ -507,7 +607,7 @@ private fun StepSong(vm: WizardViewModel, config: ModConfig) {
             )
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked = config.practiceNotes, onCheckedChange = vm::setPracticeNotes)
+        Switch(checked = activeSong.practiceNotes, onCheckedChange = vm::setActiveSongPracticeNotes)
     }
 
     HorizontalDivider(modifier = Modifier.padding(vertical = 18.dp))
@@ -515,50 +615,38 @@ private fun StepSong(vm: WizardViewModel, config: ModConfig) {
     SectionTitle("Avanzado (opcional)")
     Field(
         label = "Escenario en V-Slice",
-        value = config.stageVSlice,
-        onChange = vm::setStageVSlice,
+        value = activeSong.stageVSlice,
+        onChange = vm::setActiveSongStageVSlice,
         hint = "mainStage, phillyStreets, school, mallEvil…"
     )
     Spacer(Modifier.height(10.dp))
     Field(
         label = "Escenario en Psych",
-        value = config.stagePsych,
-        onChange = vm::setStagePsych,
+        value = activeSong.stagePsych,
+        onChange = vm::setActiveSongStagePsych,
         hint = "stage, stage-psych, etc. (stage es el del juego base)"
     )
     Spacer(Modifier.height(10.dp))
     Field(
-        label = "Color del mod",
-        value = config.weekColor,
-        onChange = vm::setWeekColor,
+        label = "Color de esta canción",
+        value = activeSong.weekColor,
+        onChange = vm::setActiveSongWeekColor,
         hint = "Formato #RRGGBB. Se usa para el fondo de la semana y el menú."
     )
     Spacer(Modifier.height(10.dp))
     Field(
         label = "Offset en milisegundos",
-        value = config.offsetMs,
-        onChange = vm::setOffsetMs,
+        value = activeSong.offsetMs,
+        onChange = vm::setActiveSongOffsetMs,
         keyboardType = KeyboardType.Number,
         hint = "0 por defecto. Súbelo si tus notas van adelantadas respecto a la música."
     )
 
-    Spacer(Modifier.height(16.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("Mostrar en el modo historia", fontWeight = FontWeight.SemiBold)
-            Text(
-                "Si lo desactivas, la canción aparece solo en Freeplay (lo más seguro).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Switch(checked = config.showInStoryMode, onCheckedChange = vm::setShowInStoryMode)
-    }
     Spacer(Modifier.height(14.dp))
     HelpCard(
         "Los nombres de personajes y escenarios deben existir en el juego; si no, la canción " +
-            "puede fallar al cargar. Con bf / gf / dad y mainStage / stage vas sobre seguro."
+            "puede fallar al cargar. Con bf / gf / dad y mainStage / stage vas sobre seguro. " +
+            "Cada canción puede tener su propio BPM, color y offset."
     )
 }
 
@@ -803,26 +891,26 @@ internal fun CharacterForm(
 }
 
 // ---------------------------------------------------------------------------
-// Paso 4: audio e imagen
+// Paso 4: audio e imagen de la canción activa
 // ---------------------------------------------------------------------------
 
 @Composable
 private fun StepAudio(
     vm: WizardViewModel,
-    config: ModConfig,
+    activeSong: SongConfig,
     onPickInstrumental: () -> Unit,
     onPickPlayerVocals: () -> Unit,
     onPickOpponentVocals: () -> Unit,
     onPickIcon: () -> Unit
 ) {
     StepHeader(
-        "4. Audio e imagen",
+        "4. Audio e imagen de \"${activeSong.songName.ifBlank { "canción ${vm.activeSongIndex + 1}" }}\"",
         "El juego solo reproduce OGG. Si eliges MP3 o WAV, la app lo convierte sola."
     )
 
     AudioRow(
         title = "Instrumental (obligatoria)",
-        audio = config.instrumental,
+        audio = activeSong.instrumental,
         emptyText = "Sin instrumental todavía",
         onPick = onPickInstrumental,
         buttonText = "Elegir instrumental"
@@ -830,7 +918,7 @@ private fun StepAudio(
     Spacer(Modifier.height(10.dp))
     AudioRow(
         title = "Voces del jugador (opcional)",
-        audio = config.vocalsPlayer,
+        audio = activeSong.vocalsPlayer,
         emptyText = "Sin voces del jugador",
         onPick = onPickPlayerVocals,
         buttonText = "Elegir"
@@ -838,7 +926,7 @@ private fun StepAudio(
     Spacer(Modifier.height(10.dp))
     AudioRow(
         title = "Voces del oponente (opcional)",
-        audio = config.vocalsOpponent,
+        audio = activeSong.vocalsOpponent,
         emptyText = "Sin voces del oponente",
         onPick = onPickOpponentVocals,
         buttonText = "Elegir"
@@ -849,7 +937,7 @@ private fun StepAudio(
         Column(Modifier.weight(1f)) {
             Text("Icono del mod (opcional)", fontWeight = FontWeight.SemiBold)
             Text(
-                config.icon?.displayName ?: "Se usa el icono por defecto del juego",
+                vm.config.icon?.displayName ?: "Se usa el icono por defecto del juego",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -870,9 +958,9 @@ private fun StepAudio(
             "• Si ya tienes .ogg, se copia tal cual (más rápido y sin pérdida)."
     )
 
-    val instrumental = config.instrumental
+    val instrumental = activeSong.instrumental
     if (instrumental != null && instrumental.durationMs > 0L) {
-        listOf(config.vocalsPlayer, config.vocalsOpponent).filterNotNull().forEach { track ->
+        listOf(activeSong.vocalsPlayer, activeSong.vocalsOpponent).filterNotNull().forEach { track ->
             if (track.durationMs > 0L && kotlin.math.abs(instrumental.durationMs - track.durationMs) > 2000L) {
                 Spacer(Modifier.height(10.dp))
                 MessageCard(
@@ -930,7 +1018,7 @@ private fun AudioRow(
 }
 
 // ---------------------------------------------------------------------------
-// Paso 4: exportar
+// Paso 5: exportar
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -948,33 +1036,32 @@ private fun StepExport(vm: WizardViewModel, config: ModConfig, onCreate: () -> U
         Column(Modifier.padding(14.dp)) {
             InfoRow("Juego", config.engine.label)
             InfoRow("Mod", config.modFolder)
-            InfoRow("Canción", config.songName.ifBlank { "—" })
-            InfoRow("Carpeta", config.songFolder)
-            InfoRow("BPM", config.bpm.ifBlank { "—" })
-            InfoRow("Dificultades", config.orderedDifficulties.joinToString(", "))
+            InfoRow("Canciones", config.songs.map { it.songName.ifEmpty { "sin nombre" } }.joinToString(", "))
+            InfoRow("Carpetas", config.songFolders.joinToString(", "))
+            InfoRow("BPM", config.songs.map { it.bpm.ifEmpty { "—" } }.joinToString(", "))
+            InfoRow("Dificultades", config.songs.map { it.orderedDifficulties.joinToString(", ") }.joinToString(" | "))
             InfoRow(
                 "Instrumental",
-                config.instrumental?.let { if (it.isOgg) "OGG (se copia)" else "se convierte a OGG" } ?: "—"
+                config.songs.map { s -> s.instrumental?.let { if (it.isOgg) "OGG" else "convertir" } ?: "—" }.joinToString(", ")
             )
             InfoRow(
                 "Voces",
                 when {
-                    config.hasSplitVocals -> "jugador + oponente"
-                    config.hasVocals -> "una pista"
+                    config.songs.any { it.hasSplitVocals } -> "jugador + oponente (por canción)"
+                    config.hasAnyVocals -> "una pista (por canción)"
                     else -> "no"
                 }
             )
-            InfoRow(
-                "Personaje propio",
+            InfoRow("Personaje propio",
                 if (config.character.enabled) {
                     "${config.character.charFolder} (${config.character.side.label.lowercase()})"
                 } else {
                     "no"
                 }
             )
-            InfoRow("Offset", "${config.offsetMs} ms")
+            InfoRow("Offset", config.songs.map { "${it.songFolder}=${it.offsetMs}ms" }.joinToString(", "))
             InfoRow("Modo historia", if (config.showInStoryMode) "sí" else "solo Freeplay")
-            InfoRow("Notas de práctica", if (config.practiceNotes) "sí" else "no")
+            InfoRow("Notas de práctica", if (config.songs.any { it.practiceNotes }) "sí" else "no")
         }
     }
 
@@ -1036,7 +1123,7 @@ private fun StepExport(vm: WizardViewModel, config: ModConfig, onCreate: () -> U
             "Psych Engine:\n" +
             "• PC: descomprime en <Psych Engine>/mods/.\n" +
             "• Android: descomprime en Android/data/<paquete>/files/mods/.\n" +
-            "• La canción aparece en Freeplay."
+            "• Las canciones aparecen en Freeplay."
     )
 
     if (vm.savedName == null) {

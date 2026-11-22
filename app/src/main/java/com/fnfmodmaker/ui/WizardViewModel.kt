@@ -14,6 +14,7 @@ import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.PickedAudio
 import com.fnfmodmaker.model.PickedImage
+import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.TargetEngine
 import com.fnfmodmaker.model.slugify
 import com.fnfmodmaker.mod.ModBuilder
@@ -30,14 +31,21 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var tool by mutableStateOf(Tool.HOME)
         private set
 
+    /** Índice de la canción que se está editando en el asistente. */
+    var activeSongIndex by mutableStateOf(0)
+        private set
+
     /** ¿Qué falta para poder exportar el mod completo? */
     val missingForExport: List<String>
         get() = buildList {
             if (config.modTitle.isBlank()) add("Nombre del mod")
-            if (config.songName.isBlank()) add("Nombre de la canción")
-            if (config.bpmValue !in 1..400) add("BPM válido")
-            if (config.difficulties.isEmpty()) add("Al menos una dificultad")
-            if (config.instrumental == null) add("La instrumental")
+            if (config.songs.isEmpty()) add("Al menos una canción")
+            config.songs.forEachIndexed { index, song ->
+                if (song.songName.isBlank()) add("Nombre de la canción ${index + 1}")
+                if (song.bpmValue !in 1..400) add("BPM válido en la canción ${index + 1}")
+                if (song.difficulties.isEmpty()) add("Al menos una dificultad en la canción ${index + 1}")
+                if (song.instrumental == null) add("La instrumental de la canción ${index + 1}")
+            }
         }
 
     val exportReady: Boolean get() = missingForExport.isEmpty()
@@ -48,6 +56,31 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     val characterZipName: String
         get() = "${config.character.charFolder}-personaje.zip"
+
+    /** Canción que se está editando actualmente. */
+    val activeSong: SongConfig
+        get() = config.songs.getOrElse(activeSongIndex) { SongConfig() }
+
+    // ---------------- Navegación de canciones ----------------
+
+    fun addSong() {
+        if (busy) return
+        config = config.copy(songs = config.songs + SongConfig())
+        activeSongIndex = config.songs.lastIndex
+    }
+
+    fun removeSong(index: Int) {
+        if (busy || config.songs.size <= 1) return
+        val updated = config.songs.toMutableList()
+        updated.removeAt(index)
+        if (activeSongIndex >= updated.size) activeSongIndex = updated.lastIndex
+        config = config.copy(songs = updated)
+    }
+
+    fun selectSong(index: Int) {
+        if (busy) return
+        activeSongIndex = index.coerceIn(0, config.songs.lastIndex)
+    }
 
     // ---------------- Herramientas sueltas ----------------
 
@@ -114,12 +147,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     val canAdvance: Boolean
         get() = when (step) {
             0 -> config.modTitle.isNotBlank()
-            1 -> config.songName.isNotBlank() &&
-                config.bpmValue in 1..400 &&
-                config.speedValue > 0f &&
-                config.difficulties.isNotEmpty()
+            1 -> config.songs.isNotEmpty() && activeSong.songName.isNotBlank() &&
+                activeSong.bpmValue in 1..400 &&
+                activeSong.speedValue > 0f &&
+                activeSong.difficulties.isNotEmpty()
             2 -> config.character.isReady
-            3 -> config.instrumental != null
+            3 -> activeSong.instrumental != null
             else -> false
         }
 
@@ -151,6 +184,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun reset() {
         config = ModConfig()
+        activeSongIndex = 0
         modIdEdited = false
         step = 0
         busy = false
@@ -188,70 +222,81 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         config = config.copy(description = value)
     }
 
-    // ---------------- Canción ----------------
-
-    fun setSongName(value: String) {
-        // Estos caracteres no pueden formar parte de una ruta de archivo:
-        // si se colasen, la carpeta de la canción quedaría rota.
-        val clean = value.filterNot { it in "/\\|:*?\"<>" }
-        config = config.copy(songName = clean)
-    }
-
-    fun setArtist(value: String) {
-        config = config.copy(artist = value)
-    }
-
-    fun setBpm(value: String) {
-        config = config.copy(bpm = value.filter { it.isDigit() }.take(3))
-    }
-
-    fun setSpeed(value: String) {
-        val filtered = value.filter { it.isDigit() || it == '.' || it == ',' }.replace(',', '.').take(5)
-        config = config.copy(speed = filtered)
-    }
-
-    fun setPlayer(value: String) {
-        config = config.copy(player = value)
-    }
-
-    fun setGirlfriend(value: String) {
-        config = config.copy(girlfriend = value)
-    }
-
-    fun setOpponent(value: String) {
-        config = config.copy(opponent = value)
-    }
-
-    fun setStageVSlice(value: String) {
-        config = config.copy(stageVSlice = value)
-    }
-
-    fun setStagePsych(value: String) {
-        config = config.copy(stagePsych = value)
-    }
-
     fun setWeekColor(value: String) {
         config = config.copy(weekColor = value)
-    }
-
-    fun setOffsetMs(value: String) {
-        val filtered = value.filter { it.isDigit() || it == '-' }.take(6)
-        val clean = if (filtered.startsWith("-")) "-" + filtered.drop(1).filter { it.isDigit() } else filtered
-        config = config.copy(offsetMs = clean)
     }
 
     fun setShowInStoryMode(enabled: Boolean) {
         config = config.copy(showInStoryMode = enabled)
     }
 
-    fun toggleDifficulty(difficulty: String) {
-        val current = config.difficulties
-        val updated = if (difficulty in current) current - difficulty else current + difficulty
-        config = config.copy(difficulties = updated)
+    // ---------------- Canción activa ----------------
+
+    fun setActiveSongName(value: String) {
+        val clean = value.filterNot { it in "/\\|:*?\"<>" }
+        updateActiveSong { it.copy(songName = clean) }
     }
 
-    fun setPracticeNotes(enabled: Boolean) {
-        config = config.copy(practiceNotes = enabled)
+    fun setActiveSongArtist(value: String) {
+        updateActiveSong { it.copy(artist = value) }
+    }
+
+    fun setActiveSongBpm(value: String) {
+        updateActiveSong { it.copy(bpm = value.filter { it.isDigit() }.take(3)) }
+    }
+
+    fun setActiveSongSpeed(value: String) {
+        val filtered = value.filter { it.isDigit() || it == '.' || it == ',' }.replace(',', '.').take(5)
+        updateActiveSong { it.copy(speed = filtered) }
+    }
+
+    fun setActiveSongPlayer(value: String) {
+        updateActiveSong { it.copy(player = value) }
+    }
+
+    fun setActiveSongGirlfriend(value: String) {
+        updateActiveSong { it.copy(girlfriend = value) }
+    }
+
+    fun setActiveSongOpponent(value: String) {
+        updateActiveSong { it.copy(opponent = value) }
+    }
+
+    fun setActiveSongStageVSlice(value: String) {
+        updateActiveSong { it.copy(stageVSlice = value) }
+    }
+
+    fun setActiveSongStagePsych(value: String) {
+        updateActiveSong { it.copy(stagePsych = value) }
+    }
+
+    fun setActiveSongWeekColor(value: String) {
+        updateActiveSong { it.copy(weekColor = value) }
+    }
+
+    fun setActiveSongOffsetMs(value: String) {
+        val filtered = value.filter { it.isDigit() || it == '-' }.take(6)
+        val clean = if (filtered.startsWith("-")) "-" + filtered.drop(1).filter { it.isDigit() } else filtered
+        updateActiveSong { it.copy(offsetMs = clean) }
+    }
+
+    fun toggleActiveSongDifficulty(difficulty: String) {
+        updateActiveSong { song ->
+            val current = song.difficulties
+            val updated = if (difficulty in current) current - difficulty else current + difficulty
+            song.copy(difficulties = updated)
+        }
+    }
+
+    fun setActiveSongPracticeNotes(enabled: Boolean) {
+        updateActiveSong { it.copy(practiceNotes = enabled) }
+    }
+
+    private fun updateActiveSong(block: (SongConfig) -> SongConfig) {
+        val index = activeSongIndex.coerceIn(0, config.songs.lastIndex)
+        val updated = config.songs.toMutableList()
+        updated[index] = block(updated[index])
+        config = config.copy(songs = updated)
     }
 
     // ---------------- Personaje propio ----------------
@@ -294,9 +339,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     fun setCharRightFrames(value: String) =
         updateCharacter { it.copy(rightFrames = value.filter { c -> c.isDigit() }.take(2)) }
 
-    // ---------------- Archivos ----------------
+    // ---------------- Archivos de la canción activa ----------------
 
-    fun pickAudio(uri: Uri, slot: AudioSlot) {
+    fun pickActiveSongAudio(uri: Uri, slot: AudioSlot) {
         if (busy) return
         val app = getApplication<Application>()
         busy = true
@@ -318,10 +363,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             result.onSuccess { picked ->
-                config = when (slot) {
-                    AudioSlot.INSTRUMENTAL -> config.copy(instrumental = picked)
-                    AudioSlot.VOICES_PLAYER -> config.copy(vocalsPlayer = picked)
-                    AudioSlot.VOICES_OPPONENT -> config.copy(vocalsOpponent = picked)
+                updateActiveSong { song ->
+                    when (slot) {
+                        AudioSlot.INSTRUMENTAL -> song.copy(instrumental = picked)
+                        AudioSlot.VOICES_PLAYER -> song.copy(vocalsPlayer = picked)
+                        AudioSlot.VOICES_OPPONENT -> song.copy(vocalsOpponent = picked)
+                    }
                 }
                 if (picked.durationMs <= 0L) {
                     warnings = warnings + "No se pudo leer la duración de \"${picked.displayName}\". El chart se generará corto; ajusta el BPM o usa otro archivo."

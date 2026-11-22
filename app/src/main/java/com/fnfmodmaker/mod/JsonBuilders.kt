@@ -1,6 +1,7 @@
 package com.fnfmodmaker.mod
 
 import com.fnfmodmaker.model.ModConfig
+import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.hexToRgb
 import org.json.JSONArray
 import org.json.JSONObject
@@ -21,20 +22,20 @@ object JsonBuilders {
     // ------------------------------------------------------------------
 
     /** `<song>-metadata.json` (esquema 2.2.4) */
-    fun vsliceMetadata(config: ModConfig, durationMs: Long): String {
-        val bpm = config.bpmValue
+    fun vsliceMetadata(song: SongConfig, durationMs: Long): String {
+        val bpm = song.bpmValue
         val ratings = JSONObject()
         val difficulties = JSONArray()
         val ratingFor = mapOf("easy" to 1, "normal" to 2, "hard" to 3)
-        for (difficulty in config.orderedDifficulties) {
+        for (difficulty in song.orderedDifficulties) {
             difficulties.put(difficulty)
             ratings.put(difficulty, ratingFor[difficulty] ?: 1)
         }
 
         val characters = JSONObject()
-            .put("player", config.player)
-            .put("girlfriend", config.girlfriend)
-            .put("opponent", config.opponent)
+            .put("player", song.player)
+            .put("girlfriend", song.girlfriend)
+            .put("opponent", song.opponent)
             .put("instrumental", "")
 
         val previewEnd = if (durationMs > 0L) min(15000L, durationMs) else 15000L
@@ -44,7 +45,7 @@ object JsonBuilders {
             .put("difficulties", difficulties)
             .put("ratings", ratings)
             .put("characters", characters)
-            .put("stage", config.stageVSlice)
+            .put("stage", song.stageVSlice)
             .put("noteStyle", "funkin")
             .put("previewStart", 0)
             .put("previewEnd", previewEnd)
@@ -58,11 +59,11 @@ object JsonBuilders {
 
         return JSONObject()
             .put("version", "2.2.4")
-            .put("songName", config.songName.trim())
-            .put("artist", config.artist.trim().ifEmpty { "Desconocido" })
+            .put("songName", song.songName.trim())
+            .put("artist", song.artist.trim().ifEmpty { "Desconocido" })
             .put("charter", "FNF Mod Maker")
             .put("timeFormat", "ms")
-            .put("offsets", JSONObject().put("instrumental", config.offsetValue))
+            .put("offsets", JSONObject().put("instrumental", song.offsetValue))
             .put("timeChanges", JSONArray().put(timeChange))
             .put("playData", playData)
             .put("generatedBy", GENERATED_BY)
@@ -70,12 +71,12 @@ object JsonBuilders {
     }
 
     /** `<song>-chart.json` (esquema 2.0.0) */
-    fun vsliceChart(config: ModConfig, durationMs: Long): String {
+    fun vsliceChart(song: SongConfig, durationMs: Long): String {
         val scrollSpeed = JSONObject()
         val notes = JSONObject()
-        for (difficulty in config.orderedDifficulties) {
-            scrollSpeed.put(difficulty, config.speedValue)
-            notes.put(difficulty, vsliceNotes(config, durationMs))
+        for (difficulty in song.orderedDifficulties) {
+            scrollSpeed.put(difficulty, song.speedValue)
+            notes.put(difficulty, vsliceNotes(song, durationMs))
         }
         return JSONObject()
             .put("version", "2.0.0")
@@ -90,13 +91,13 @@ object JsonBuilders {
      * Notas de V-Slice: "d" 0-3 = lado del jugador, 4-7 = lado del oponente.
      * Si el usuario desactiva las notas de práctica, el chart va vacío.
      */
-    private fun vsliceNotes(config: ModConfig, durationMs: Long): JSONArray {
+    private fun vsliceNotes(song: SongConfig, durationMs: Long): JSONArray {
         val notes = JSONArray()
-        if (!config.practiceNotes) return notes
-        val bpm = config.bpmValue
+        if (!song.practiceNotes) return notes
+        val bpm = song.bpmValue
         if (bpm <= 0) return notes
         val beatMs = 60000.0 / bpm
-        val beats = totalBeats(config, durationMs)
+        val beats = totalBeats(song, durationMs)
         for (beat in 0 until beats) {
             val isPlayerSide = beat % 2 == 0
             val lane = beat % 4
@@ -111,17 +112,17 @@ object JsonBuilders {
         return notes
     }
 
-    /** `data/levels/<id>.json` (esquema 1.0.0) */
-    fun vsliceLevel(config: ModConfig): String {
+    /** `data/levels/<mod>.json` (esquema 1.0.0) */
+    fun vsliceLevel(song: SongConfig, modFolder: String, modTitle: String, showInStoryMode: Boolean): String {
         return JSONObject()
             .put("version", "1.0.0")
-            .put("name", config.modTitle.trim().ifEmpty { "Mi Mod" })
+            .put("name", modTitle.trim().ifEmpty { "Mi Mod" })
             // La imagen la genera la app (359x89), igual que los títulos del juego.
-            .put("titleAsset", "storymenu/titles/${config.modFolder}")
+            .put("titleAsset", "storymenu/titles/$modFolder")
             .put("props", JSONArray())
-            .put("visible", config.showInStoryMode)
-            .put("background", config.weekColor)
-            .put("songs", JSONArray().put(config.songFolder))
+            .put("visible", showInStoryMode)
+            .put("background", song.weekColor)
+            .put("songs", JSONArray().put(song.songFolder))
             .toString(2)
     }
 
@@ -147,10 +148,10 @@ object JsonBuilders {
     // ------------------------------------------------------------------
 
     /** Chart en formato psych_v1. */
-    fun psychChart(config: ModConfig, durationMs: Long): String {
-        val bpm = config.bpmValue
+    fun psychChart(song: SongConfig, durationMs: Long): String {
+        val bpm = song.bpmValue
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
-        val beats = totalBeats(config, durationMs)
+        val beats = totalBeats(song, durationMs)
         val sectionCount = max(1, (beats + 3) / 4)
         val sections = JSONArray()
 
@@ -158,7 +159,7 @@ object JsonBuilders {
             val mustHit = sectionIndex % 2 == 0
             val sectionNotes = JSONArray()
 
-            if (config.practiceNotes) {
+            if (song.practiceNotes) {
                 for (offset in 0 until 4) {
                     val beat = sectionIndex * 4 + offset
                     if (beat >= beats) break
@@ -188,50 +189,57 @@ object JsonBuilders {
         }
 
         return JSONObject()
-            .put("song", config.songName.trim())
+            .put("song", song.songName.trim())
             .put("notes", sections)
             .put("events", JSONArray())
             .put("bpm", if (bpm > 0) bpm else 150)
-            .put("needsVoices", config.hasVocals)
-            .put("speed", config.speedValue)
-            .put("offset", config.offsetValue)
-            .put("player1", config.player)
-            .put("player2", config.opponent)
-            .put("gfVersion", config.girlfriend)
-            .put("stage", config.stagePsych)
+            .put("needsVoices", song.hasVocals)
+            .put("speed", song.speedValue)
+            .put("offset", song.offsetValue)
+            .put("player1", song.player)
+            .put("player2", song.opponent)
+            .put("gfVersion", song.girlfriend)
+            .put("stage", song.stagePsych)
             .put("format", "psych_v1")
             .toString(2)
     }
 
-    /** `weeks/<id>.json`: sin esto, Psych no muestra la canción en Freeplay. */
-    fun psychWeek(config: ModConfig): String {
+    /** `weeks/<mod>.json`: sin esto, Psych no muestra la canción en Freeplay. */
+    fun psychWeek(
+        song: SongConfig,
+        modFolder: String,
+        modTitle: String,
+        showInStoryMode: Boolean,
+        player: String,
+        girlfriend: String
+    ): String {
         val songEntry = JSONArray()
-            .put(config.songName.trim())
-            .put(config.opponent.trim().ifEmpty { "dad" })
-            .put(rgbArray(config.weekColor))
+            .put(song.songName.trim())
+            .put(song.opponent.trim().ifEmpty { "dad" })
+            .put(rgbArray(song.weekColor))
         return JSONObject()
             .put("songs", JSONArray().put(songEntry))
             .put(
                 "weekCharacters",
                 JSONArray()
-                    .put(config.opponent.trim().ifEmpty { "dad" })
-                    .put(config.player.trim().ifEmpty { "bf" })
-                    .put(config.girlfriend.trim().ifEmpty { "gf" })
+                    .put(song.opponent.trim().ifEmpty { "dad" })
+                    .put(player.trim().ifEmpty { "bf" })
+                    .put(girlfriend.trim().ifEmpty { "gf" })
             )
             // Cadena vacía = el menú de historia no carga imagen de fondo
             // (Psych lo contempla explícitamente y la oculta).
             .put("weekBackground", "")
             .put("weekBefore", "")
-            .put("storyName", config.modTitle.trim().ifEmpty { "Mi Mod" })
-            .put("weekName", config.modFolder)
+            .put("storyName", modTitle.trim().ifEmpty { "Mi Mod" })
+            .put("weekName", modFolder)
             .put("startUnlocked", true)
             .put("hiddenUntilUnlocked", false)
-            .put("hideStoryMode", !config.showInStoryMode)
+            .put("hideStoryMode", !showInStoryMode)
             .put("hideFreeplay", false)
             // Psych lista las dificultades a nivel global; si la semana no las
             // declara, ofrece también las que no tienen chart. Con esto solo
             // aparecen las que realmente generamos.
-            .put("difficulties", config.orderedDifficulties.joinToString(",") { name ->
+            .put("difficulties", song.orderedDifficulties.joinToString(",") { name ->
                 name.replaceFirstChar { it.uppercase() }
             })
             .toString(2)
@@ -256,8 +264,8 @@ object JsonBuilders {
         return array
     }
 
-    private fun totalBeats(config: ModConfig, durationMs: Long): Int {
-        val bpm = config.bpmValue
+    private fun totalBeats(song: SongConfig, durationMs: Long): Int {
+        val bpm = song.bpmValue
         if (bpm <= 0) return 32
         val beatMs = 60000.0 / bpm
         val counted = if (durationMs > 0L) (durationMs / beatMs).toInt() else 64

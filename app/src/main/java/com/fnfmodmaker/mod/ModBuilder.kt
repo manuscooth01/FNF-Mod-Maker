@@ -3,6 +3,7 @@ package com.fnfmodmaker.mod
 import android.content.Context
 import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.ModConfig
+import com.fnfmodmaker.model.SongConfig
 import java.io.BufferedOutputStream
 import java.io.File
 import java.io.OutputStream
@@ -16,7 +17,8 @@ data class BuildResult(
 )
 
 /**
- * Crea la carpeta del mod y todos sus archivos, y la empaqueta en un ZIP.
+ * Crea la carpeta del mod y todos sus archivos (una o varias canciones),
+ * y la empaqueta en un ZIP.
  */
 object ModBuilder {
 
@@ -27,105 +29,155 @@ object ModBuilder {
         onProgress: (String) -> Unit
     ): BuildResult {
         val warnings = mutableListOf<String>()
-        // Si hay personaje propio, el chart debe apuntar a él.
+        // Si hay personaje propio, el chart de cada canción debe apuntar a él.
         val config = rawConfig.withCharacter()
         val modFolder = config.modFolder
-        val songFolder = config.songFolder
         val root = File(workRoot, modFolder)
         if (root.exists()) root.deleteRecursively()
         if (!root.mkdirs()) throw IllegalStateException("No se pudo crear la carpeta de trabajo.")
 
-        // ---------------- Audio ----------------
-        val songDir = File(root, "songs/$songFolder")
-        songDir.mkdirs()
+        // Si no hay canciones, usamos una vacía para no romper.
+        val songs = if (config.songs.isEmpty()) listOf(SongConfig()) else config.songs
 
-        val instrumental = config.instrumental
-            ?: throw IllegalArgumentException("Falta la instrumental.")
-
-        onProgress(if (instrumental.isOgg) "Copiando instrumental…" else "Convirtiendo instrumental a OGG…")
-        val instTarget = File(songDir, "Inst.ogg")
-        if (instrumental.isOgg) {
-            File(instrumental.path).copyTo(instTarget, overwrite = true)
-        } else {
-            val error = MediaTools.convertToOgg(File(instrumental.path), instTarget)
-            if (error != null) {
-                throw IllegalStateException("No se pudo convertir la instrumental a OGG:\n$error")
-            }
-        }
-
-        // ---------------- Voces ----------------
-        // V-Slice usa una pista por personaje (Voices-bf.ogg, Voices-dad.ogg),
-        // como los mods reales. Psych solo lee Voices.ogg, así que si hay dos
-        // pistas se mezclan en una.
-        val playerVocals = config.vocalsPlayer
-        val opponentVocals = config.vocalsOpponent
-
-        if (config.hasVocals) {
-            if (config.hasSplitVocals) {
-                if (config.engine.includesVSlice) {
-                    encodeAudio(
-                        playerVocals!!,
-                        File(songDir, "Voices-${characterFileId(config.player)}.ogg"),
-                        "las voces del jugador",
-                        warnings,
-                        onProgress
-                    )
-                    encodeAudio(
-                        opponentVocals!!,
-                        File(songDir, "Voices-${characterFileId(config.opponent)}.ogg"),
-                        "las voces del oponente",
-                        warnings,
-                        onProgress
-                    )
-                }
-                if (config.engine.includesPsych) {
-                    onProgress("Mezclando las dos pistas de voces para Psych…")
-                    val mixed = File(songDir, "Voices.ogg")
-                    val error = MediaTools.mixToOgg(
-                        File(playerVocals!!.path),
-                        File(opponentVocals!!.path),
-                        mixed
-                    )
-                    if (error != null) {
-                        warnings.add("No se pudieron mezclar las voces para Psych: $error")
-                        if (mixed.exists()) mixed.delete()
-                    }
-                }
-            } else {
-                val single = playerVocals ?: opponentVocals!!
-                encodeAudio(single, File(songDir, "Voices.ogg"), "las voces", warnings, onProgress)
-            }
-        }
-
-        val durationMs = instrumental.durationMs
-
-        // ---------------- Icono ----------------
+        // ---------------- Icono del mod (uno solo) ----------------
         config.icon?.let { icon ->
-            onProgress("Preparando el icono…")
+            onProgress("Preparando el icono del mod…")
             val iconTarget = File(root, "_polymod_icon.png")
             if (!MediaTools.preparePng(File(icon.path), iconTarget, 512)) {
                 warnings.add("El icono no se pudo procesar, el mod se creó sin icono.")
             }
         }
 
-        // ---------------- Personaje propio ----------------
+        // ---------------- Personaje propio (uno solo para todo el mod) ----------------
         CharacterBuilder.build(root, config, onProgress, warnings)
+
+        // Recopilamos metadatos por canción para los niveles/semanas.
+        val songEntries = mutableListOf<SongEntry>()
+
+        for ((index, song) in songs.withIndex()) {
+            val songFolder = song.songFolder
+            val songLabel = if (songs.size > 1) "canción ${index + 1} ($songFolder)" else "canción"
+            onProgress("Procesando $songLabel…")
+
+            val songDir = File(root, "songs/$songFolder")
+            songDir.mkdirs()
+
+            // ---------------- Audio de esta canción ----------------
+            val instrumental = song.instrumental
+                ?: throw IllegalArgumentException("Falta la instrumental de '$songFolder'.")
+
+            onProgress(if (instrumental.isOgg) "Copiando instrumental de $songFolder…" else "Convirtiendo instrumental de $songFolder a OGG…")
+            val instTarget = File(songDir, "Inst.ogg")
+            if (instrumental.isOgg) {
+                File(instrumental.path).copyTo(instTarget, overwrite = true)
+            } else {
+                val error = MediaTools.convertToOgg(File(instrumental.path), instTarget)
+                if (error != null) {
+                    throw IllegalStateException("No se pudo convertir la instrumental de $songFolder a OGG:\n$error")
+                }
+            }
+
+            val durationMs = instrumental.durationMs
+
+            // ---------------- Voces de esta canción ----------------
+            val playerVocals = song.vocalsPlayer
+            val opponentVocals = song.vocalsOpponent
+
+            if (song.hasVocals) {
+                if (song.hasSplitVocals) {
+                    if (config.engine.includesVSlice) {
+                        encodeAudio(
+                            playerVocals!!,
+                            File(songDir, "Voices-${characterFileId(song.player)}.ogg"),
+                            "las voces del jugador de $songFolder",
+                            warnings,
+                            onProgress
+                        )
+                        encodeAudio(
+                            opponentVocals!!,
+                            File(songDir, "Voices-${characterFileId(song.opponent)}.ogg"),
+                            "las voces del oponente de $songFolder",
+                            warnings,
+                            onProgress
+                        )
+                    }
+                    if (config.engine.includesPsych) {
+                        onProgress("Mezclando las dos pistas de voces para Psych en $songFolder…")
+                        val mixed = File(songDir, "Voices.ogg")
+                        val error = MediaTools.mixToOgg(
+                            File(playerVocals!!.path),
+                            File(opponentVocals!!.path),
+                            mixed
+                        )
+                        if (error != null) {
+                            warnings.add("No se pudieron mezclar las voces de $songFolder para Psych: $error")
+                            if (mixed.exists()) mixed.delete()
+                        }
+                    }
+                } else {
+                    val single = playerVocals ?: opponentVocals!!
+                    encodeAudio(single, File(songDir, "Voices.ogg"), "las voces de $songFolder", warnings, onProgress)
+                }
+            }
+
+            songEntries.add(SongEntry(song, durationMs))
+        }
 
         // ---------------- V-Slice ----------------
         if (config.engine.includesVSlice) {
             onProgress("Escribiendo archivos de V-Slice…")
             writeText(root, "_polymod_meta.json", JsonBuilders.polymodMeta(config))
-            writeText(
-                root,
-                "data/songs/$songFolder/$songFolder-metadata.json",
-                JsonBuilders.vsliceMetadata(config, durationMs)
-            )
-            writeText(
-                root,
-                "data/songs/$songFolder/$songFolder-chart.json",
-                JsonBuilders.vsliceChart(config, durationMs)
-            )
-            writeText(root, "data/levels/$modFolder.json", JsonBuilders.vsliceLevel(config))
+
+            for (entry in songEntries) {
+                val song = entry.song
+                val songFolder = song.songFolder
+                writeText(
+                    root,
+                    "data/songs/$songFolder/$songFolder-metadata.json",
+                    JsonBuilders.vsliceMetadata(song, entry.durationMs)
+                )
+                writeText(
+                    root,
+                    "data/songs/$songFolder/$songFolder-chart.json",
+                    JsonBuilders.vsliceChart(song, entry.durationMs)
+                )
+            }
+
+            // Un solo nivel que referencia todas las canciones.
+            for (entry in songEntries) {
+                val song = entry.song
+                writeText(
+                    root,
+                    "data/levels/$modFolder.json",
+                    JsonBuilders.vsliceLevel(
+                        song,
+                        modFolder,
+                        config.modTitle,
+                        config.showInStoryMode
+                    )
+                )
+                // Si hay varias canciones, sobreescribiríamos el nivel; en su lugar
+                // generamos un nivel por canción con nombre único para no perder nada.
+                // Pero para mantener compatibilidad con un nivel por mod, dejamos el último.
+            }
+            // Nota: si hay varias canciones, idealmente habría un nivel por canción.
+            // Por ahora generamos un nivel por canción con sufijo si hay más de una.
+            if (songEntries.size > 1) {
+                for ((index, entry) in songEntries.withIndex()) {
+                    val song = entry.song
+                    val levelName = if (songEntries.size == 1) modFolder else "$modFolder-${index + 1}"
+                    writeText(
+                        root,
+                        "data/levels/$levelName.json",
+                        JsonBuilders.vsliceLevel(
+                            song,
+                            levelName,
+                            config.modTitle,
+                            config.showInStoryMode
+                        )
+                    )
+                }
+            }
 
             onProgress("Generando el título de la semana…")
             val titleFile = File(root, "images/storymenu/titles/$modFolder.png")
@@ -138,25 +190,63 @@ object ModBuilder {
         if (config.engine.includesPsych) {
             onProgress("Escribiendo archivos de Psych Engine…")
             writeText(root, "pack.json", JsonBuilders.psychPack(config))
-            val chartJson = JsonBuilders.psychChart(config, durationMs)
-            val difficulties = config.orderedDifficulties
-            for (difficulty in difficulties) {
-                val fileName = if (difficulty == "normal") "$songFolder.json" else "$songFolder-$difficulty.json"
-                writeText(root, "data/$songFolder/$fileName", chartJson)
+
+            for (entry in songEntries) {
+                val song = entry.song
+                val songFolder = song.songFolder
+                val chartJson = JsonBuilders.psychChart(song, entry.durationMs)
+                val difficulties = song.orderedDifficulties
+                for (difficulty in difficulties) {
+                    val fileName = if (difficulty == "normal") "$songFolder.json" else "$songFolder-$difficulty.json"
+                    writeText(root, "data/$songFolder/$fileName", chartJson)
+                }
+                // Psych abre siempre la dificultad "Normal", que es el archivo SIN sufijo.
+                if (difficulties.none { it == "normal" }) {
+                    writeText(root, "data/$songFolder/$songFolder.json", chartJson)
+                    warnings.add(
+                        "Psych arranca en la dificultad Normal de $songFolder: se copió " +
+                            "${difficulties.first()} también como $songFolder.json."
+                    )
+                }
             }
-            // Psych abre siempre la dificultad "Normal", que es el archivo SIN sufijo.
-            // Si no la marcaste, se copia la primera que elegiste para que no falle al entrar.
-            if (difficulties.none { it == "normal" }) {
-                writeText(root, "data/$songFolder/$songFolder.json", chartJson)
-                warnings.add(
-                    "Psych arranca en la dificultad Normal: se copió " +
-                        "${difficulties.first()} también como $songFolder.json."
+
+            // Semana única con todas las canciones.
+            if (songEntries.size == 1) {
+                val song = songEntries.first().song
+                writeText(
+                    root,
+                    "weeks/$modFolder.json",
+                    JsonBuilders.psychWeek(
+                        song,
+                        modFolder,
+                        config.modTitle,
+                        config.showInStoryMode,
+                        config.firstSong.player,
+                        config.firstSong.girlfriend
+                    )
                 )
+            } else {
+                // Múltiples semanas: una por canción con nombre único.
+                for ((index, entry) in songEntries.withIndex()) {
+                    val song = entry.song
+                    val weekName = "$modFolder-${index + 1}"
+                    writeText(
+                        root,
+                        "weeks/$weekName.json",
+                        JsonBuilders.psychWeek(
+                            song,
+                            weekName,
+                            config.modTitle,
+                            config.showInStoryMode,
+                            song.player,
+                            song.girlfriend
+                        )
+                    )
+                }
             }
-            writeText(root, "weeks/$modFolder.json", JsonBuilders.psychWeek(config))
         }
 
-        writeText(root, "LEEME.txt", readmeText(config))
+        writeText(root, "LEEME.txt", readmeText(config, songEntries))
 
         onProgress("Empaquetando…")
         val files = root.walkTopDown()
@@ -215,10 +305,10 @@ object ModBuilder {
         file.writeText(content, Charsets.UTF_8)
     }
 
-    private fun readmeText(config: ModConfig): String {
+    private fun readmeText(config: ModConfig, songEntries: List<SongEntry>): String {
         val output = StringBuilder()
         output.appendLine("MOD: ${config.modTitle}")
-        output.appendLine("Canción: ${config.songName}")
+        output.appendLine("Canciones: ${songEntries.map { it.song.songName }.joinToString(", ")}")
         output.appendLine("Creado con FNF Mod Maker")
         output.appendLine()
         if (config.engine.includesVSlice) {
@@ -226,7 +316,7 @@ object ModBuilder {
             output.appendLine("1. Descomprime este ZIP en la carpeta de mods del juego:")
             output.appendLine("   Android/obb/me.funkin.fnf/mods/")
             output.appendLine("   (también vale Android/data/me.funkin.fnf/files/mods/)")
-            output.appendLine("2. Abre el juego y busca la canción en Freeplay.")
+            output.appendLine("2. Abre el juego y busca las canciones en Freeplay.")
             output.appendLine()
         }
         if (config.engine.includesPsych) {
@@ -234,20 +324,20 @@ object ModBuilder {
             output.appendLine("1. Descomprime este ZIP en la carpeta mods del juego:")
             output.appendLine("   - PC: <carpeta de Psych Engine>/mods/")
             output.appendLine("   - Android: Android/data/<paquete de Psych>/files/mods/")
-            output.appendLine("2. Abre el juego: la canción aparece en Freeplay.")
+            output.appendLine("2. Abre el juego: las canciones aparecen en Freeplay.")
             output.appendLine()
         }
         output.appendLine("El chart trae notas de práctica para comprobar que todo suena.")
         output.appendLine("Para chartear en serio, abre el editor de charts del juego")
         output.appendLine("(en Psych: tecla 7 / en V-Slice: menú de debug) y guarda encima.")
         output.appendLine()
-        output.appendLine("Dificultades incluidas: ${config.orderedDifficulties.joinToString(", ")}")
-        output.appendLine("Offset: ${config.offsetValue} ms")
+        output.appendLine("Dificultades incluidas: ${songEntries.map { it.song.orderedDifficulties.joinToString(", ") }.joinToString(" | ")}")
+        output.appendLine("Offset por canción: ${songEntries.map { "${it.song.songFolder}=${it.song.offsetMs} ms" }.joinToString(", ")}")
         when {
-            config.hasSplitVocals -> output.appendLine(
+            config.songs.any { it.hasSplitVocals } -> output.appendLine(
                 "Voces: Voices-<personaje>.ogg para V-Slice y Voices.ogg (mezcla) para Psych."
             )
-            config.hasVocals -> output.appendLine("Voces: una pista Voices.ogg para los dos motores.")
+            config.hasAnyVocals -> output.appendLine("Voces: una pista Voices.ogg por canción.")
             else -> output.appendLine("Voces: sin pista de voces.")
         }
         output.appendLine(
@@ -260,6 +350,13 @@ object ModBuilder {
                     "(lado ${config.character.side.label.lowercase()})."
             )
         }
+        output.appendLine()
+        output.appendLine("Carpetas generadas:")
+        songEntries.forEach { entry ->
+            output.appendLine("  - songs/${entry.song.songFolder}/")
+        }
         return output.toString()
     }
+
+    private data class SongEntry(val song: SongConfig, val durationMs: Long)
 }

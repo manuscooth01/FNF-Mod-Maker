@@ -2,6 +2,7 @@ package com.fnfmodmaker.model
 
 import android.net.Uri
 import com.fnfmodmaker.model.ChartDraft
+import com.fnfmodmaker.model.StageDraft
 
 /** Motor del juego para el que se genera el mod. */
 enum class TargetEngine(val label: String, val description: String) {
@@ -108,6 +109,9 @@ data class ModConfig(
 
     /** Personaje propio opcional (spritesheet + JSON) */
     val character: CharacterDraft = CharacterDraft(),
+
+    /** Stage propio opcional (fondo, sprites, cámara) */
+    val stageDraft: StageDraft = StageDraft(),
 
     // Archivos globales
     val icon: PickedImage? = null,

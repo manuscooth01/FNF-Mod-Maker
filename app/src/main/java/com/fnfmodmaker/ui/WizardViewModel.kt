@@ -726,6 +726,50 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var config by mutableStateOf(ModConfig())
         private set
 
+    // Auto-save
+    private var autoSaveJob: kotlinx.coroutines.Job? = null
+    private val autoSaveFile: File
+        get() = File(getApplication<Application>().cacheDir, "autosave_modconfig.json")
+
+    init {
+        loadAutoSave()
+        startAutoSave()
+    }
+
+    private fun startAutoSave() {
+        autoSaveJob = viewModelScope.launch {
+            while (true) {
+                delay(30000) // 30 segundos
+                saveAutoSave()
+            }
+        }
+    }
+
+    private fun saveAutoSave() {
+        try {
+            val json = com.google.gson.Gson().toJson(config)
+            autoSaveFile.writeText(json)
+        } catch (e: Exception) {
+            // Silencioso
+        }
+    }
+
+    private fun loadAutoSave() {
+        try {
+            if (autoSaveFile.exists()) {
+                val json = autoSaveFile.readText()
+                val loaded = com.google.gson.Gson().fromJson(json, ModConfig::class.java)
+                config = loaded
+            }
+        } catch (e: Exception) {
+            // Silencioso
+        }
+    }
+
+    fun forceAutoSave() {
+        saveAutoSave()
+    }
+
     var step by mutableStateOf(0)
         private set
 
@@ -1297,7 +1341,117 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Crea un ZIP solo con el stage (fondo, sprites, JSONs). */
+    /** Importa un personaje desde un ZIP (generado por esta app) y carga en el config. */
+    fun importCharacter(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Importando personaje…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val workRoot = File(app.cacheDir, "charimport")
+                    if (workRoot.exists()) workRoot.deleteRecursively()
+                    workRoot.mkdirs()
+                    val tempZip = File(workRoot, "import_${System.currentTimeMillis()}.zip")
+                    app.contentResolver.openInputStream(uri)?.use { input ->
+                        tempZip.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    // Extraer y parsear character JSON
+                    val extractDir = File(app.cacheDir, "charextract_${System.currentTimeMillis()}")
+                    if (extractDir.exists()) extractDir.deleteRecursively()
+                    extractDir.mkdirs()
+                    java.util.zip.ZipFile(tempZip).use { zip ->
+                        zip.entries().forEach { entry ->
+                            val outFile = File(extractDir, entry.name)
+                            if (entry.isDirectory) outFile.mkdirs()
+                            else {
+                                outFile.parentFile?.mkdirs()
+                                zip.getInputStream(entry).use { input -> outFile.outputStream().use { output -> input.copyTo(output) } }
+                            }
+                        }
+                    }
+                    // Buscar character JSON (Psych o V-Slice)
+                    val charJsonFile = listOf(
+                        File(extractDir, "characters").listFiles()?.firstOrNull { it.extension == "json" },
+                        File(extractDir, "data/characters").listFiles()?.firstOrNull { it.extension == "json" }
+                    ).firstOrNull { it != null } ?: throw IllegalStateException("No se encontró character JSON en el ZIP")
+                    
+                    val json = JSONObject(charJsonFile.readText())
+                    val charId = json.optString("name", "").lowercase().replace(" ", "-")
+                    val displayName = json.optString("name", charId)
+                    val scale = json.optDouble("scale", 1.0).toFloat()
+                    val flipX = json.optBoolean("flip_x", false)
+                    val healthIcon = json.optString("healthicon", json.optString("healthIcon", ""))
+                    val flipXFinal = flipX
+                    
+                    // Animaciones
+                    val animations = json.optJSONArray("animations")
+                    var idleFrames = "2"
+                    var leftFrames = "1"
+                    var downFrames = "1"
+                    var upFrames = "1"
+                    var rightFrames = "1"
+                    animations?.forEach { anim ->
+                        val a = anim as JSONObject
+                        val animName = a.optString("name", a.optString("anim", ""))
+                        when (animName) {
+                            "idle" -> idleFrames = "2"
+                            "singLEFT" -> leftFrames = "1"
+                            "singDOWN" -> downFrames = "1"
+                            "singUP" -> upFrames = "1"
+                            "singRIGHT" -> rightFrames = "1"
+                        }
+                    }
+                    
+                    // Spritesheet e icono
+                    val spritesheet = File(extractDir, "images/characters/${charJsonFile.nameWithoutExtension}.png")
+                    val iconFile = File(extractDir, "images/icons/icon-${charJsonFile.nameWithoutExtension}.png")
+                    
+                    val character = com.fnfmodmaker.model.CharacterDraft(
+                        enabled = true,
+                        charId = charId,
+                        displayName = displayName,
+                        sheet = if (spritesheet.exists()) com.fnfmodmaker.model.PickedImage(Uri.fromFile(spritesheet), spritesheet.name, spritesheet.absolutePath) else null,
+                        sheetWidth = 0,
+                        sheetHeight = 0,
+                        icon = if (iconFile.exists()) com.fnfmodmaker.model.PickedImage(Uri.fromFile(iconFile), iconFile.name, iconFile.absolutePath) else null,
+                        frameWidth = "150",
+                        frameHeight = "150",
+                        scale = scale.toString(),
+                        flipX = flipXFinal,
+                        side = com.fnfmodmaker.model.CharacterSide.OPPONENT,
+                        idleFrames = idleFrames,
+                        leftFrames = leftFrames,
+                        downFrames = downFrames,
+                        upFrames = upFrames,
+                        rightFrames = rightFrames
+                    )
+                    
+                    // Copiar spritesheet a cache si existe
+                    val finalChar = if (character.sheet != null) {
+                        val src = File(character.sheet!!.path)
+                        val target = File(getApplication<Application>().cacheDir, "inputs/${System.currentTimeMillis()}_${src.name}")
+                        src.copyTo(target, overwrite = true)
+                        character.copy(sheet = com.fnfmodmaker.model.PickedImage(character.sheet!!.uri, character.sheet!!.displayName, target.absolutePath))
+                    } else character
+                    
+                    finalChar
+                }
+            }
+            result.onSuccess { imported ->
+                config = config.copy(character = imported)
+                status = "¡Personaje importado! Revisa el editor."
+            }.onFailure {
+                status = ""
+                error = it.message ?: "No se pudo importar el personaje: ${it}"
+            }
+            busy = false
+        }
+    }
+
+    // ---------------- Stage ----------------
     fun exportStage(uri: Uri) {
         if (busy) return
         val draft = config.stageDraft

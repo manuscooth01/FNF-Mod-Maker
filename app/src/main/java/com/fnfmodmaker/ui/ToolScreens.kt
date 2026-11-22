@@ -1028,6 +1028,9 @@ internal fun CharacterToolScreen(vm: WizardViewModel) {
     val saveZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportCharacter(uri)
     }
+    val pickImportChar = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importCharacter(uri)
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -1047,6 +1050,11 @@ internal fun CharacterToolScreen(vm: WizardViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    OutlinedButton(
+                        onClick = { pickImportChar.launch(arrayOf("application/zip")) },
+                        enabled = !vm.busy
+                    ) { Text("📥 Importar ZIP") }
+                    Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = { saveZip.launch(vm.characterZipName) },
                         modifier = Modifier.weight(1f),

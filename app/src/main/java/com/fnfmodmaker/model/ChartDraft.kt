@@ -77,14 +77,12 @@ data class ChartDraft(
     fun toPsychJson(): String {
         import org.json.JSONArray
         import org.json.JSONObject
-        import kotlin.math.max
-        import kotlin.math.roundToLong
 
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
         // Estimar beats totales desde la última nota
         val lastNoteTime = notes.maxByOrNull { it.endTimeMs }?.endTimeMs ?: 0L
-        val beats = max(1, ((lastNoteTime / beatMs).toInt() + 3) / 4 * 4)
-        val sectionCount = max(1, (beats + 3) / 4)
+        val beats = Math.max(1, ((lastNoteTime / beatMs).toInt() + 3) / 4 * 4)
+        val sectionCount = Math.max(1, (beats + 3) / 4)
         val sections = JSONArray()
 
         for (sectionIndex in 0 until sectionCount) {
@@ -92,8 +90,8 @@ data class ChartDraft(
             val sectionNotes = JSONArray()
             val sectionStartBeat = sectionIndex * 4
             val sectionEndBeat = sectionStartBeat + 4
-            val sectionStartMs = (sectionStartBeat * beatMs).roundToLong()
-            val sectionEndMs = (sectionEndBeat * beatMs).roundToLong()
+            val sectionStartMs = (sectionStartBeat * beatMs).toLong()
+            val sectionEndMs = (sectionEndBeat * beatMs).toLong()
 
             // Filtrar notas de esta sección
             val sectionNotesList = notes.filter { it.timeMs >= sectionStartMs && it.timeMs < sectionEndMs }
@@ -103,11 +101,11 @@ data class ChartDraft(
                 val isPlayerSide = note.lane in 0..3
                 val lane = note.lane % 4
                 val data = if (mustHit == isPlayerSide) lane else lane + 4
-                val sustain = if (note.isHold) (note.lengthMs / beatMs).roundToLong() else 0
+                val sustain = if (note.isHold) (note.lengthMs / beatMs).toLong() else 0
                 
                 sectionNotes.put(
                     JSONArray()
-                        .put((note.timeMs - sectionStartMs).roundToLong())
+                        .put((note.timeMs - sectionStartMs).toLong())
                         .put(data)
                         .put(sustain)
                 )

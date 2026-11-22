@@ -126,6 +126,12 @@ private fun WizardScreen(vm: WizardViewModel) {
     val pickImportZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importMod(uri)
     }
+    val pickVariationSheet = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickVariationSheet(uri)
+    }
+    val pickVariationIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickVariationIcon(uri)
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -218,6 +224,164 @@ private fun WizardScreen(vm: WizardViewModel) {
                     )
                 }
                 Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Modal Editor de Variación de Personaje
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun VariationEditorModal(
+    vm: WizardViewModel,
+    onDismiss: () -> Unit,
+    onPickSheet: () -> Unit,
+    onPickIcon: () -> Unit
+) {
+    val variation = vm.activeVariation ?: return
+    val index = vm.activeVariationIndex!!
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        // Fondo semitransparente
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x80000000))
+                .clickable { onDismiss() }
+        )
+
+        // Modal content
+        Surface(
+            modifier = Modifier
+                .width(90.dp.min(LocalConfiguration.current.screenWidthDp.dp))
+                .height(90.dp.min(LocalConfiguration.current.screenHeightDp.dp))
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
+            elevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Editar variación: ${variation.displayName}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    androidx.compose.material3.IconButton(onClick = onDismiss) {
+                        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Default.Close, contentDescription = "Cerrar")
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                // ID y nombre
+                Field(label = "ID de la variación", value = variation.variationId, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(variationId = it.filter { it.isLetterOrDigit() || it in "-_" }) } }, hint = "minúsculas, números, guiones")
+                Spacer(Modifier.height(8.dp))
+                Field(label = "Nombre visible", value = variation.displayName, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(displayName = it) } }, hint = "Ej: Erect, Pico, Dead")
+                Spacer(Modifier.height(8.dp))
+
+                // Default toggle
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Variación por defecto", fontWeight = FontWeight.SemiBold)
+                        Text("Se usa cuando el chart no especifica variación", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(checked = variation.isDefault, onCheckedChange = { vm.setDefaultVariation(vm.activeVariationIndex!!) })
+                }
+                Spacer(Modifier.height(16.dp))
+
+                // Spritesheet
+                SectionTitle("Hoja de sprites")
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(variation.sheet?.displayName ?: "Sin imagen", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (variation.sheet != null) "${variation.sheetWidth} x ${variation.sheetHeight} px"
+                                else "PNG con cuadrícula de animaciones",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        OutlinedButton(onClick = onPickSheet, enabled = !vm.busy) { Text("Elegir PNG") }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Field(label = "Ancho frame", value = variation.frameWidth, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(frameWidth = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "Alto frame", value = variation.frameHeight, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(frameHeight = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                }
+
+                if (variation.columns > 0 && variation.rows > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    InfoRow("Cuadrícula", "${variation.columns} x ${variation.rows}")
+                    InfoRow("Frames disp.", "${variation.availableFrames}")
+                    InfoRow("Frames usados", "${variation.totalFrames}")
+                    if (variation.availableFrames < variation.totalFrames) {
+                        Spacer(Modifier.height(6.dp))
+                        Text("No caben: ${variation.totalFrames - variation.availableFrames} frames sobran", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("Animaciones (frames por animación)")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Field(label = "idle", value = variation.idleFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(idleFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "singLEFT", value = variation.leftFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(leftFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Field(label = "singDOWN", value = variation.downFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(downFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "singUP", value = variation.upFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(upFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(10.dp))
+                Field(label = "singRIGHT", value = variation.rightFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(rightFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number)
+
+                Spacer(Modifier.height(16.dp))
+                SectionTitle("Ajustes")
+                Field(label = "Escala", value = variation.scale, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(scale = it.filter { it.isDigit() || it == '.' }) } }, keyboardType = KeyboardType.Decimal)
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { Text("Voltear horizontalmente", fontWeight = FontWeight.SemiBold) }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(checked = variation.flipX, onCheckedChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(flipX = it) } })
+                }
+
+                Spacer(Modifier.height(16.dp))
+                // Icono de vida
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Icono de vida", fontWeight = FontWeight.SemiBold)
+                        Text(variation.icon?.displayName ?: "Sin icono: usa el del personaje base", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    OutlinedButton(onClick = onPickIcon, enabled = !vm.busy) { Text("Elegir") }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onDismiss) { Text("Cerrar") }
+                    Button(onClick = { /* Guardado automático */ onDismiss() }, modifier = Modifier.weight(1f)) { Text("Guardar y cerrar") }
+                }
             }
         }
     }
@@ -536,10 +700,20 @@ private fun StepSongs(
                             Text("Eliminar")
                         }
                     }
-                }
-            }
+}
         }
     }
+
+    // Modal editor de variación
+    if (vm.activeVariationIndex != null) {
+        VariationEditorModal(
+            vm = vm,
+            onDismiss = { vm.closeVariationEditor() },
+            onPickSheet = { pickVariationSheet.launch(arrayOf("image/*")) },
+            onPickIcon = { pickVariationIcon.launch(arrayOf("image/*")) }
+        )
+    }
+}
 
     Spacer(Modifier.height(12.dp))
     // Botón agregar canción
@@ -980,7 +1154,7 @@ internal fun CharacterForm(
                                                 .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp))
                                         )
                                     }
-                                    OutlinedButton(onClick = { /* TODO: editar variación */ }, enabled = !vm.busy) { Text("Editar") }
+                                    OutlinedButton(onClick = { vm.openVariationEditor(index) }, enabled = !vm.busy) { Text("Editar") }
                                     OutlinedButton(onClick = { vm.removeCharacterVariation(index) }, enabled = !vm.busy, colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer)) { Text("🗑") }
                                 }
                             }

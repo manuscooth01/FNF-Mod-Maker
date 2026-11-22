@@ -74,6 +74,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var activeChartDifficulty by mutableStateOf("normal")
         private set
 
+    /** Índice de la variación que se está editando. */
+    var activeVariationIndex by mutableStateOf<Int?>(null)
+        private set
+
     /** Estado del editor de chart. */
     var chartEditorState by mutableStateOf(ChartEditorState())
         private set
@@ -963,6 +967,96 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             updated[0] = updated[0].copy(isDefault = true)
         }
         config = config.copy(character = config.character.copy(variations = updated))
+    }
+
+    /** Abre el editor de una variación específica. */
+    fun openVariationEditor(index: Int) {
+        if (busy) return
+        activeVariationIndex = index
+    }
+
+    /** Cierra el editor de variación. */
+    fun closeVariationEditor() {
+        activeVariationIndex = null
+    }
+
+    /** Obtiene la variación que se está editando. */
+    val activeVariation: com.fnfmodmaker.model.CharacterVariation?
+        get() = activeVariationIndex?.let { config.character.variations.getOrNull(it) }
+
+    /** Actualiza una variación en el config. */
+    fun updateVariation(index: Int, block: (com.fnfmodmaker.model.CharacterVariation) -> com.fnfmodmaker.model.CharacterVariation) {
+        if (busy) return
+        val updated = config.character.variations.toMutableList()
+        updated[index] = block(updated[index])
+        config = config.copy(character = config.character.copy(variations = updated))
+    }
+
+    /** Establece la variación por defecto. */
+    fun setDefaultVariation(index: Int) {
+        if (busy) return
+        val updated = config.character.variations.mapIndexed { i, v ->
+            v.copy(isDefault = i == index)
+        }
+        config = config.copy(character = config.character.copy(variations = updated))
+    }
+
+    // ---------------- Variación: pickers ----------------
+
+    fun pickVariationSheet(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        val index = activeVariationIndex ?: return
+        busy = true
+        error = null
+        status = "Copiando spritesheet de variación…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = MediaTools.displayName(app, uri)
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "spritesheet.png" }
+                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    MediaTools.copyTo(app, uri, target)
+                    val size = MediaTools.imageSize(target)
+                        ?: throw IllegalStateException("No se pudo leer la imagen de la hoja de sprites.")
+                    com.fnfmodmaker.model.PickedImage(uri = uri, displayName = displayName, path = target.absolutePath) to size
+                }
+            }
+            result.onSuccess { (picked, size) ->
+                updateVariation(activeVariationIndex!!) { it.copy(sheet = picked, sheetWidth = size.first, sheetHeight = size.second) }
+            }.onFailure {
+                error = it.message ?: "No se pudo leer la hoja de sprites."
+            }
+            status = ""
+            busy = false
+        }
+    }
+
+    fun pickVariationIcon(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        val index = activeVariationIndex ?: return
+        busy = true
+        error = null
+        status = "Copiando icono de variación…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = MediaTools.displayName(app, uri)
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "icono.png" }
+                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    MediaTools.copyTo(app, uri, target)
+                    com.fnfmodmaker.model.PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
+                }
+            }
+            result.onSuccess { picked ->
+                updateVariation(activeVariationIndex!!) { it.copy(icon = picked) }
+            }.onFailure {
+                error = it.message ?: "No se pudo leer la imagen del icono."
+            }
+            status = ""
+            busy = false
+        }
     }
 
     // ---------------- Archivos de la canción activa ----------------

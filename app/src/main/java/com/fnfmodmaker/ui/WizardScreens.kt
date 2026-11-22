@@ -1411,22 +1411,47 @@ private fun PianoRoll(
 
     val canvasHeight = (laneHeight.value * laneCount + headerHeight.value + timeRulerHeight.value).toInt()
 
-    // Estados locales para drag
+    // Estados locales para drag (usando currentPanX para pan/zoom unificado)
     var scrollOffsetPx by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
     var lastScrollOffsetPx by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(0f) }
 
-    // Sincronizar scroll
-    androidx.compose.runtime.LaunchedEffect(editorState.scrollX) {
-        scrollOffsetPx = editorState.scrollX * 100f
+    // Sincronizar scroll/zoom con currentPanX/currentZoom
+    androidx.compose.runtime.LaunchedEffect(currentPanX, currentZoom) {
+        scrollOffsetPx = currentPanX * 100f
         lastScrollOffsetPx = scrollOffsetPx
     }
 
     // Modifiers combinados para todos los gestos
+    var currentZoom by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(zoom) }
+    var currentPanX by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(editorState.scrollX) }
+
+    // Sincronizar con editorState
+    androidx.compose.runtime.LaunchedEffect(editorState.zoom, editorState.scrollX) {
+        currentZoom = editorState.zoom
+        currentPanX = editorState.scrollX
+    }
+
     val canvasModifier = Modifier
         .fillMaxWidth()
         .height(canvasHeight.dp)
         .pointerInput(Unit) {
-            // Drag para scroll (pan) - botón medio o drag con 2 dedos
+            // Pinch zoom + pan (transform gestures)
+            detectTransformGestures(
+                onGesture = { centroid, pan, zoom, rotation ->
+                    // Zoom con pinch (centroide = punto focal)
+                    val newZoom = (currentZoom * zoom).coerceIn(0.25f, 8f)
+                    currentZoom = newZoom
+                    vm.updateChartView(newZoom, currentPanX)
+                    
+                    // Pan con dos dedos
+                    val newPanX = (currentPanX - pan.x / 100f).coerceIn(0f, Float.MAX_VALUE)
+                    currentPanX = newPanX
+                    vm.updateChartView(currentZoom, newPanX)
+                }
+            )
+        }
+        .pointerInput(Unit) {
+            // Drag para scroll (pan) - un dedo
             detectDragGestures(
                 onDragStart = { 
                     if (dragState == null || dragState is com.fnfmodmaker.model.ChartEditorState.DragState.Scroll) {
@@ -1442,21 +1467,6 @@ private fun PianoRoll(
                     }
                 },
                 onDragEnd = { vm.endScrollDrag() }
-            )
-        }
-        .pointerInput(Unit) {
-            // Tap, long press, y drag para notas
-            detectTapGestures(
-                onTap = { offset ->
-                    val x = offset.x - scrollOffsetPx
-                    val y = offset.y
-                    handleCanvasTap(x, y, beatMs)
-                },
-                onLongPress = { offset ->
-                    val x = offset.x - scrollOffsetPx
-                    val y = offset.y
-                    handleCanvasLongPress(x, y, beatMs)
-                }
             )
         }
         .pointerInput(Unit) {

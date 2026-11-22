@@ -1,6 +1,7 @@
 package com.fnfmodmaker.ui
 
 import android.app.Application
+import android.media.MediaPlayer
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -121,6 +122,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectChartSong(index: Int) {
         if (busy) return
+        releaseMediaPlayer()
         activeChartSongIndex = index.coerceIn(0, config.songs.lastIndex)
         val song = config.songs[activeChartSongIndex]
         activeChartDifficulty = song.orderedDifficulties.firstOrNull() ?: "normal"
@@ -130,12 +132,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectChartDifficulty(difficulty: String) {
         if (busy) return
+        // No liberar MediaPlayer al cambiar dificultad de la misma canción
         activeChartDifficulty = difficulty
         updateChartEditorState()
         initChartHistory()
     }
 
     private fun updateChartEditorState() {
+        releaseMediaPlayer()
         val song = config.songs.getOrElse(activeChartSongIndex) { return }
         chartEditorState = ChartEditorState(
             songFolder = song.songFolder,
@@ -233,15 +237,104 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         chartEditorState = chartEditorState.copy(currentTimeMs = timeMs)
     }
 
-    /** Alterna reproducción. */
-    fun togglePlayback() {
-        chartEditorState = chartEditorState.copy(isPlaying = !chartEditorState.isPlaying)
-    }
-
     /** Actualiza zoom y scroll del editor. */
     fun updateChartView(zoom: Float, scrollX: Float) {
         chartEditorState = chartEditorState.copy(zoom = zoom, scrollX = scrollX)
     }
+
+    // ---------------- Reproducción de Audio (MediaPlayer) ----------------
+
+    private var mediaPlayer: MediaPlayer? = null
+    private var playbackJob: kotlinx.coroutines.Job? = null
+
+    /** Inicializa MediaPlayer con la instrumental de la canción activa. */
+    private fun initMediaPlayer(): MediaPlayer? {
+        val song = config.songs.getOrElse(activeChartSongIndex) { return null }
+        val instrumental = song.instrumental ?: return null
+        val mp = MediaPlayer().apply {
+            try {
+                setDataSource(applicationContext, Uri.parse(instrumental.path))
+                prepare()
+                setOnCompletionListener { onPlaybackComplete() }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                release()
+                return@apply null
+            }
+        }
+        return mp
+    }
+
+    /** Inicia o reanuda la reproducción. */
+    fun startPlayback() {
+        if (mediaPlayer == null) {
+            mediaPlayer = initMediaPlayer() ?: return
+        }
+        val mp = mediaPlayer!!
+        if (!mp.isPlaying) {
+            val currentPos = chartEditorState.currentTimeMs.toInt()
+            if (currentPos > 0 && currentPos < mp.duration) {
+                mp.seekTo(currentPos)
+            }
+            mp.start()
+            chartEditorState = chartEditorState.copy(isPlaying = true)
+            startPlaybackPolling()
+        }
+    }
+
+    /** Pausa la reproducción. */
+    fun pausePlayback() {
+        mediaPlayer?.pause()
+        chartEditorState = chartEditorState.copy(isPlaying = false)
+        playbackJob?.cancel()
+    }
+
+    /** Alterna play/pausa. */
+    fun togglePlayback() {
+        if (chartEditorState.isPlaying) {
+            pausePlayback()
+        } else {
+            startPlayback()
+        }
+    }
+
+    /** Polling para actualizar currentTimeMs desde MediaPlayer. */
+    private fun startPlaybackPolling() {
+        playbackJob?.cancel()
+        playbackJob = viewModelScope.launch {
+            while (mediaPlayer?.isPlaying == true) {
+                val currentPos = mediaPlayer?.currentPosition ?: 0
+                chartEditorState = chartEditorState.copy(currentTimeMs = currentPos.toLong())
+                delay(16) // ~60fps
+            }
+        }
+    }
+
+    /** Callback al terminar reproducción. */
+    private fun onPlaybackComplete() {
+        chartEditorState = chartEditorState.copy(isPlaying = false, currentTimeMs = 0)
+        playbackJob?.cancel()
+        mediaPlayer?.seekTo(0)
+    }
+
+    /** Busca a una posición específica (ms). */
+    fun seekTo(timeMs: Long) {
+        mediaPlayer?.seekTo(timeMs.toInt())
+        chartEditorState = chartEditorState.copy(currentTimeMs = timeMs)
+    }
+
+    /** Limpia MediaPlayer al cambiar de canción o cerrar. */
+    fun releaseMediaPlayer() {
+        playbackJob?.cancel()
+        mediaPlayer?.apply {
+            if (isPlaying) pause()
+            release()
+        }
+        mediaPlayer = null
+    }
+
+    /** Actualiza togglePlayback para usar MediaPlayer real. */
+    // (la función togglePlayback de arriba ya llama a startPlayback/pausePlayback)
 
     // ---------------- Chart Editor: Selección, Drag, Undo/Redo ----------------
 

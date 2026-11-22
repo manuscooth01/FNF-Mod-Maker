@@ -81,54 +81,120 @@ data class ChartDraft(
         import kotlin.math.roundToLong
 
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
-        // Estimar beats totales desde la última nota
+        // Estimar beats totales desde la última nota o evento
         val lastNoteTime = notes.maxByOrNull { it.endTimeMs }?.endTimeMs ?: 0L
-        val beats = max(1, ((lastNoteTime / beatMs).toInt() + 3) / 4 * 4)
+        val lastEventTime = events.maxByOrNull { it.timeMs + it.durationMs }?.let { it.timeMs + it.durationMs } ?: 0L
+        val lastSectionTime = sections.maxByOrNull { it.startTimeMs + it.lengthMs }?.let { it.startTimeMs + it.lengthMs } ?: 0L
+        val totalMs = maxOf(lastNoteTime, lastEventTime, lastSectionTime)
+        val beats = max(1, ((totalMs / beatMs).toInt() + 3) / 4 * 4)
         val sectionCount = max(1, (beats + 3) / 4)
-        val sections = JSONArray()
+        val sectionsJson = JSONArray()
 
-        for (sectionIndex in 0 until sectionCount) {
-            val mustHit = sectionIndex % 2 == 0
-            val sectionNotes = JSONArray()
-            val sectionStartBeat = sectionIndex * 4
-            val sectionEndBeat = sectionStartBeat + 4
-            val sectionStartMs = (sectionStartBeat * beatMs).roundToLong()
-            val sectionEndMs = (sectionEndBeat * beatMs).roundToLong()
+        // Construir mapa de cambios de BPM desde eventos
+        val bpmChanges = events
+            .filter { it.type == ChartEvent.EventType.BPM_CHANGE }
+            .associateBy({ it.timeMs }, { it.value1 })
+        val speedChanges = events
+            .filter { it.type == ChartEvent.EventType.SPEED_CHANGE }
+            .associateBy({ it.timeMs }, { it.value1 })
 
-            // Filtrar notas de esta sección
-            val sectionNotesList = notes.filter { it.timeMs >= sectionStartMs && it.timeMs < sectionEndMs }
-            
-            for (note in sectionNotesList) {
-                val relativeBeat = ((note.timeMs - sectionStartMs) / beatMs)
-                val isPlayerSide = note.lane in 0..3
-                val lane = note.lane % 4
-                val data = if (mustHit == isPlayerSide) lane else lane + 4
-                val sustain = if (note.isHold) (note.lengthMs / beatMs).roundToLong() else 0
+        // Usar secciones personalizadas si existen, sino generar automáticas
+        val customSections = sections.sortedBy { it.startTimeMs }
+        
+        if (customSections.isNotEmpty()) {
+            // Usar secciones definidas por el usuario
+            for (section in customSections) {
+                val sectionStartMs = section.startTimeMs
+                val sectionEndMs = section.startTimeMs + section.lengthMs
+                val sectionNotesList = notes.filter { it.timeMs >= sectionStartMs && it.timeMs < sectionEndMs }
+                val sectionNotes = JSONArray()
                 
-                sectionNotes.put(
-                    JSONArray()
-                        .put((note.timeMs - sectionStartMs).roundToLong())
-                        .put(data)
-                        .put(sustain)
+                for (note in sectionNotesList) {
+                    val isPlayerSide = note.lane in 0..3
+                    val lane = note.lane % 4
+                    val data = if (section.mustHit == isPlayerSide) lane else lane + 4
+                    val sustain = if (note.isHold) (note.lengthMs / beatMs).roundToLong() else 0
+                    
+                    sectionNotes.put(
+                        JSONArray()
+                            .put((note.timeMs - sectionStartMs).roundToLong())
+                            .put(data)
+                            .put(sustain)
+                    )
+                }
+                
+                // Detectar cambio de BPM en esta sección
+                val sectionBpm = bpmChanges[sectionStartMs] ?: section.bpm
+                val sectionSpeed = speedChanges[sectionStartMs] ?: section.speed
+                
+                sectionsJson.put(
+                    JSONObject()
+                        .put("sectionNotes", sectionNotes)
+                        .put("sectionBeats", max(1, (section.lengthMs / beatMs).roundToInt()))
+                        .put("mustHitSection", section.mustHit)
+                        .put("altAnim", section.altAnim)
+                        .put("gfSection", section.gfSection)
+                        .put("bpm", sectionBpm.toInt())
+                        .put("changeBPM", bpmChanges.containsKey(sectionStartMs))
                 )
             }
+        } else {
+            // Generación automática (compatibilidad)
+            for (sectionIndex in 0 until sectionCount) {
+                val mustHit = sectionIndex % 2 == 0
+                val sectionNotes = JSONArray()
+                val sectionStartBeat = sectionIndex * 4
+                val sectionEndBeat = sectionStartBeat + 4
+                val sectionStartMs = (sectionStartBeat * beatMs).roundToLong()
+                val sectionEndMs = (sectionEndBeat * beatMs).roundToLong()
 
-            sections.put(
+                val sectionNotesList = notes.filter { it.timeMs >= sectionStartMs && it.timeMs < sectionEndMs }
+                
+                for (note in sectionNotesList) {
+                    val isPlayerSide = note.lane in 0..3
+                    val lane = note.lane % 4
+                    val data = if (mustHit == isPlayerSide) lane else lane + 4
+                    val sustain = if (note.isHold) (note.lengthMs / beatMs).roundToLong() else 0
+                    
+                    sectionNotes.put(
+                        JSONArray()
+                            .put((note.timeMs - sectionStartMs).roundToLong())
+                            .put(data)
+                            .put(sustain)
+                    )
+                }
+
+                sectionsJson.put(
+                    JSONObject()
+                        .put("sectionNotes", sectionNotes)
+                        .put("sectionBeats", 4)
+                        .put("mustHitSection", mustHit)
+                        .put("altAnim", false)
+                        .put("gfSection", false)
+                        .put("bpm", if (bpm > 0) bpm else 150)
+                        .put("changeBPM", false)
+                )
+            }
+        }
+
+        // Eventos Psych (camera, flash, etc.)
+        val eventsJson = JSONArray()
+        for (event in events) {
+            eventsJson.put(
                 JSONObject()
-                    .put("sectionNotes", sectionNotes)
-                    .put("sectionBeats", 4)
-                    .put("mustHitSection", mustHit)
-                    .put("altAnim", false)
-                    .put("gfSection", false)
-                    .put("bpm", if (bpm > 0) bpm else 150)
-                    .put("changeBPM", false)
+                    .put("time", event.timeMs)
+                    .put("type", event.type.name)
+                    .put("value1", event.value1)
+                    .put("value2", event.value2)
+                    .put("value3", event.value3)
+                    .put("duration", event.durationMs)
             )
         }
 
         return JSONObject()
             .put("song", songFolder)
-            .put("notes", sections)
-            .put("events", JSONArray())
+            .put("notes", sectionsJson)
+            .put("events", eventsJson)
             .put("bpm", if (bpm > 0) bpm else 150)
             .put("needsVoices", needsVoices)
             .put("speed", scrollSpeed)
@@ -161,10 +227,24 @@ data class ChartDraft(
         }
         notesJson.put(difficulty, notesArray)
 
+        // Eventos V-Slice
+        val eventsJson = JSONArray()
+        for (event in events) {
+            eventsJson.put(
+                JSONObject()
+                    .put("time", event.timeMs)
+                    .put("type", event.type.name)
+                    .put("value1", event.value1)
+                    .put("value2", event.value2)
+                    .put("value3", event.value3)
+                    .put("duration", event.durationMs)
+            )
+        }
+
         return JSONObject()
             .put("version", "2.0.0")
             .put("scrollSpeed", scrollSpeed)
-            .put("events", JSONArray())
+            .put("events", eventsJson)
             .put("notes", notesJson)
             .put("generatedBy", "FNF Mod Maker Chart Editor")
             .toString(2)

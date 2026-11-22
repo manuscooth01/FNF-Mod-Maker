@@ -5,6 +5,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.lang.Math.max
+import java.lang.Math.min
 
 /**
  * Representa una nota en el chart.
@@ -75,9 +79,6 @@ data class ChartDraft(
 ) {
     /** Convierte a JSON Psych Engine (formato psych_v1). */
     fun toPsychJson(): String {
-        import org.json.JSONArray
-        import org.json.JSONObject
-
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
         // Estimar beats totales desde la última nota
         val lastNoteTime = notes.maxByOrNull { it.endTimeMs }?.endTimeMs ?: 0L
@@ -141,9 +142,6 @@ data class ChartDraft(
 
     /** Convierte a JSON V-Slice (esquema 2.0.0). */
     fun toVSliceJson(): String {
-        import org.json.JSONArray
-        import org.json.JSONObject
-
         val scrollSpeed = JSONObject().put(difficulty, scrollSpeed)
         val notesJson = JSONObject()
         val notesArray = JSONArray()
@@ -170,8 +168,6 @@ data class ChartDraft(
 
     /** Convierte solo las notas a JSONArray para V-Slice (una dificultad). */
     fun toVSliceNotes(): JSONArray {
-        import org.json.JSONArray
-        import org.json.JSONObject
         val notesArray = JSONArray()
         for (note in notes) {
             val data = if (note.lane in 0..3) note.lane else note.lane - 4

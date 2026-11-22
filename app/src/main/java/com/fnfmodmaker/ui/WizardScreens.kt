@@ -88,6 +88,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
         Tool.CHARACTER -> CharacterToolScreen(vm)
         Tool.AUDIO -> AudioToolScreen(vm)
         Tool.IMPORT -> ImportScreen(vm)
+        Tool.STAGE -> StageToolScreen(vm)
     }
 }
 

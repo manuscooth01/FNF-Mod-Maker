@@ -29,7 +29,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
-enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT }
+enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT, STAGE }
 
 class WizardViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -706,6 +706,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (target == Tool.IMPORT) {
             // Import no necesita setup previo, el file picker está en la pantalla
         }
+        if (target == Tool.STAGE) {
+            // Stage tool - no setup needed
+        }
         tool = target
     }
 
@@ -1174,6 +1177,153 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             }
             busy = false
         }
+    }
+
+    /** Crea un ZIP solo con el stage (fondo, sprites, JSONs). */
+    fun exportStage(uri: Uri) {
+        if (busy) return
+        val draft = config.stageDraft
+        if (!draft.isReady) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Preparando el stage…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val workRoot = File(app.cacheDir, "stagetool")
+                    if (workRoot.exists()) workRoot.deleteRecursively()
+                    val root = File(workRoot, draft.stageFolder)
+                    if (!root.mkdirs()) throw IllegalStateException("No se pudo crear la carpeta de trabajo.")
+                    val tempConfig = ModConfig(engine = TargetEngine.BOTH)
+                        .copy(stageDraft = draft)
+                    val warningsList = mutableListOf<String>()
+                    com.fnfmodmaker.mod.StageBuilder.build(
+                        root = root,
+                        config = tempConfig,
+                        onProgress = { message -> status = message },
+                        warnings = warningsList
+                    )
+                    File(root, "LEEME.txt").writeText(stageReadme(draft.stageFolder), Charsets.UTF_8)
+                    val stream = app.contentResolver.openOutputStream(uri)
+                        ?: throw IllegalStateException("No se pudo abrir el destino elegido.")
+                    // Sin carpeta contenedora: el ZIP se descomprime dentro del mod.
+                    stream.use { ModBuilder.zip(root, it, includeRoot = false) }
+                    MediaTools.displayName(app, uri).ifBlank { "${draft.stageFolder}-stage.zip" } to warningsList
+                }
+            }
+            result.onSuccess { (name, list) ->
+                warnings = list
+                status = "¡Stage listo!"
+            }.onFailure {
+                status = ""
+                error = it.message ?: it.toString()
+            }
+            busy = false
+        }
+    }
+
+    private fun stageReadme(id: String): String = buildString {
+        appendLine("STAGE: $id")
+        appendLine()
+        appendLine("Este ZIP NO es un mod: son los archivos de un stage para meterlos")
+        appendLine("dentro de un mod que ya tengas (o en el que crees con esta misma app).")
+        appendLine()
+        appendLine("CÓMO USARLO")
+        appendLine("1. Descomprime el ZIP dentro de la carpeta de tu mod")
+        appendLine("   (la que está dentro de mods/). Debe quedar así:")
+        appendLine("     images/stages/$id/background.png")
+        appendLine("     images/stages/$id/sprites/")
+        appendLine("     images/stages/$id/sprites.xml")
+        appendLine("     data/stages/$id.json       (V-Slice)")
+        appendLine("     stages/$id.json            (Psych)")
+        appendLine("2. En la canción, pon el escenario como \"$id\" (V-Slice) o usa el stage base.")
+        appendLine()
+        appendLine("Si el fondo no se ve, revisa que la imagen sea PNG/JPG válida.")
+    }
+
+    // ---------------- Stage: pickers y setters ----------------
+
+    fun pickStageBackground(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Copiando fondo…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = MediaTools.displayName(app, uri)
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "background.png" }
+                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    MediaTools.copyTo(app, uri, target)
+                    com.fnfmodmaker.model.PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
+                }
+            }
+            result.onSuccess { picked ->
+                config = config.copy(stageDraft = config.stageDraft.copy(backgroundImage = picked))
+            }.onFailure {
+                error = it.message ?: "No se pudo leer la imagen."
+            }
+            status = ""
+            busy = false
+        }
+    }
+
+    fun pickStageSprite(uri: Uri) {
+        // TODO: implementar selector de sprite individual
+        // Por ahora solo fondo
+    }
+
+    fun setStageId(value: String) {
+        config = config.copy(stageDraft = config.stageDraft.copy(stageId = slugify(value)))
+    }
+
+    fun setStageDisplayName(value: String) {
+        config = config.copy(stageDraft = config.stageDraft.copy(displayName = value))
+    }
+
+    fun setStageBackgroundColor(value: String) {
+        config = config.copy(stageDraft = config.stageDraft.copy(backgroundColor = value))
+    }
+
+    fun setStageCamX(value: String) {
+        val v = value.toFloatOrNull() ?: 0f
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(x = v)))
+    }
+
+    fun setStageCamY(value: String) {
+        val v = value.toFloatOrNull() ?: 0f
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(y = v)))
+    }
+
+    fun setStageCamZoom(value: String) {
+        val v = value.toFloatOrNull() ?: 1f
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(zoom = v)))
+    }
+
+    fun setStageCamFollow(enabled: Boolean) {
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(followPlayer = enabled)))
+    }
+
+    fun setStageCamBoundLeft(value: String) {
+        val v = value.toFloatOrNull() ?: -1000f
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(bounds = config.stageDraft.cameraPosition.bounds.copy(left = v))))
+    }
+
+    fun setStageCamBoundRight(value: String) {
+        val v = value.toFloatOrNull() ?: 1000f
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(bounds = config.stageDraft.cameraPosition.bounds.copy(right = v))))
+    }
+
+    fun setStageCamBoundTop(value: String) {
+        val v = value.toFloatOrNull() ?: -500f
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(bounds = config.stageDraft.cameraPosition.bounds.copy(top = v))))
+    }
+
+    fun setStageCamBoundBottom(value: String) {
+        val v = value.toFloatOrNull() ?: 500f
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(bounds = config.stageDraft.cameraPosition.bounds.copy(bottom = v))))
     }
 
     private fun characterReadme(id: String): String = buildString {

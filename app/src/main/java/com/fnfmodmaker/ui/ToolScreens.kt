@@ -126,12 +126,20 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 onClick = { vm.openTool(Tool.AUDIO) }
             )
             Spacer(Modifier.height(12.dp))
-            ToolCard(
+ToolCard(
                 glyph = "📥",
                 title = "Importar mod existente",
-                description = "Carga un ZIP de mod (V-Slice o Psych) y edítalo: canciones, charts, personajes, audio.",
+                description = "Carga un ZIP de mod (V-Slice o Psych Engine) y edítalo: canciones, charts, personajes, audio.",
                 badge = "Nuevo",
                 onClick = { vm.openTool(Tool.IMPORT) }
+            )
+            Spacer(Modifier.height(12.dp))
+            ToolCard(
+                glyph = "🏞️",
+                title = "Crear un stage (escenario)",
+                description = "Fondo personalizado, sprites, cámara y límites. Genera archivos para V-Slice y Psych.",
+                badge = "Nuevo",
+                onClick = { vm.openTool(Tool.STAGE) }
             )
 
             Spacer(Modifier.height(20.dp))
@@ -260,8 +268,215 @@ internal fun ImportScreen(vm: WizardViewModel) {
                         Spacer(Modifier.width(10.dp))
                         OutlinedButton(onClick = { pickImport.launch(arrayOf("application/zip")) }, enabled = !vm.busy) {
                             Text("Elegir ZIP")
-                        }
+}
+}
+
+// ---------------------------------------------------------------------------
+// Herramienta: crear un stage (escenario) personalizado
+// ---------------------------------------------------------------------------
+
+@Composable
+internal fun StageToolScreen(vm: WizardViewModel) {
+    val draft = vm.config.stageDraft
+
+    val pickBackground = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickStageBackground(uri)
+    }
+    val pickSprite = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickStageSprite(uri)
+    }
+    val saveZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) vm.exportStage(uri)
+    }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            ToolTopBar(
+                title = "Crear un stage (escenario)",
+                subtitle = draft.stageFolder,
+                onHome = vm::goHome
+            )
+        },
+        bottomBar = {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = { saveZip.launch("${draft.stageFolder}-stage.zip") },
+                        modifier = Modifier.weight(1f),
+                        enabled = draft.isReady && !vm.busy
+                    ) {
+                        Text(if (vm.busy) "Generando…" else "Guardar ZIP del stage")
                     }
+                }
+            }
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Crea un escenario personalizado con fondo, sprites y configuración de cámara. " +
+                    "El ZIP generado se descomprime dentro de un mod.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+
+            StageForm(
+                vm = vm,
+                draft = draft,
+                onPickBackground = { pickBackground.launch(arrayOf("image/*")) },
+                onPickSprite = { pickSprite.launch(arrayOf("image/*")) }
+            )
+
+            if (!draft.isReady && draft.backgroundImage != null) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Completa el ID del stage y elige una imagen de fondo.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            ToolStatus(
+                status = vm.status,
+                error = vm.error,
+                saved = null,
+                warnings = vm.warnings,
+                savedLabel = "Stage guardado como"
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Formulario del stage. Se usa en la herramienta suelta y en el wizard.
+ */
+@Composable
+internal fun StageForm(
+    vm: WizardViewModel,
+    draft: com.fnfmodmaker.model.StageDraft,
+    onPickBackground: () -> Unit,
+    onPickSprite: () -> Unit
+) {
+    Field(
+        label = "ID del stage",
+        value = draft.stageId,
+        onChange = vm::setStageId,
+        hint = "Nombre de archivo: minúsculas, números y guiones (ej. mi-stage)"
+    )
+    Spacer(Modifier.height(10.dp))
+    Field(
+        label = "Nombre visible",
+        value = draft.displayName,
+        onChange = vm::setStageDisplayName,
+        hint = "Cómo se llama en el juego."
+    )
+
+    SectionTitle("Imagen de fondo")
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(draft.backgroundImage?.displayName ?: "Sin imagen todavía", fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (draft.backgroundImage != null) "Se reescalará a máx. 1920px ancho"
+                    else "PNG/JPG del fondo del escenario",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            OutlinedButton(onClick = onPickBackground, enabled = !vm.busy) { Text("Elegir fondo") }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    Field(
+        label = "Color de fondo (fallback)",
+        value = draft.backgroundColor,
+        onChange = vm::setStageBackgroundColor,
+        hint = "#RRGGBB. Se usa si la imagen no carga."
+    )
+
+    SectionTitle("Cámara")
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(label = "Cam X", value = draft.cameraPosition.x.toString(), onChange = vm::setStageCamX, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+        Field(label = "Cam Y", value = draft.cameraPosition.y.toString(), onChange = vm::setStageCamY, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+    }
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(label = "Zoom", value = draft.cameraPosition.zoom.toString(), onChange = vm::setStageCamZoom, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+    }
+    Spacer(Modifier.height(8.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Seguir al jugador", fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = draft.cameraPosition.followPlayer, onCheckedChange = vm::setStageCamFollow)
+    }
+
+    SectionTitle("Límites de cámara")
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(label = "Izq", value = draft.cameraPosition.bounds.left.toString(), onChange = vm::setStageCamBoundLeft, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+        Field(label = "Der", value = draft.cameraPosition.bounds.right.toString(), onChange = vm::setStageCamBoundRight, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+    }
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Field(label = "Arriba", value = draft.cameraPosition.bounds.top.toString(), onChange = vm::setStageCamBoundTop, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+        Field(label = "Abajo", value = draft.cameraPosition.bounds.bottom.toString(), onChange = vm::setStageCamBoundBottom, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f))
+    }
+
+    SectionTitle("Sprites del stage (props, foreground, etc.)")
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Sprites: ${draft.sprites.size}", fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { /* TODO: agregar sprite */ }, enabled = !vm.busy) { Text("+ Agregar sprite") }
+            }
+            if (draft.sprites.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text("Lista de sprites (pendiente implementar editor visual)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+
+    Spacer(Modifier.height(10.dp))
+    HelpCard(
+        "El stage personalizado genera:\n" +
+        "• images/stages/<id>/background.png (fondo reescalado a 1920px)\n" +
+        "• images/stages/<id>/sprites/ (sprites individuales)\n" +
+        "• images/stages/<id>/sprites.xml (atlas Sparrow)\n" +
+        "• data/stages/<id>.json (V-Slice)\n" +
+        "• stages/<id>.json (Psych Engine)\n\n" +
+        "Para usar el stage en una canción, selecciona su ID en el campo 'Escenario' del paso de canción."
+    )
+}
                 }
             }
 

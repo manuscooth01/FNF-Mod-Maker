@@ -372,4 +372,177 @@ object ModImporter {
             return com.fnfmodmaker.model.CharacterDraft()
         }
     }
+
+    /** Importa un stage (escenario) personalizado desde ZIP. */
+    fun importStageFromZip(
+        context: Context,
+        zipFile: File,
+        workRoot: File,
+        onProgress: (String) -> Unit
+    ): com.fnfmodmaker.model.StageDraft {
+        val warnings = mutableListOf<String>()
+
+        onProgress("Extrayendo stage…")
+        val extractDir = File(workRoot, "import_stage_${System.currentTimeMillis()}")
+        if (extractDir.exists()) extractDir.deleteRecursively()
+        extractDir.mkdirs()
+
+        ZipFile(zipFile).use { zip ->
+            zip.entries().forEach { entry ->
+                val outFile = File(extractDir, entry.name)
+                if (entry.isDirectory) {
+                    outFile.mkdirs()
+                } else {
+                    outFile.parentFile?.mkdirs()
+                    zip.getInputStream(entry).use { input ->
+                        outFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+            }
+        }
+
+        val stage = readStage(extractDir, warnings)
+
+        extractDir.deleteRecursively()
+        return stage
+    }
+
+    private fun readStage(dir: File, warnings: MutableList<String>): com.fnfmodmaker.model.StageDraft {
+        // Buscar stage en data/stages/ (V-Slice) o stages/ (Psych)
+        val vsliceStageDir = File(dir, "data/stages")
+        val psychStageDir = File(dir, "stages")
+        val imagesStagesDir = File(dir, "images/stages")
+
+        val stageDir = if (vsliceStageDir.exists()) vsliceStageDir else psychStageDir
+        if (!stageDir.exists()) {
+            warnings.add("No se encontró carpeta de stage en el ZIP")
+            return com.fnfmodmaker.model.StageDraft()
+        }
+
+        // Buscar archivo JSON del stage
+        val stageJsonFile = stageDir.listFiles()?.firstOrNull { it.extension == "json" }
+            ?: return com.fnfmodmaker.model.StageDraft()
+
+        val stageId = stageJsonFile.nameWithoutExtension
+        var stageName = stageId
+        var backgroundImage: com.fnfmodmaker.model.PickedImage? = null
+        var backgroundColor = "#000000"
+        val sprites = mutableListOf<com.fnfmodmaker.model.StageSprite>()
+        val cameraPosition = com.fnfmodmaker.model.CameraPosition()
+        var baseStageVSlice = "mainStage"
+        var baseStagePsych = "stage"
+
+        try {
+            val json = JSONObject(stageJsonFile.readText())
+            stageName = json.optString("name", stageId)
+            
+            // V-Slice format
+            if (json.has("background")) {
+                val bgPath = json.optString("background", "").replace("stages/", "").replace("/", "")
+                val bgFile = File(imagesStagesDir, "$bgPath/background.png")
+                if (bgFile.exists()) {
+                    backgroundImage = com.fnfmodmaker.model.PickedImage(Uri.fromFile(bgFile), bgFile.name, bgFile.absolutePath)
+                }
+                baseStageVSlice = json.optString("baseStage", "mainStage")
+                
+                // Camera
+                val cam = json.optJSONObject("cameraPosition")
+                if (cam != null) {
+                    cameraPosition = com.fnfmodmaker.model.CameraPosition(
+                        x = cam.optDouble("x", 0.0).toFloat(),
+                        y = cam.optDouble("y", 0.0).toFloat(),
+                        zoom = cam.optDouble("zoom", 1.0).toFloat(),
+                        followPlayer = cam.optBoolean("followPlayer", true)
+                    )
+                    val bounds = cam.optJSONObject("bounds")
+                    if (bounds != null) {
+                        cameraPosition = cameraPosition.copy(bounds = com.fnfmodmaker.model.CameraBounds(
+                            left = bounds.optDouble("left", -1000.0).toFloat(),
+                            right = bounds.optDouble("right", 1000.0).toFloat(),
+                            top = bounds.optDouble("top", -500.0).toFloat(),
+                            bottom = bounds.optDouble("bottom", 500.0).toFloat()
+                        ))
+                    }
+                }
+            }
+            
+            // Psych format
+            if (json.has("background") && json.has("sprites")) {
+                val spritesArray = json.optJSONArray("sprites")
+                spritesArray?.forEach { spriteJson ->
+                    val sprite = spriteJson as JSONObject
+                    val spriteId = sprite.optString("name", sprite.optString("spriteId", ""))
+                    val spriteDisplayName = spriteId
+                    val spriteImagePath = sprite.optString("image", "").replace("stages/", "").replace("/", "")
+                    val spriteFile = File(imagesStagesDir, "$spriteImagePath.png")
+                    val spriteImage = if (spriteFile.exists()) {
+                        com.fnfmodmaker.model.PickedImage(Uri.fromFile(spriteFile), spriteFile.name, spriteFile.absolutePath)
+                    } else null
+                    
+                    sprites.add(com.fnfmodmaker.model.StageSprite(
+                        spriteId = spriteId,
+                        displayName = spriteDisplayName,
+                        image = spriteImage,
+                        x = sprite.optDouble("x", 0.0).toFloat(),
+                        y = sprite.optDouble("y", 0.0).toFloat(),
+                        scale = sprite.optDouble("scale", 1.0).toFloat(),
+                        rotation = sprite.optDouble("rotation", 0.0).toFloat(),
+                        animated = sprite.optBoolean("animated", false),
+                        animationFrames = sprite.optInt("frames", 1),
+                        animationFps = sprite.optInt("fps", 24),
+                        animationLoop = sprite.optBoolean("loop", true),
+                        layer = com.fnfmodmaker.model.StageSprite.Layer.valueOf(sprite.optString("layer", "FOREGROUND").uppercase())
+                    ))
+                }
+                baseStagePsych = json.optString("baseStage", "stage")
+                
+                // Camera Psych
+                val cam = json.optJSONObject("camera")
+                if (cam != null) {
+                    cameraPosition = com.fnfmodmaker.model.CameraPosition(
+                        x = cam.optDouble("x", 0.0).toFloat(),
+                        y = cam.optDouble("y", 0.0).toFloat(),
+                        zoom = cam.optDouble("zoom", 1.0).toFloat(),
+                        followPlayer = cam.optBoolean("followPlayer", true)
+                    )
+                    val bounds = cam.optJSONObject("bounds")
+                    if (bounds != null) {
+                        cameraPosition = cameraPosition.copy(bounds = com.fnfmodmaker.model.CameraBounds(
+                            left = bounds.optDouble("left", -1000.0).toFloat(),
+                            right = bounds.optDouble("right", 1000.0).toFloat(),
+                            top = bounds.optDouble("top", -500.0).toFloat(),
+                            bottom = bounds.optDouble("bottom", 500.0).toFloat()
+                        ))
+                    }
+                }
+            }
+            
+        } catch (e: Exception) {
+            warnings.add("Error leyendo stage JSON: ${e.message}")
+        }
+
+        // Buscar fondo si no se encontró en JSON
+        if (backgroundImage == null) {
+            val bgCandidates = listOf(
+                File(imagesStagesDir, "$stageId/background.png"),
+                File(imagesStagesDir, "background.png"),
+                File(dir, "_polymod_icon.png")
+            )
+            backgroundImage = bgCandidates.firstOrNull { it.exists() }?.let {
+                com.fnfmodmaker.model.PickedImage(Uri.fromFile(it), it.name, it.absolutePath)
+            }
+        }
+
+        return com.fnfmodmaker.model.StageDraft(
+            enabled = true,
+            stageId = stageId,
+            displayName = stageName,
+            backgroundImage = backgroundImage,
+            backgroundColor = backgroundColor,
+            sprites = sprites,
+            cameraPosition = cameraPosition,
+            baseStageVSlice = baseStageVSlice,
+            baseStagePsych = baseStagePsych
+        )
+    }
 }

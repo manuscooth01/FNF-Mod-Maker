@@ -1223,6 +1223,38 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    /** Importa un stage desde un ZIP y carga en el config. */
+    fun importStage(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Importando stage…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val workRoot = File(app.cacheDir, "stageimport")
+                    if (workRoot.exists()) workRoot.deleteRecursively()
+                    workRoot.mkdirs()
+                    val tempZip = File(workRoot, "import_${System.currentTimeMillis()}.zip")
+                    app.contentResolver.openInputStream(uri)?.use { input ->
+                        tempZip.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    val imported = com.fnfmodmaker.mod.ModImporter.importStageFromZip(app, tempZip, workRoot) { message -> status = message }
+                    imported
+                }
+            }
+            result.onSuccess { imported ->
+                config = config.copy(stageDraft = imported)
+                status = "¡Stage importado! Revisa el editor visual."
+            }.onFailure {
+                status = ""
+                error = it.message ?: "No se pudo importar el stage: ${it}"
+            }
+            busy = false
+        }
+    }
+
     private fun stageReadme(id: String): String = buildString {
         appendLine("STAGE: $id")
         appendLine()

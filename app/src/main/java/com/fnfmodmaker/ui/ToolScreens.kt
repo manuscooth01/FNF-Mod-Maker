@@ -326,6 +326,9 @@ internal fun StageToolScreen(vm: WizardViewModel) {
     val saveZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportStage(uri)
     }
+    val pickImportStage = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importStage(uri)
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -345,6 +348,11 @@ internal fun StageToolScreen(vm: WizardViewModel) {
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    OutlinedButton(
+                        onClick = { pickImportStage.launch(arrayOf("application/zip")) },
+                        enabled = !vm.busy
+                    ) { Text("📥 Importar stage ZIP") }
+                    Spacer(Modifier.width(8.dp))
                     Button(
                         onClick = { saveZip.launch("${draft.stageFolder}-stage.zip") },
                         modifier = Modifier.weight(1f),

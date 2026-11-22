@@ -557,16 +557,47 @@ private fun MessageCard(text: String, error: Boolean) {
             style = MaterialTheme.typography.bodySmall,
             color = if (error) MaterialTheme.colorScheme.onErrorContainer
             else MaterialTheme.colorScheme.onSecondaryContainer
-        )
+)
     }
 }
 
-// ---------------------------------------------------------------------------
-// Paso 1: datos del mod
-// ---------------------------------------------------------------------------
-
 @Composable
-private fun StepMod(vm: WizardViewModel, config: ModConfig) {
+internal fun ToolTopBar(
+    title: String,
+    subtitle: String = "",
+    onHome: (() -> Unit)? = null
+) {
+    TopAppBar(
+        navigationIcon = {
+            if (onHome != null) {
+                TextButton(onClick = onHome) { Text("‹ Inicio") }
+            }
+        },
+        title = {
+            Column {
+                Text(title, fontWeight = FontWeight.Bold)
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface
+        )
+    )
+}
+
+    // ---------------------------------------------------------------------------
+    // Paso 1: datos del mod
+    // ---------------------------------------------------------------------------
+
+    @Composable
+    private fun StepMod(vm: WizardViewModel, config: ModConfig) {
     StepHeader(
         "1. Tu mod",
         "Un mod es una carpeta con un nombre, tus canciones y los datos que el juego necesita. Empecemos por lo básico."

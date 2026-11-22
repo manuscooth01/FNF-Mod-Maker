@@ -1,5 +1,6 @@
 package com.fnfmodmaker.mod
 
+import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.hexToRgb
@@ -70,7 +71,29 @@ object JsonBuilders {
             .toString(2)
     }
 
-    /** `<song>-chart.json` (esquema 2.0.0) */
+    /** `<song>-chart.json` (esquema 2.0.0) - usa chart editado si existe. */
+    fun vsliceChart(config: ModConfig, song: SongConfig, durationMs: Long): String {
+        val scrollSpeed = JSONObject()
+        val notes = JSONObject()
+        for (difficulty in song.orderedDifficulties) {
+            scrollSpeed.put(difficulty, song.speedValue)
+            val customChart = config.getChart(song.songFolder, difficulty)
+            notes.put(difficulty, if (customChart != null) {
+                customChart.toVSliceNotes()
+            } else {
+                vsliceNotes(song, durationMs)
+            })
+        }
+        return JSONObject()
+            .put("version", "2.0.0")
+            .put("scrollSpeed", scrollSpeed)
+            .put("events", JSONArray())
+            .put("notes", notes)
+            .put("generatedBy", GENERATED_BY)
+            .toString(2)
+    }
+
+    /** Versión legacy sin ModConfig (para compatibilidad). */
     fun vsliceChart(song: SongConfig, durationMs: Long): String {
         val scrollSpeed = JSONObject()
         val notes = JSONObject()
@@ -147,8 +170,19 @@ object JsonBuilders {
     // Psych Engine
     // ------------------------------------------------------------------
 
-    /** Chart en formato psych_v1. */
-    fun psychChart(song: SongConfig, durationMs: Long): String {
+    /** Chart en formato psych_v1 - usa chart editado si existe. */
+    fun psychChart(config: ModConfig, song: SongConfig, durationMs: Long): String {
+        val customChart = config.getChart(song.songFolder, song.orderedDifficulties.firstOrNull() ?: "normal")
+        if (customChart != null) {
+            return customChart.toPsychJson()
+        }
+        return psychChartGenerated(song, durationMs)
+    }
+
+    /** Versión legacy sin ModConfig (para compatibilidad). */
+    fun psychChart(song: SongConfig, durationMs: Long): String = psychChartGenerated(song, durationMs)
+
+    private fun psychChartGenerated(song: SongConfig, durationMs: Long): String {
         val bpm = song.bpmValue
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
         val beats = totalBeats(song, durationMs)

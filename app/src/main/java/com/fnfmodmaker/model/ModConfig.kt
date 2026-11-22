@@ -1,6 +1,7 @@
 package com.fnfmodmaker.model
 
 import android.net.Uri
+import com.fnfmodmaker.model.ChartDraft
 
 /** Motor del juego para el que se genera el mod. */
 enum class TargetEngine(val label: String, val description: String) {
@@ -109,9 +110,22 @@ data class ModConfig(
     val character: CharacterDraft = CharacterDraft(),
 
     // Archivos globales
-    val icon: PickedImage? = null
+    val icon: PickedImage? = null,
+
+    // Charts editados por canción/dificultad (songFolder -> difficulty -> ChartDraft)
+    val charts: Map<String, Map<String, ChartDraft>> = emptyMap()
 ) {
     val hasAnyVocals: Boolean get() = songs.any { it.hasVocals }
+
+    /** Obtiene el chart editado para una canción y dificultad, o null si no se editó. */
+    fun getChart(songFolder: String, difficulty: String): ChartDraft? =
+        charts[songFolder]?.get(difficulty)
+
+    /** Retorna un ModConfig con el chart actualizado. */
+    fun withChart(songFolder: String, difficulty: String, chart: ChartDraft): ModConfig {
+        val songCharts = charts.getOrDefault(songFolder, emptyMap()) + (difficulty to chart)
+        return copy(charts = charts + (songFolder to songCharts))
+    }
 
     /** Carpeta del mod: se usa como nombre de carpeta dentro de mods/. */
     val modFolder: String

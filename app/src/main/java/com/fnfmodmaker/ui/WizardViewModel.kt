@@ -9,6 +9,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.AudioSlot
+import com.fnfmodmaker.model.ChartDraft
+import com.fnfmodmaker.model.ChartEditorState
 import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
@@ -61,6 +63,38 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     val activeSong: SongConfig
         get() = config.songs.getOrElse(activeSongIndex) { SongConfig() }
 
+    /** Índice de la canción que se está charteando. */
+    var activeChartSongIndex by mutableStateOf(0)
+        private set
+
+    /** Dificultad que se está charteando. */
+    var activeChartDifficulty by mutableStateOf("normal")
+        private set
+
+    /** Estado del editor de chart. */
+    var chartEditorState by mutableStateOf(ChartEditorState())
+        private set
+
+    /** Chart actual que se está editando (crea uno nuevo basado en notas de práctica si no existe). */
+    val activeChartDraft: ChartDraft
+        get() {
+            val song = config.songs.getOrElse(activeChartSongIndex) { return ChartDraft() }
+            val difficulty = activeChartDifficulty
+            return config.getChart(song.songFolder, difficulty)
+                ?: ChartDraft(
+                    songFolder = song.songFolder,
+                    difficulty = difficulty,
+                    scrollSpeed = song.speedValue,
+                    bpm = song.bpmValue,
+                    offsetMs = song.offsetValue,
+                    needsVoices = song.hasVocals,
+                    player1 = song.player,
+                    player2 = song.opponent,
+                    gfVersion = song.girlfriend,
+                    stage = song.stagePsych
+                )
+        }
+
     // ---------------- Navegación de canciones ----------------
 
     fun addSong() {
@@ -80,6 +114,37 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     fun selectSong(index: Int) {
         if (busy) return
         activeSongIndex = index.coerceIn(0, config.songs.lastIndex)
+    }
+
+    // ---------------- Navegación de chart ----------------
+
+    fun selectChartSong(index: Int) {
+        if (busy) return
+        activeChartSongIndex = index.coerceIn(0, config.songs.lastIndex)
+        val song = config.songs[activeChartSongIndex]
+        activeChartDifficulty = song.orderedDifficulties.firstOrNull() ?: "normal"
+        updateChartEditorState()
+    }
+
+    fun selectChartDifficulty(difficulty: String) {
+        if (busy) return
+        activeChartDifficulty = difficulty
+        updateChartEditorState()
+    }
+
+    private fun updateChartEditorState() {
+        val song = config.songs.getOrElse(activeChartSongIndex) { return }
+        chartEditorState = ChartEditorState(
+            songFolder = song.songFolder,
+            currentDifficulty = activeChartDifficulty,
+            isPlaying = false,
+            currentTimeMs = 0L
+        )
+    }
+
+    /** Guarda el chart editado en el config. */
+    fun saveChartDraft(chart: ChartDraft) {
+        config = config.withChart(chart.songFolder, chart.difficulty, chart)
     }
 
     // ---------------- Herramientas sueltas ----------------
@@ -153,6 +218,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 activeSong.difficulties.isNotEmpty()
             2 -> config.character.isReady
             3 -> activeSong.instrumental != null
+            4 -> true // Chart step siempre puede avanzar (es opcional)
             else -> false
         }
 
@@ -162,7 +228,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------- Navegación ----------------
 
     fun next() {
-        if (step < 4 && canAdvance) {
+        if (step < 5 && canAdvance) {
             step += 1
             error = null
         }
@@ -176,7 +242,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun goTo(target: Int) {
-        if (target in 0..4) {
+        if (target in 0..5) {
             step = target
             error = null
         }

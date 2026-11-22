@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fnfmodmaker.model.ALL_DIFFICULTIES
 import com.fnfmodmaker.model.AudioSlot
+import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
@@ -52,7 +53,7 @@ import com.fnfmodmaker.model.PickedImage
 import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.TargetEngine
 
-private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Listo")
+private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Chart", "Listo")
 
 @Composable
 fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
@@ -123,7 +124,7 @@ private fun WizardScreen(vm: WizardViewModel) {
                             Text("Atrás")
                         }
                     }
-                    if (vm.step < 4) {
+                    if (vm.step < 5) {
                         Button(
                             onClick = { vm.next() },
                             modifier = Modifier.weight(1f),
@@ -179,6 +180,7 @@ private fun WizardScreen(vm: WizardViewModel) {
                         onPickOpponentVocals = { pickOpponentVocals.launch(arrayOf("*/*")) },
                         onPickIcon = { pickIcon.launch(arrayOf("image/*")) }
                     )
+                    4 -> StepChart(vm = vm)
                     else -> StepExport(
                         vm = vm,
                         config = config,
@@ -1014,6 +1016,130 @@ private fun AudioRow(
             Spacer(Modifier.width(10.dp))
             OutlinedButton(onClick = onPick) { Text(buttonText) }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Paso 4: Editor de Chart
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun StepChart(vm: WizardViewModel) {
+    val config = vm.config
+    val activeSong = config.songs.getOrElse(vm.activeChartSongIndex) { return }
+    val difficulties = activeSong.orderedDifficulties
+
+    StepHeader(
+        "4. Editor de Chart (${activeSong.songName.ifEmpty { "canción ${vm.activeChartSongIndex + 1}" }})",
+        "Dibuja las notas manualmente. Selecciona la canción y dificultad, luego toca en la cuadrícula para colocar notas."
+    )
+
+    // Selector de canción para chartear
+    if (config.songs.size > 1) {
+        SectionTitle("Canción a chartear")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            config.songs.forEachIndexed { index, song ->
+                val isSelected = index == vm.activeChartSongIndex
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { vm.selectChartSong(index) },
+                    label = { Text(song.songName.ifEmpty { "Canción ${index + 1}" }) }
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+    }
+
+    // Selector de dificultad
+    SectionTitle("Dificultad")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        difficulties.forEach { difficulty ->
+            FilterChip(
+                selected = vm.activeChartDifficulty == difficulty,
+                onClick = { vm.selectChartDifficulty(difficulty) },
+                label = { Text(difficulty.replaceFirstChar { it.uppercase() }) }
+            )
+        }
+    }
+
+    Spacer(Modifier.height(16.dp))
+
+    // Piano Roll placeholder
+    val draft = vm.activeChartDraft
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(300.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            Text(
+                "🎹 Piano Roll Editor",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Canción: ${activeSong.songName.ifEmpty { "—" }}  ·  Dificultad: ${vm.activeChartDifficulty.replaceFirstChar { it.uppercase() }}  ·  BPM: ${activeSong.bpmValue}  ·  Offset: ${activeSong.offsetMs}ms",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Notas actuales: ${draft.notes.size}  ·  Speed: ${draft.scrollSpeed}  ·  ${if (draft.notes.isEmpty()) "Generado automáticamente (práctica)" else "Editado manualmente"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(24.dp))
+
+            // Controles básicos
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(onClick = { /* TODO: generar notas de práctica */ }, enabled = !vm.busy) {
+                    Text("Generar práctica")
+                }
+                OutlinedButton(onClick = { /* TODO: limpiar chart */ }, enabled = !vm.busy) {
+                    Text("Limpiar chart")
+                }
+                Button(onClick = {
+                    // Guardar chart actual
+                    vm.saveChartDraft(draft)
+                }, enabled = !vm.busy) {
+                    Text("Guardar chart")
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HelpCard(
+                "Editor en desarrollo. Próximamente:\n" +
+                "• Piano roll con scroll horizontal y timeline\n" +
+                "• Reproducción de audio sincronizada\n" +
+                "• Tap para colocar notas, drag para sostener (hold)\n" +
+                "• Zoom, selección múltiple, copiar/pegar\n" +
+                "• Eventos de cámara, cambios de BPM/velocidad\n" +
+                "• Guardado directo sobre los JSON del mod"
+            )
+        }
+    }
+
+    Spacer(Modifier.height(16.dp))
+    // Mostrar warnings del chart si hay
+    vm.warnings.filter { it.contains("chart", ignoreCase = true) || it.contains("Chart", ignoreCase = true) }.forEach { warning ->
+        MessageCard(warning, error = false)
+        Spacer(Modifier.height(8.dp))
     }
 }
 

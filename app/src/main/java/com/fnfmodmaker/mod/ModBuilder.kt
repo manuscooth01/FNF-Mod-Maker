@@ -139,7 +139,7 @@ object ModBuilder {
                 writeText(
                     root,
                     "data/songs/$songFolder/$songFolder-chart.json",
-                    JsonBuilders.vsliceChart(song, entry.durationMs)
+                    JsonBuilders.vsliceChart(config, song, entry.durationMs)
                 )
             }
 
@@ -194,7 +194,7 @@ object ModBuilder {
             for (entry in songEntries) {
                 val song = entry.song
                 val songFolder = song.songFolder
-                val chartJson = JsonBuilders.psychChart(song, entry.durationMs)
+                val chartJson = JsonBuilders.psychChart(config, song, entry.durationMs)
                 val difficulties = song.orderedDifficulties
                 for (difficulty in difficulties) {
                     val fileName = if (difficulty == "normal") "$songFolder.json" else "$songFolder-$difficulty.json"

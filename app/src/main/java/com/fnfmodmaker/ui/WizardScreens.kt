@@ -920,6 +920,83 @@ internal fun CharacterForm(
         "El icono se convierte a 300x150 con dos frames (normal y perdiendo), que es el formato " +
             "que leen Psych y V-Slice. Si tu imagen ya viene con los dos cuadros, se respetan."
     )
+
+    // ---------- VARIACIONES (Erect, Pico, Dead, etc.) ----------
+    Spacer(Modifier.height(16.dp))
+    SectionTitle("Variaciones (Erect, Pico, Dead, etc.)")
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text("Variaciones del personaje", fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Cada variación tiene su propia hoja de sprites y animaciones. " +
+                    "Ejemplos: Erect, Pico, Dead, Christmas, Halloween, etc.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            // Lista de variaciones
+            if (draft.variations.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    draft.variations.forEachIndexed { index, variation ->
+                        val isDefault = variation.isDefault
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp)
+                        ) {
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(variation.displayName, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            "ID: ${variation.variationId}  ·  ${variation.animations.sumOf { it.second }} frames  ·  ${if (variation.isReady) "✅ Lista" else "⚠️ Incompleta"}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (isDefault) {
+                                        androidx.compose.material3.Text(
+                                            "DEFAULT",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier
+                                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(4.dp))
+                                        )
+                                    }
+                                    OutlinedButton(onClick = { /* TODO: editar variación */ }, enabled = !vm.busy) { Text("Editar") }
+                                    OutlinedButton(onClick = { vm.removeCharacterVariation(index) }, enabled = !vm.busy, colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer)) { Text("🗑") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { vm.addCharacterVariation() }, enabled = !vm.busy) { Text("+ Agregar variación") }
+        } else {
+            Text("Sin variaciones aún. El personaje base se usa por defecto.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { vm.addCharacterVariation() }, enabled = !vm.busy) { Text("+ Agregar primera variación") }
+        }
+    }
+    // ---------- FIN VARIACIONES ----------
 }
 
 // ---------------------------------------------------------------------------

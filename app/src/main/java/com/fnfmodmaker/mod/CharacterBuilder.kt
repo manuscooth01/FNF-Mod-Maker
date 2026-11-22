@@ -3,6 +3,7 @@ package com.fnfmodmaker.mod
 import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.CharacterSide
+import com.fnfmodmaker.model.CharacterVariation
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.hexToRgb
 import org.json.JSONArray
@@ -18,6 +19,7 @@ import java.io.File
  *  - characters/<id>.json        (Psych Engine)
  *  - data/characters/<id>.json   (V-Slice, renderType "sparrow")
  *  - images/icons/icon-<id>.png  (icono de vida 300x150, dos frames)
+ *  - Para cada variación: images/characters/<id>-<var>.png/.xml, characters/<id>-<var>.json, data/characters/<id>-<var>.json, icons
  */
 object CharacterBuilder {
 
@@ -33,48 +35,67 @@ object CharacterBuilder {
         if (!draft.enabled) return
 
         val id = draft.charFolder
-        val sheet = draft.sheet ?: return
-        val frameWidth = draft.frameWidthValue
-        val frameHeight = draft.frameHeightValue
-        if (frameWidth <= 0 || frameHeight <= 0) {
-            throw IllegalStateException("El tamaño de cada frame del personaje no es válido.")
+        
+        // Procesar personaje base
+        processCharacter(root, config, draft, id, onProgress, warnings, isVariation = false)
+        
+        // Procesar variaciones
+        for (variation in draft.variations) {
+            val varId = "${id}-${variation.variationId}"
+            processCharacter(root, config, variation, varId, onProgress, warnings, isVariation = true, baseId = id)
+        }
+    }
+
+    private fun processCharacter(
+        root: File,
+        config: ModConfig,
+        charData: Any, // CharacterDraft o CharacterVariation
+        charId: String,
+        onProgress: (String) -> Unit,
+        warnings: MutableList<String>,
+        isVariation: Boolean,
+        baseId: String? = null
+    ) {
+        val (sheet, frameWidth, frameHeight, animations, scaleValue, flipX, displayName, icon, side) = when (charData) {
+            is CharacterDraft -> charData to charData.sheet to charData.frameWidthValue to charData.frameHeightValue to charData.animations to charData.scaleValue to charData.flipX to charData.displayName to charData.icon to charData.side
+            is com.fnfmodmaker.model.CharacterVariation -> charData to charData.sheet to charData.frameWidthValue to charData.frameHeightValue to charData.animations to charData.scaleValue to charData.flipX to charData.displayName to charData.icon to config.character.side
+            else -> throw IllegalStateException("Tipo de personaje no soportado")
         }
 
-        val sheetFile = File(sheet.path)
+        if (!isVariation && sheet == null) return
+        if (isVariation && sheet == null) {
+            warnings.add("Variación ${charId} no tiene spritesheet, se omite.")
+            return
+        }
+
+        val sheetFile = File(sheet!!.path)
         val size = MediaTools.imageSize(sheetFile)
-            ?: throw IllegalStateException("No se pudo leer la hoja de sprites del personaje.")
+            ?: throw IllegalStateException("No se pudo leer la hoja de sprites: $charId")
         val columns = size.first / frameWidth
         val rows = size.second / frameHeight
         if (columns <= 0 || rows <= 0) {
-            throw IllegalStateException(
-                "La hoja de sprites (${size.first}x${size.second}) es más pequeña que un frame " +
-                    "(${frameWidth}x$frameHeight)."
-            )
+            throw IllegalStateException("La hoja de sprites ($size) es más pequeña que un frame ($frameWidth x $frameHeight).")
         }
 
-        val animations = draft.animations
         if (animations.isEmpty()) {
-            throw IllegalStateException("El personaje no tiene ninguna animación con frames.")
+            throw IllegalStateException("El personaje $charId no tiene animaciones con frames.")
         }
-        val total = draft.totalFrames
+        val total = animations.sumOf { it.second }
         if (total > columns * rows) {
-            throw IllegalStateException(
-                "La hoja solo tiene ${columns * rows} frames (${columns}x$rows) y las animaciones " +
-                    "necesitan $total. Baja los frames o corrige el tamaño del frame."
-            )
+            throw IllegalStateException("La hoja $charId solo tiene ${columns * rows} frames y las animaciones necesitan $total.")
         }
 
         // ---------------- Imagen y XML ----------------
-        onProgress("Copiando la hoja de sprites…")
-        val imageTarget = File(root, "images/characters/$id.png")
+        onProgress(if (isVariation) "Copiando spritesheet variación: $charId…" else "Copiando la hoja de sprites…")
+        val imageTarget = File(root, "images/characters/$charId.png")
         imageTarget.parentFile?.mkdirs()
         sheetFile.copyTo(imageTarget, overwrite = true)
 
-        onProgress("Cortando la hoja en frames (XML Sparrow)…")
+        onProgress(if (isVariation) "Cortando frames variación: $charId…" else "Cortando la hoja en frames (XML Sparrow)…")
         val frames = mutableListOf<Frame>()
         var cursor = 0
         for ((animation, count) in animations) {
-            val prefix = "$id $animation"
+            val prefix = "$charId $animation"
             for (index in 0 until count) {
                 val column = cursor % columns
                 val row = cursor / columns
@@ -93,36 +114,154 @@ object CharacterBuilder {
 
         val xml = StringBuilder()
         xml.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
-        xml.append("<TextureAtlas imagePath=\"$id.png\">\n")
+        xml.append("<TextureAtlas imagePath=\"$charId.png\">\n")
         for (frame in frames) {
             xml.append("  <SubTexture name=\"${frame.name}\" x=\"${frame.x}\" y=\"${frame.y}\" ")
             xml.append("width=\"${frame.width}\" height=\"${frame.height}\"/>\n")
         }
         xml.append("</TextureAtlas>\n")
-        File(root, "images/characters/$id.xml").writeText(xml.toString(), Charsets.UTF_8)
+        File(root, "images/characters/$charId.xml").writeText(xml.toString(), Charsets.UTF_8)
 
         // ---------------- Icono de vida ----------------
-        val iconId = prepareIcon(root, draft, id, onProgress, warnings)
+        val iconId = prepareIcon(root, charData, charId, onProgress, warnings, isVariation)
 
         // ---------------- JSON de Psych ----------------
         if (config.engine.includesPsych) {
-            onProgress("Escribiendo el personaje para Psych…")
+            onProgress(if (isVariation) "Escribiendo variación Psych: $charId…" else "Escribiendo el personaje para Psych…")
             File(root, "characters").mkdirs()
-            File(root, "characters/$id.json").writeText(
-                psychCharacterJson(config, draft, id, iconId, animations),
+            File(root, "characters/$charId.json").writeText(
+                psychCharacterJson(config, charData, charId, iconId, animations, isVariation),
                 Charsets.UTF_8
             )
         }
 
         // ---------------- JSON de V-Slice ----------------
         if (config.engine.includesVSlice) {
-            onProgress("Escribiendo el personaje para V-Slice…")
+            onProgress(if (isVariation) "Escribiendo variación V-Slice: $charId…" else "Escribiendo el personaje para V-Slice…")
             File(root, "data/characters").mkdirs()
-            File(root, "data/characters/$id.json").writeText(
-                vsliceCharacterJson(config, draft, id, iconId, animations),
+            File(root, "data/characters/$charId.json").writeText(
+                vsliceCharacterJson(config, charData, charId, iconId, animations, isVariation),
                 Charsets.UTF_8
             )
         }
+    }
+
+    private fun prepareIcon(
+        root: File,
+        charData: Any,
+        charId: String,
+        onProgress: (String) -> Unit,
+        warnings: MutableList<String>,
+        isVariation: Boolean
+    ): String {
+        val icon = when (charData) {
+            is CharacterDraft -> charData.icon
+            is com.fnfmodmaker.model.CharacterVariation -> charData.icon
+            else -> null
+        }
+        if (icon != null) {
+            onProgress("Preparando el icono de vida para $charId…")
+            val target = File(root, "images/icons/icon-$charId.png")
+            if (MediaTools.prepareHealthIcon(File(icon.path), target)) {
+                return charId
+            }
+            warnings.add("El icono de vida de $charId no se pudo procesar; se usará el del juego base.")
+        }
+        // Sin icono propio: usamos el del personaje base del lado elegido.
+        val side = when (charData) {
+            is CharacterDraft -> charData.side
+            is com.fnfmodmaker.model.CharacterVariation -> com.fnfmodmaker.model.CharacterSide.OPPONENT // default para variaciones
+            else -> com.fnfmodmaker.model.CharacterSide.OPPONENT
+        }
+        return if (side == com.fnfmodmaker.model.CharacterSide.PLAYER) "bf" else "dad"
+    }
+
+    private fun psychCharacterJson(
+        config: ModConfig,
+        charData: Any,
+        charId: String,
+        iconId: String,
+        animations: List<Pair<String, Int>>,
+        isVariation: Boolean
+    ): String {
+        val animationArray = JSONArray()
+        for ((name, _) in animations) {
+            animationArray.put(
+                JSONObject()
+                    .put("anim", name)
+                    .put("name", "$charId $name")
+                    .put("fps", 24)
+                    .put("loop", false)
+                    .put("indices", JSONArray())
+                    .put("offsets", JSONArray().put(0).put(0))
+            )
+        }
+        val (scaleValue, flipX, colors) = when (charData) {
+            is CharacterDraft -> charData.scaleValue to charData.flipX to hexToRgb(config.weekColor)
+            is com.fnfmodmaker.model.CharacterVariation -> charData.scaleValue to charData.flipX to hexToRgb(config.weekColor)
+            else -> 1.0f to false to hexToRgb(config.weekColor)
+        }
+        return JSONObject()
+            .put("animations", animationArray)
+            .put("image", "characters/$charId")
+            .put("scale", scaleValue)
+            .put("sing_duration", 4)
+            .put("healthicon", iconId)
+            .put("position", JSONArray().put(0).put(0))
+            .put("camera_position", JSONArray().put(0).put(0))
+            .put("flip_x", flipX)
+            .put("no_antialiasing", false)
+            .put(
+                "healthbar_colors",
+                JSONArray().put(colors[0]).put(colors[1]).put(colors[2])
+            )
+            .toString(2)
+    }
+
+    private fun vsliceCharacterJson(
+        config: ModConfig,
+        charData: Any,
+        charId: String,
+        iconId: String,
+        animations: List<Pair<String, Int>>,
+        isVariation: Boolean
+    ): String {
+        val (displayName, flipX) = when (charData) {
+            is CharacterDraft -> charData.displayName to charData.flipX
+            is com.fnfmodmaker.model.CharacterVariation -> charData.displayName to charData.flipX
+            else -> charId to false
+        }
+        val animationArray = JSONArray()
+        for ((name, _) in animations) {
+            animationArray.put(
+                JSONObject()
+                    .put("name", name)
+                    .put("prefix", "$charId $name")
+                    .put("frameRate", 24)
+                    .put("looped", false)
+                    .put("frameIndices", JSONArray())
+                    .put("offsets", JSONArray().put(0).put(0))
+            )
+        }
+        return JSONObject()
+            .put("version", "1.0.0")
+            .put("name", displayName.trim().ifEmpty { charId })
+            .put("renderType", "sparrow")
+            .put("assetPath", "characters/$charId")
+            .put("scale", when (charData) {
+                is CharacterDraft -> charData.scaleValue
+                is com.fnfmodmaker.model.CharacterVariation -> charData.scaleValue
+                else -> 1.0f
+            })
+            .put("healthIcon", JSONObject().put("id", iconId))
+            .put("offsets", JSONArray().put(0).put(0))
+            .put("cameraOffsets", JSONArray().put(0).put(0))
+            .put("singTime", 4.0)
+            .put("animations", animationArray)
+            .put("startingAnimation", "idle")
+            .put("flipX", flipX)
+            .put("isPixel", false)
+            .toString(2)
     }
 
     private fun prepareIcon(

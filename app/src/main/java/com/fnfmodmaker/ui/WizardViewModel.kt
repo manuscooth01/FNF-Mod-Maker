@@ -941,6 +941,30 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     fun setCharRightFrames(value: String) =
         updateCharacter { it.copy(rightFrames = value.filter { c -> c.isDigit() }.take(2)) }
 
+    // ---------------- Variaciones de personaje ----------------
+
+    fun addCharacterVariation() {
+        if (busy) return
+        val newVar = com.fnfmodmaker.model.CharacterVariation(
+            variationId = "var-${config.character.variations.size + 1}",
+            displayName = "Variación ${config.character.variations.size + 1}",
+            isDefault = config.character.variations.isEmpty()
+        )
+        val updated = config.character.variations + newVar
+        config = config.copy(character = config.character.copy(variations = updated))
+    }
+
+    fun removeCharacterVariation(index: Int) {
+        if (busy) return
+        val updated = config.character.variations.toMutableList()
+        updated.removeAt(index)
+        // Si borramos la default, la primera se vuelve default
+        if (updated.isNotEmpty() && !updated.any { it.isDefault }) {
+            updated[0] = updated[0].copy(isDefault = true)
+        }
+        config = config.copy(character = config.character.copy(variations = updated))
+    }
+
     // ---------------- Archivos de la canción activa ----------------
 
     fun pickActiveSongAudio(uri: Uri, slot: AudioSlot) {

@@ -56,9 +56,39 @@ object CharacterBuilder {
         isVariation: Boolean,
         baseId: String? = null
     ) {
-        val (sheet, frameWidth, frameHeight, animations, scaleValue, flipX, displayName, icon, side) = when (charData) {
-            is CharacterDraft -> charData to charData.sheet to charData.frameWidthValue to charData.frameHeightValue to charData.animations to charData.scaleValue to charData.flipX to charData.displayName to charData.icon to charData.side
-            is com.fnfmodmaker.model.CharacterVariation -> charData to charData.sheet to charData.frameWidthValue to charData.frameHeightValue to charData.animations to charData.scaleValue to charData.flipX to charData.displayName to charData.icon to config.character.side
+        val sheet: com.fnfmodmaker.model.PickedImage?
+        val frameWidth: Int
+        val frameHeight: Int
+        val animations: List<Pair<String, Int>>
+        val scaleValue: Float
+        val flipX: Boolean
+        val displayName: String
+        val icon: com.fnfmodmaker.model.PickedImage?
+        val side: com.fnfmodmaker.model.CharacterSide
+
+        when (charData) {
+            is CharacterDraft -> {
+                sheet = charData.sheet
+                frameWidth = charData.frameWidthValue
+                frameHeight = charData.frameHeightValue
+                animations = charData.animations
+                scaleValue = charData.scaleValue
+                flipX = charData.flipX
+                displayName = charData.displayName
+                icon = charData.icon
+                side = charData.side
+            }
+            is com.fnfmodmaker.model.CharacterVariation -> {
+                sheet = charData.sheet
+                frameWidth = charData.frameWidthValue
+                frameHeight = charData.frameHeightValue
+                animations = charData.animations
+                scaleValue = charData.scaleValue
+                flipX = charData.flipX
+                displayName = charData.displayName
+                icon = charData.icon
+                side = config.character.side
+            }
             else -> throw IllegalStateException("Tipo de personaje no soportado")
         }
 

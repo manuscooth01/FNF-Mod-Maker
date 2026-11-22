@@ -1271,8 +1271,32 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun pickStageSprite(uri: Uri) {
-        // TODO: implementar selector de sprite individual
-        // Por ahora solo fondo
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Copiando sprite…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val displayName = MediaTools.displayName(app, uri)
+                    val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "sprite.png" }
+                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    MediaTools.copyTo(app, uri, target)
+                    com.fnfmodmaker.model.PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
+                }
+            }
+            result.onSuccess { picked ->
+                // El UI maneja la creación del sprite con esta imagen
+                // Usamos un callback temporal o guardamos en un estado temporal
+                // Por ahora notificamos al UI via status
+                status = "SPRITE_PICKED:${picked.path}:${picked.displayName}"
+            }.onFailure {
+                error = it.message ?: "No se pudo leer la imagen."
+            }
+            status = ""
+            busy = false
+        }
     }
 
     fun setStageId(value: String) {

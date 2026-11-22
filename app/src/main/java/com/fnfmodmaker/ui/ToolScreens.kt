@@ -2,6 +2,7 @@ package com.fnfmodmaker.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,21 +16,58 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Path
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.drawLine
+import androidx.compose.ui.graphics.drawscope.drawPath
+import androidx.compose.ui.graphics.drawscope.drawRect
+import androidx.compose.ui.graphics.drawscope.drawRoundRect
+import androidx.compose.ui.graphics.drawscope.drawText
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fnfmodmaker.model.ALL_DIFFICULTIES
+import com.fnfmodmaker.model.AudioSlot
+import com.fnfmodmaker.model.ChartDraft
+import com.fnfmodmaker.model.CharacterDraft
+import com.fnfmodmaker.model.CharacterSide
+import com.fnfmodmaker.model.ModConfig
+import com.fnfmodmaker.model.PickedAudio
+import com.fnfmodmaker.model.PickedImage
+import com.fnfmodmaker.model.SongConfig
+import com.fnfmodmaker.model.StageSprite
+import com.fnfmodmaker.model.TargetEngine
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -360,14 +398,324 @@ internal fun StageToolScreen(vm: WizardViewModel) {
             )
             Spacer(Modifier.height(24.dp))
         }
-    }
 }
+    }
 
-/**
- * Formulario del stage. Se usa en la herramienta suelta y en el wizard.
- */
-@Composable
-internal fun StageForm(
+    // ---------------------------------------------------------------------------
+    // Stage Sprite Editor Visual (drag & drop, scale, rotate, layers)
+    // ---------------------------------------------------------------------------
+
+    @Composable
+    internal fun StageSpriteEditor(
+        vm: WizardViewModel,
+        draft: com.fnfmodmaker.model.StageDraft,
+        onPickSprite: () -> Unit
+    ) {
+        val sprites = draft.sprites
+        var selectedSpriteIndex by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Int?>(null) }
+        var isAddingSprite by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+        var newSpriteImage by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.fnfmodmaker.model.PickedImage?>(null) }
+        var newSpriteId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+        var newSpriteName by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+
+        // Vista previa del stage con sprites posicionados
+        SectionTitle("Editor visual de sprites")
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(300.dp)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Fondo del stage
+                draft.backgroundImage?.let { bg ->
+                    val painter = androidx.compose.ui.res.painterResource(id = 0) // placeholder
+                    // Usamos Canvas para dibujar fondo + sprites
+                }
+                StagePreviewCanvas(
+                    backgroundImage = draft.backgroundImage,
+                    sprites = sprites,
+                    selectedIndex = selectedSpriteIndex,
+                    onSpriteClick = { index -> selectedSpriteIndex = index },
+                    onSpriteDrag = { index, deltaX, deltaY ->
+                        val sprite = sprites[index]
+                        val updated = sprites.toMutableList()
+                        updated[index] = sprite.copy(
+                            x = (sprite.x + deltaX).coerceIn(-1920f, 1920f),
+                            y = (sprite.y + deltaY).coerceIn(-1080f, 1080f)
+                        )
+                        vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                    },
+                    onSpriteScale = { index, scale ->
+                        val sprite = sprites[index]
+                        val updated = sprites.toMutableList()
+                        updated[index] = sprite.copy(scale = (sprite.scale * scale).coerceIn(0.1f, 5f))
+                        vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                    },
+                    onSpriteRotate = { index, rotation ->
+                        val sprite = sprites[index]
+                        val updated = sprites.toMutableList()
+                        updated[index] = sprite.copy(rotation = (sprite.rotation + rotation) % 360)
+                        vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                    }
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Lista de sprites con controles
+        if (sprites.isNotEmpty()) {
+            SectionTitle("Sprites (${sprites.size}) - Tap para seleccionar, drag para mover")
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                sprites.forEachIndexed { index, sprite ->
+                    val isSelected = selectedSpriteIndex == index
+                    Surface(
+                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(12.dp),
+                        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedSpriteIndex = if (isSelected) null else index }
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Miniatura del sprite
+                            sprite.image?.let { img ->
+                                Box(
+                                    modifier = Modifier
+                                        .size(60.dp)
+                                        .background(Color(0xFF16161F), RoundedCornerShape(8.dp))
+                                ) {
+                                    // Placeholder para imagen
+                                    Text(
+                                        sprite.displayName.take(2).uppercase(),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.align(Alignment.Center)
+                                    )
+                                }
+                            }
+                            // Info
+                            Column(Modifier.weight(1f)) {
+                                Text(sprite.displayName, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "ID: ${sprite.spriteId}  ·  Layer: ${sprite.layer.label}  ·  Pos: (${"%.0f".format(sprite.x)}, ${"%.0f".format(sprite.y)})  ·  Scale: ${"%.2f".format(sprite.scale)}  ·  Rot: ${"%.0f".format(sprite.rotation)}°",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            // Controles rápidos
+                            Column(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Layer selector
+                                OutlinedButton(onClick = {
+                                    val layers = com.fnfmodmaker.model.StageSprite.Layer.entries.toList()
+                                    val currentIdx = layers.indexOf(sprite.layer)
+                                    val nextLayer = layers[(currentIdx + 1) % layers.size]
+                                    val updated = sprites.toMutableList()
+                                    updated[index] = sprite.copy(layer = nextLayer)
+                                    vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                }, enabled = !vm.busy) {
+                                    Text(sprite.layer.label, style = MaterialTheme.typography.labelSmall)
+                                }
+                                // Delete
+                                OutlinedButton(onClick = {
+                                    val updated = sprites.toMutableList()
+                                    updated.removeAt(index)
+                                    if (selectedSpriteIndex == index) selectedSpriteIndex = null
+                                    else if (selectedSpriteIndex != null && selectedSpriteIndex! > index) selectedSpriteIndex = selectedSpriteIndex!! - 1
+                                    vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                }, enabled = !vm.busy, colors = ButtonDefaults.outlinedButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                                    Text("🗑", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Agregar nuevo sprite
+        SectionTitle("Agregar sprite")
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Nuevo sprite", fontWeight = FontWeight.SemiBold)
+                        Text("Elige una imagen PNG para el sprite", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedButton(onClick = { isAddingSprite = true }, enabled = !vm.busy) { Text("+ Elegir imagen") }
+                }
+            }
+        }
+
+        if (isAddingSprite) {
+            Spacer(Modifier.height(12.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Configurar sprite nuevo", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(12.dp))
+                    Field(label = "ID del sprite", value = newSpriteId, onChange = { newSpriteId = it.filter { it.isLetterOrDigit() || it in "-_" } }, hint = "minúsculas, números, guiones")
+                    Spacer(Modifier.height(10.dp))
+                    Field(label = "Nombre visible", value = newSpriteName, onChange = { newSpriteName = it }, hint = "Nombre en el editor")
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(newSpriteImage?.displayName ?: "Sin imagen", fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        OutlinedButton(onClick = onPickSprite, enabled = !vm.busy) { Text("Elegir imagen") }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        OutlinedButton(onClick = { isAddingSprite = false; newSpriteImage = null; newSpriteId = ""; newSpriteName = "" }, enabled = !vm.busy) { Text("Cancelar") }
+                        Button(
+                            onClick = {
+                                newSpriteImage?.let { img ->
+                                    val sprite = com.fnfmodmaker.model.StageSprite(
+                                        spriteId = newSpriteId.ifEmpty { "sprite-${sprites.size + 1}" },
+                                        displayName = newSpriteName.ifEmpty { newSpriteId },
+                                        image = img,
+                                        x = 0f, y = 0f,
+                                        scale = 1f,
+                                        rotation = 0f,
+                                        layer = com.fnfmodmaker.model.StageSprite.Layer.FOREGROUND
+                                    )
+                                    val updated = sprites.toMutableList() + sprite
+                                    vm.config = vm.config.copy(stageDraft = draft.copy(sprites = updated))
+                                    selectedSpriteIndex = updated.size - 1
+                                }
+                                isAddingSprite = false
+                                newSpriteImage = null
+                                newSpriteId = ""
+                                newSpriteName = ""
+                            },
+                            enabled = newSpriteImage != null && newSpriteId.isNotBlank() && !vm.busy
+                        ) { Text("Agregar") }
+                    }
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun StagePreviewCanvas(
+        backgroundImage: com.fnfmodmaker.model.PickedImage?,
+        sprites: List<com.fnfmodmaker.model.StageSprite>,
+        selectedIndex: Int?,
+        onSpriteClick: (Int) -> Unit,
+        onSpriteDrag: (Int, Float, Float) -> Unit,
+        onSpriteScale: (Int, Float) -> Unit,
+        onSpriteRotate: (Int, Float) -> Unit
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+            val scale = (width / 1920f).coerceAtMost(height / 1080f)
+
+            // Dibujar fondo (placeholder)
+            val bgPaint = androidx.compose.ui.graphics.Paint().apply { color = Color(0xFF16161F) }
+            drawRect(bgPaint, size = size)
+
+            // Grid de referencia
+            val gridPaint = androidx.compose.ui.graphics.Paint().apply {
+                color = Color(0xFF3A3A4A)
+                strokeWidth = 1f
+                pathEffect = androidx.compose.ui.graphics.PathEffect.makeDashPathEffect(floatArrayOf(10f, 10f), 0f)
+            }
+            for (x in 0..1920 step 100) {
+                val px = x * scale
+                drawLine(gridPaint, start = androidx.compose.ui.geometry.Offset(px, 0f), end = androidx.compose.ui.geometry.Offset(px, height))
+            }
+            for (y in 0..1080 step 100) {
+                val py = y * scale
+                drawLine(gridPaint, start = androidx.compose.ui.geometry.Offset(0f, py), end = androidx.compose.ui.geometry.Offset(width, py))
+            }
+
+            // Dibujar sprites
+            sprites.forEachIndexed { index, sprite ->
+                sprite.image?.let { _ ->
+                    val sx = (sprite.x + 960f) * scale // centrar en 960
+                    val sy = (sprite.y + 540f) * scale // centrar en 540
+                    val s = sprite.scale * scale
+                    val rot = sprite.rotation
+
+                    val paint = androidx.compose.ui.graphics.Paint().apply {
+                        color = if (selectedIndex == index) Color(0xFF00FFFF) else Color(0xFFFFFFFF)
+                        style = androidx.compose.ui.graphics.Paint.Style.Fill
+                        isAntiAlias = true
+                    }
+                    val strokePaint = androidx.compose.ui.graphics.Paint().apply {
+                        color = if (selectedIndex == index) Color(0xFF00FFFF) else Color(0xFFA0A0B0)
+                        style = androidx.compose.ui.graphics.Paint.Style.Stroke
+                        strokeWidth = if (selectedIndex == index) 3f else 1f
+                        isAntiAlias = true
+                    }
+
+                    // Rect del sprite (50x50 base * scale)
+                    val halfW = 50f * s
+                    val halfH = 50f * s
+
+                    // Transformación: translate + rotate + scale
+                    androidx.compose.runtime.save()
+                    translate(sx, sy)
+                    rotate(rot)
+                    drawRect(paint, topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH), size = androidx.compose.ui.geometry.Size(halfW * 2, halfH * 2))
+                    drawRect(strokePaint, topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH), size = androidx.compose.ui.geometry.Size(halfW * 2, halfH * 2))
+
+                    // Label
+                    val textPaint = androidx.compose.ui.graphics.Paint().apply {
+                        color = Color(0xFFFFFFFF)
+                        textSize = 12f
+                        isAntiAlias = true
+                    }
+                    drawText(
+                        text = androidx.compose.ui.text.AnnotatedString(sprite.spriteId),
+                        topLeft = androidx.compose.ui.geometry.Offset(-halfW, -halfH - 16f),
+                        style = androidx.compose.ui.text.TextStyle(fontSize = 12.sp, color = Color.White)
+                    )
+                    androidx.compose.runtime.restore()
+                }
+            }
+        }
+    }
+
+    /**
+     * Formulario del stage. Se usa en la herramienta suelta y en el wizard.
+     */
+    @Composable
+    internal fun StageForm(
     vm: WizardViewModel,
     draft: com.fnfmodmaker.model.StageDraft,
     onPickBackground: () -> Unit,
@@ -448,23 +796,11 @@ internal fun StageForm(
     }
 
     SectionTitle("Sprites del stage (props, foreground, etc.)")
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Text("Sprites: ${draft.sprites.size}", fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { /* TODO: agregar sprite */ }, enabled = !vm.busy) { Text("+ Agregar sprite") }
-            }
-            if (draft.sprites.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text("Lista de sprites (pendiente implementar editor visual)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
+    StageSpriteEditor(
+        vm = vm,
+        draft = draft,
+        onPickSprite = onPickSprite
+    )
 
     Spacer(Modifier.height(10.dp))
     HelpCard(

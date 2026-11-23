@@ -88,6 +88,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                         Text("Cuadrícula de notas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text("${song.songName} · ${vm.liveDifficulty} · ${gridClock(grid.pageStart(page))}", style = MaterialTheme.typography.labelSmall)
                     }
+                    LocalToolbarIcon()
                     TextButton(onClick = onClose) { Text("Listo") }
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {

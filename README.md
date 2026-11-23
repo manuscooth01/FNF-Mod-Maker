@@ -516,3 +516,17 @@ directorio temporal y se publica con un identificador nuevo tras la confirmació
 antiguo de la caché, vuelve a elegirlo antes de exportar. La exportación de mods para el juego es
 una operación distinta: `.fnfproject` no es un mod instalable, y la importación de ZIP de mods
 externos sigue deshabilitada.
+
+### Apariencia con imágenes propias (opcional)
+
+En Inicio, abre **Personalizar apariencia** para elegir un fondo del encabezado y un icono para
+las barras de herramientas, también en Chart Studio. El selector acepta PNG, JPG y WebP de hasta
+8 MiB y 8192 × 8192 píxeles; se guarda una copia reducida en almacenamiento privado del dispositivo.
+Puedes cambiar o quitar cada imagen sin borrar el archivo original. El fondo se recorta para cubrir
+el encabezado. El icono puede mostrarse completo o usando su mitad izquierda (útil para hojas con
+dos caras). Los atlas de sprites/XML se ven como imágenes estáticas y no se separan ni animan.
+
+La apariencia es independiente del proyecto: no se incorpora en `.fnfproject`, en el ZIP instalable
+ni en el APK, y no se incluye en la copia automática de Android. No se descargan ni se incluyen
+recursos oficiales: utiliza únicamente imágenes que tengas derecho a usar. Al desinstalar la app se
+eliminan las copias locales. El selector, el guardado y la apariencia deben probarse en Android.

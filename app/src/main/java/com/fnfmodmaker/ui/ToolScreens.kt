@@ -29,6 +29,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -62,14 +65,19 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
-    when (vm.tool) {
-        Tool.HOME -> HomeScreen(vm)
-        Tool.MOD -> WizardScreen(vm)
-        Tool.CHARACTER -> CharacterToolScreen(vm)
-        Tool.AUDIO -> AudioToolScreen(vm)
-        Tool.IMPORT -> ImportScreen(vm)
-        Tool.STAGE -> StageToolScreen(vm)
-        Tool.ASSISTANT -> ModAiScreen(vm)
+    val context = LocalContext.current
+    val appearance = remember(context.applicationContext) { LocalAppearanceController(context.applicationContext) }
+    LaunchedEffect(appearance) { appearance.load() }
+    CompositionLocalProvider(LocalAppearance provides appearance) {
+        when (vm.tool) {
+            Tool.HOME -> HomeScreen(vm)
+            Tool.MOD -> WizardScreen(vm)
+            Tool.CHARACTER -> CharacterToolScreen(vm)
+            Tool.AUDIO -> AudioToolScreen(vm)
+            Tool.IMPORT -> ImportScreen(vm)
+            Tool.STAGE -> StageToolScreen(vm)
+            Tool.ASSISTANT -> ModAiScreen(vm)
+        }
     }
 }
 
@@ -120,7 +128,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(Modifier.height(12.dp))
-            androidx.compose.material3.Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+            HomeAppearanceBanner {
                 Column(Modifier.padding(20.dp)) {
                     Text("TU ESTUDIO DE MODS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
@@ -128,6 +136,8 @@ internal fun HomeScreen(vm: WizardViewModel) {
                     Text("Una idea, una canción y un paso a la vez.", style = MaterialTheme.typography.bodyMedium)
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            LocalAppearancePanel()
             Spacer(Modifier.height(20.dp))
             Text(
                 "¿Qué quieres hacer?",

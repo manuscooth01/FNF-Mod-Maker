@@ -210,6 +210,7 @@ fun ToolTopBar(
                 }
             }
         },
+        actions = { LocalToolbarIcon() },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.surface,
             titleContentColor = MaterialTheme.colorScheme.onSurface

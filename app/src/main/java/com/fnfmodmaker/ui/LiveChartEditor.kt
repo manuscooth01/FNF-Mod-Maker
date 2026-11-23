@@ -94,6 +94,7 @@ internal fun LiveChartEditor(vm: WizardViewModel, onClose: () -> Unit) {
                             Text("Grabación en vivo", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                             Text("${vm.liveSong?.songName?.ifBlank { "Sin nombre" } ?: "Sin canción"} · ${vm.liveDifficulty}", style = MaterialTheme.typography.labelSmall)
                         }
+                        LocalToolbarIcon()
                         TextButton(onClick = { vm.closeLiveChart(); onClose() }) { Text("Listo") }
                     }
                 }

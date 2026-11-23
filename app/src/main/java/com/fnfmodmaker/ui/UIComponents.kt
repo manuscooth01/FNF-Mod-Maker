@@ -355,9 +355,15 @@ fun CharacterForm(
     onPickSheet: () -> Unit,
     onPickIcon: () -> Unit
 ) {
-    Text("Personaje: ${draft.charFolder}", style = MaterialTheme.typography.bodyMedium)
-    Spacer(Modifier.height(8.dp))
-    Button(onClick = onPickSheet, enabled = !vm.busy) { Text("Elegir hoja de sprites") }
-    Spacer(Modifier.height(8.dp))
-    Button(onClick = onPickIcon, enabled = !vm.busy) { Text("Elegir icono de vida") }
+    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Text("Personaje: ${draft.charFolder}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(16.dp))
+        Text("ID: ${draft.charId}", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(8.dp))
+        Text("Ancho frame: ${draft.frameWidth}, Alto: ${draft.frameHeight}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onPickSheet, enabled = !vm.busy) { Text("Elegir hoja de sprites") }
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onPickIcon, enabled = !vm.busy) { Text("Elegir icono de vida") }
+    }
 }

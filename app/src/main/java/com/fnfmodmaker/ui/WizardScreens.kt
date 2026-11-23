@@ -71,8 +71,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalConfiguration
 import kotlin.math.min
-import kotlin.text.isDigit
-import kotlin.text.isLetterOrDigit
+import kotlin.math.max
 
 private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Chart", "Listo")
 
@@ -228,6 +227,7 @@ private fun VariationEditorModal(
     onPickIcon: () -> Unit
 ) {
     val variation = vm.activeVariation ?: return
+    val index = vm.activeVariationIndex!!
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -270,9 +270,9 @@ private fun VariationEditorModal(
                 Spacer(Modifier.height(16.dp))
 
                 // ID y nombre
-                Field(label = "ID de la variación", value = variation.variationId, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(variationId = it.filter { it.isLetterOrDigit || it in "-_" }) } }, hint = "minúsculas, números, guiones")
+                Field(label = "ID de la variación", value = variation.variationId, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { variation -> variation.copy(variationId = variation.variationId.filter { c -> Character.isLetterOrDigit(c) || c in "-_" }) } }, hint = "minúsculas, números, guiones")
                 Spacer(Modifier.height(8.dp))
-                Field(label = "Nombre visible", value = variation.displayName, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(displayName = it) } }, hint = "Ej: Erect, Pico, Dead")
+                Field(label = "Nombre visible", value = variation.displayName, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { variation -> variation.copy(displayName = variation.displayName) } }, hint = "Ej: Erect, Pico, Dead")
                 Spacer(Modifier.height(8.dp))
 
                 // Default toggle
@@ -313,8 +313,8 @@ private fun VariationEditorModal(
                 Spacer(Modifier.height(12.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Field(label = "Ancho frame", value = variation.frameWidth, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(frameWidth = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
-                    Field(label = "Alto frame", value = variation.frameHeight, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(frameHeight = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "Ancho frame", value = variation.frameWidth, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(frameWidth = v.frameWidth.filter { c -> Character.isDigit(c) }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "Alto frame", value = variation.frameHeight, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(frameHeight = v.frameHeight.filter { c -> Character.isDigit(c) }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
                 }
 
                 if (variation.columns > 0 && variation.rows > 0) {
@@ -331,25 +331,25 @@ private fun VariationEditorModal(
                 Spacer(Modifier.height(16.dp))
                 SectionTitle("Animaciones (frames por animación)")
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Field(label = "idle", value = variation.idleFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(idleFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
-                    Field(label = "singLEFT", value = variation.leftFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(leftFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "idle", value = variation.idleFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(idleFrames = v.idleFrames.filter { c -> Character.isDigit(c) }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "singLEFT", value = variation.leftFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(leftFrames = v.leftFrames.filter { c -> Character.isDigit(c) }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Field(label = "singDOWN", value = variation.downFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(downFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
-                    Field(label = "singUP", value = variation.upFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(upFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "singDOWN", value = variation.downFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(downFrames = v.downFrames.filter { c -> Character.isDigit(c) }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "singUP", value = variation.upFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(upFrames = v.upFrames.filter { c -> Character.isDigit(c) }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(10.dp))
-                Field(label = "singRIGHT", value = variation.rightFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(rightFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number)
+                Field(label = "singRIGHT", value = variation.rightFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(rightFrames = v.rightFrames.filter { c -> Character.isDigit(c) }) } }, keyboardType = KeyboardType.Number)
 
                 Spacer(Modifier.height(16.dp))
                 SectionTitle("Ajustes")
-                Field(label = "Escala", value = variation.scale, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(scale = it.filter { it.isDigit || it == '.' }) } }, keyboardType = KeyboardType.Decimal)
+                Field(label = "Escala", value = variation.scale, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(scale = v.scale.filter { c -> Character.isDigit(c) || c == '.' }) } }, keyboardType = KeyboardType.Decimal)
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) { Text("Voltear horizontalmente", fontWeight = FontWeight.SemiBold) }
                     Spacer(Modifier.width(12.dp))
-                    Switch(checked = variation.flipX, onCheckedChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(flipX = it) } })
+                    Switch(checked = variation.flipX, onCheckedChange = { vm.updateVariation(vm.activeVariationIndex!!) { v -> v.copy(flipX = v.flipX) } })
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -374,7 +374,7 @@ private fun VariationEditorModal(
 }
 
 // ---------------------------------------------------------------------------
-// Piezas de interfaz
+// Piezas de interfaz (solo StepBar, las demás están en UIComponents.kt)
 // ---------------------------------------------------------------------------
 
 @Composable
@@ -418,7 +418,6 @@ internal fun StepBar(current: Int, onSelect: (Int) -> Unit) {
         }
     }
 }
-
 
 // ---------------------------------------------------------------------------
 // Paso 1: datos del mod

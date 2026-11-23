@@ -19,6 +19,8 @@ import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.ChartEditorState
 import com.fnfmodmaker.model.ChartNote
 import com.fnfmodmaker.model.CHARACTER_ANIMATIONS
+import com.fnfmodmaker.model.CharacterAdjustment
+import com.fnfmodmaker.model.nudged
 import com.fnfmodmaker.model.CharacterFrame
 import com.fnfmodmaker.model.CharacterAnimationSettings
 import com.fnfmodmaker.model.CharacterDraft
@@ -1030,6 +1032,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setCharRightFrames(value: String) =
         updateCharacter { it.copy(rightFrames = value.filter { c -> c.isDigit() }.take(2)) }
+
+    internal fun nudgeCharacter(target: CharacterAdjustment, animation: String, dx: Int, dy: Int) {
+        if (!busy && animation in CHARACTER_ANIMATIONS) updateCharacter { it.nudged(target, animation, dx, dy) }
+    }
 
     internal fun setIndividualFrames(enabled: Boolean) = updateCharacter { it.copy(useIndividualFrames = enabled) }
 

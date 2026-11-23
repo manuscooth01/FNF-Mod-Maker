@@ -31,7 +31,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -364,7 +364,7 @@ fun CharacterForm(
     onPickIcon: () -> Unit,
     onPickFrames: (String) -> Unit
 ) {
-    var selectedAnimation by remember { mutableStateOf("idle") }
+    var selectedAnimation by rememberSaveable { mutableStateOf("idle") }
     Column(Modifier.fillMaxWidth()) {
         SectionTitle("Identidad")
         Field("Nombre visible", draft.displayName, vm::setCharName,
@@ -461,7 +461,7 @@ fun CharacterForm(
             }
         }
         val animation = draft.settingsFor(selectedAnimation)
-        CharacterPreview(vm, draft, selectedAnimation)
+        CharacterPreview(vm, draft, selectedAnimation) { selectedAnimation = it }
         Text("Posición del personaje (px)", fontWeight = FontWeight.SemiBold)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Field("Personaje X", draft.positionX, { vm.setCharacterPosition(it, draft.positionY) },

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,10 +26,13 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -40,6 +44,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.fnfmodmaker.model.CharacterAdjustment
 import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.gridAnimationRegions
 import com.fnfmodmaker.model.placement
@@ -47,10 +52,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
-
-private enum class PreviewAdjustment(val label: String) {
-    POSITION("Personaje"), ANIMATION("Animación"), CAMERA("Cámara")
-}
 
 private data class PreviewSource(
     val path: String, val left: Int, val top: Int, val width: Int, val height: Int,
@@ -100,7 +101,26 @@ private fun decodePreviewFrames(sources: List<PreviewSource>): List<PreviewFrame
 
 /** Escenario orientativo; las coordenadas reales dependen del escenario y del motor. */
 @Composable
-internal fun CharacterPreview(vm: WizardViewModel, draft: CharacterDraft, animationName: String) {
+internal fun CharacterPreview(vm: WizardViewModel, draft: CharacterDraft, animationName: String, onAnimationSelected: (String) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    if (expanded) {
+        CharacterEditorDialog(vm, draft, animationName, onAnimationSelected) {
+            vm.forceAutoSave()
+            expanded = false
+        }
+    } else {
+        var adjustment by remember { mutableStateOf(CharacterAdjustment.POSITION) }
+        CharacterPreviewPane(vm, draft, animationName, adjustment, { adjustment = it }, 1f,
+            expanded = false, onExpand = { expanded = true })
+    }
+}
+
+@Composable
+internal fun CharacterPreviewPane(
+    vm: WizardViewModel, draft: CharacterDraft, animationName: String,
+    adjustment: CharacterAdjustment, onAdjustmentChanged: (CharacterAdjustment) -> Unit,
+    zoom: Float, expanded: Boolean, onExpand: () -> Unit = {}
+) {
     val sources = remember(draft.useIndividualFrames, draft.sheet?.path, draft.sheetWidth, draft.sheetHeight,
         draft.frameWidth, draft.frameHeight, draft.animations, draft.animationFrames, animationName) {
         previewSources(draft, animationName)
@@ -127,7 +147,6 @@ internal fun CharacterPreview(vm: WizardViewModel, draft: CharacterDraft, animat
         draft.frameWidth, draft.frameHeight, draft.animations, draft.animationFrames) {
         previewSources(draft, "idle").firstOrNull()
     }
-    var adjustment by remember { mutableStateOf(PreviewAdjustment.POSITION) }
     var canvasWidth by remember { mutableIntStateOf(0) }
     val currentDraft by rememberUpdatedState(draft)
     val settings = draft.settingsFor(animationName)
@@ -137,20 +156,23 @@ internal fun CharacterPreview(vm: WizardViewModel, draft: CharacterDraft, animat
     val animationY = settings.offsetY.toIntOrNull() ?: 0
 
     Column {
-        SectionTitle("Vista previa y posiciones")
-        Text("Escenario de referencia: arrastra para ajustar. El resultado final depende del escenario y del motor.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            PreviewAdjustment.entries.forEach { option ->
-                FilterChip(selected = adjustment == option, onClick = { adjustment = option },
-                    enabled = !vm.busy, label = { Text(option.label) })
+        if (!expanded) {
+            SectionTitle("Vista previa y posiciones")
+            Text("Escenario de referencia: arrastra para ajustar. El resultado final depende del escenario y del motor.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = onExpand, enabled = !vm.busy) { Text("Abrir editor visual a pantalla completa") }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                CharacterAdjustment.entries.forEach { option ->
+                    FilterChip(selected = adjustment == option, onClick = { onAdjustmentChanged(option) },
+                        enabled = !vm.busy, label = { Text(option.label) })
+                }
             }
         }
         Canvas(
             Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                 .onSizeChanged { canvasWidth = it.width }
                 .semantics { contentDescription = "Vista previa del personaje; arrastra para ajustar ${adjustment.label}" }
-                .pointerInput(adjustment, canvasWidth, animationName, vm.busy) {
+                .pointerInput(adjustment, canvasWidth, animationName, vm.busy, zoom) {
                     var startX = 0f
                     var startY = 0f
                     var totalX = 0f
@@ -159,35 +181,36 @@ internal fun CharacterPreview(vm: WizardViewModel, draft: CharacterDraft, animat
                         val initial = currentDraft
                         val initialSettings = initial.settingsFor(animationName)
                         when (adjustment) {
-                            PreviewAdjustment.POSITION -> { startX = initial.positionX.toFloatOrNull() ?: 0f; startY = initial.positionY.toFloatOrNull() ?: 0f }
-                            PreviewAdjustment.CAMERA -> { startX = initial.cameraX.toFloatOrNull() ?: 0f; startY = initial.cameraY.toFloatOrNull() ?: 0f }
-                            PreviewAdjustment.ANIMATION -> { startX = initialSettings.offsetX.toFloatOrNull() ?: 0f; startY = initialSettings.offsetY.toFloatOrNull() ?: 0f }
+                            CharacterAdjustment.POSITION -> { startX = initial.positionX.toFloatOrNull() ?: 0f; startY = initial.positionY.toFloatOrNull() ?: 0f }
+                            CharacterAdjustment.CAMERA -> { startX = initial.cameraX.toFloatOrNull() ?: 0f; startY = initial.cameraY.toFloatOrNull() ?: 0f }
+                            CharacterAdjustment.ANIMATION -> { startX = initialSettings.offsetX.toFloatOrNull() ?: 0f; startY = initialSettings.offsetY.toFloatOrNull() ?: 0f }
                         }
                         totalX = 0f
                         totalY = 0f
                     }) { change, amount ->
                         if (!vm.busy && canvasWidth > 0) {
                             change.consume()
-                            val pixelScale = canvasWidth / 1280f
+                            val pixelScale = canvasWidth / 1280f * zoom
                             val animScale = currentDraft.scaleValue.takeIf { it.isFinite() && it > 0f }?.coerceAtMost(20f) ?: 1f
-                            val factor = if (adjustment == PreviewAdjustment.ANIMATION) -1f / animScale else 1f
+                            val factor = if (adjustment == CharacterAdjustment.ANIMATION) -1f / animScale else 1f
                             totalX += amount.x / pixelScale * factor
                             totalY += amount.y / pixelScale * factor
                             val x = (startX + totalX).coerceIn(-999999f, 999999f).roundToInt().toString()
                             val y = (startY + totalY).coerceIn(-999999f, 999999f).roundToInt().toString()
                             when (adjustment) {
-                                PreviewAdjustment.POSITION -> vm.setCharacterPosition(x, y)
-                                PreviewAdjustment.CAMERA -> vm.setCharacterCamera(x, y)
-                                PreviewAdjustment.ANIMATION -> vm.updateCharacterAnimation(animationName) { it.copy(offsetX = x, offsetY = y) }
+                                CharacterAdjustment.POSITION -> vm.setCharacterPosition(x, y)
+                                CharacterAdjustment.CAMERA -> vm.setCharacterCamera(x, y)
+                                CharacterAdjustment.ANIMATION -> vm.updateCharacterAnimation(animationName) { it.copy(offsetX = x, offsetY = y) }
                             }
                         }
                     }
                 }
         ) {
             val k = size.width / 1280f
-            drawRect(Color(0xFF1D2032))
-            drawRect(Color(0xFF292E42), topLeft = Offset(0f, 570f * k), size = Size(size.width, size.height - 570f * k))
-            drawLine(Color(0xFF5C6482), Offset(0f, 570f * k), Offset(size.width, 570f * k), strokeWidth = 2f)
+            drawRect(Color(0xFF08070C))
+            clipRect {
+              scale(scaleX = zoom, scaleY = zoom, pivot = Offset(size.width / 2f, size.height / 2f)) {
+            drawReferenceStage(k)
             val baseX = 450f + position.x
             val baseY = 120f + position.y
             if (currentFrame != null) {
@@ -213,6 +236,8 @@ internal fun CharacterPreview(vm: WizardViewModel, draft: CharacterDraft, animat
             drawCircle(Color(0xFFFFD75E), radius = 8f * k, center = Offset(centerX, centerY))
             drawLine(Color(0xFFFFD75E), Offset(centerX - 18f * k, centerY), Offset(centerX + 18f * k, centerY), 2f)
             drawLine(Color(0xFFFFD75E), Offset(centerX, centerY - 18f * k), Offset(centerX, centerY + 18f * k), 2f)
+              }
+            }
         }
         when {
             sources.isEmpty() -> Text("Añade frames válidos para previsualizar $animationName.", style = MaterialTheme.typography.bodySmall)
@@ -226,5 +251,32 @@ internal fun CharacterPreview(vm: WizardViewModel, draft: CharacterDraft, animat
             }
         }
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** Escenario de referencia original, inspirado en un escenario de concierto. */
+private fun DrawScope.drawReferenceStage(k: Float) {
+    drawRect(Color(0xFF100D16))
+    drawRect(Color(0xFF33283C), Offset(85f * k, 65f * k), Size(1110f * k, 580f * k))
+    for (i in 0..8) {
+        val x = (120f + i * 135f) * k
+        drawRect(Color(0xFF382B40), Offset(x, 65f * k), Size(55f * k, 405f * k))
+    }
+    val floor = Path().apply {
+        moveTo(70f * k, 475f * k); lineTo(1210f * k, 475f * k)
+        lineTo(1155f * k, 650f * k); lineTo(125f * k, 650f * k); close()
+    }
+    drawPath(floor, Color(0xFF60495B))
+    for (i in 0..9) {
+        val x = (90f + i * 123f) * k
+        drawLine(Color(0xFF826877), Offset(x, 475f * k), Offset((x / k - 20f) * k, 650f * k), 2f * k)
+    }
+    drawRect(Color(0xFF49304F), Offset(110f * k, 650f * k), Size(1060f * k, 45f * k))
+    drawLine(Color(0xFFB1939C), Offset(110f * k, 650f * k), Offset(1170f * k, 650f * k), 3f * k)
+    for (i in 0..8) {
+        val x = (160f + i * 120f) * k
+        val y = (635f - kotlin.math.abs(4 - i) * 13f) * k
+        drawCircle(Color(0xFFB79F5D), 14f * k, Offset(x, y))
+        drawCircle(Color(0xFFFFF2B5), 9f * k, Offset(x, y))
     }
 }

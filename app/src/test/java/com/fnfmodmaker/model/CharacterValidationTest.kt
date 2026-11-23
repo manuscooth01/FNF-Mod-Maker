@@ -88,4 +88,16 @@ class CharacterValidationTest {
         assertTrue(draft.copy(positionX = "-").problems.any { it.contains("posiciones") })
         assertFalse(draft.problems.any { it.contains("posiciones") })
     }
+    @Test fun touchControlsMoveTheChosenTargetInVisualDirection() {
+        val draft = CharacterDraft()
+        val moved = draft.nudged(CharacterAdjustment.POSITION, "idle", 10, -3)
+        assertTrue(moved.positionX == "10" && moved.positionY == "-3")
+        val anim = moved.nudged(CharacterAdjustment.ANIMATION, "idle", 10, -3)
+        assertTrue(anim.settingsFor("idle").offsetX == "-10")
+        assertTrue(anim.settingsFor("idle").offsetY == "3")
+        assertTrue(anim.positionX == "10")
+        val camera = anim.nudged(CharacterAdjustment.CAMERA, "idle", -10, 3)
+        assertTrue(camera.cameraX == "-10" && camera.cameraY == "3")
+        assertTrue(camera.nudged(CharacterAdjustment.POSITION, "idle", Int.MAX_VALUE, 0).positionX == "999999")
+    }
 }

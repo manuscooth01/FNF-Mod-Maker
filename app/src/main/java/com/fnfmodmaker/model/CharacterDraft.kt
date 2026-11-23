@@ -74,6 +74,23 @@ fun CharacterDraft.placement(): CharacterPlacement = CharacterPlacement(
 fun CharacterPlacement.psychCameraX(side: CharacterSide): Int =
     if (side == CharacterSide.PLAYER) -cameraX else cameraX
 
+/** El teclado táctil mueve en dirección visual; el offset de animación usa el signo opuesto. */
+enum class CharacterAdjustment(val label: String) { POSITION("Personaje"), ANIMATION("Animación"), CAMERA("Cámara") }
+
+fun CharacterDraft.nudged(target: CharacterAdjustment, animation: String, dx: Int, dy: Int): CharacterDraft {
+    fun shifted(value: String, delta: Long): String =
+        ((value.toIntOrNull() ?: 0).toLong() + delta).coerceIn(-999999, 999999).toString()
+    return when (target) {
+        CharacterAdjustment.POSITION -> copy(positionX = shifted(positionX, dx.toLong()), positionY = shifted(positionY, dy.toLong()))
+        CharacterAdjustment.CAMERA -> copy(cameraX = shifted(cameraX, dx.toLong()), cameraY = shifted(cameraY, dy.toLong()))
+        CharacterAdjustment.ANIMATION -> {
+            val current = settingsFor(animation)
+            copy(animationSettings = animationSettings + (animation to current.copy(
+                offsetX = shifted(current.offsetX, -dx.toLong()), offsetY = shifted(current.offsetY, -dy.toLong()))))
+        }
+    }
+}
+
 data class GridFrameRegion(val x: Int, val y: Int, val width: Int, val height: Int)
 
 /** Igual que el exportador: las animaciones se reparten consecutivamente por filas. */

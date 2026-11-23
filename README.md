@@ -140,7 +140,9 @@ cuadrícula o elegir **Frames PNG** para importar varios PNG por animación, reo
 previsualizarlos. La app genera el PNG y el XML Sparrow, y guarda FPS, bucle y offsets por
 animación en los JSON de Psych y V-Slice. En ambos modos puedes previsualizar la animación,
 pausar y avanzar frames, y arrastrar el personaje, el offset de animación o el foco de cámara;
-también puedes introducir sus coordenadas. La vista es orientativa: la posición final depende
+también puedes introducir sus coordenadas. **Abrir editor visual a pantalla completa** muestra
+una lista de animaciones, escenario, zoom y flechas táctiles con pasos de 1 o 10 píxeles. Gira el
+teléfono para ver los paneles lado a lado. La vista es orientativa: la posición final depende
 del escenario y de cada motor, por lo que hay que comprobarla en el juego. El límite es 100 frames y una hoja final de 4096 × 4096 píxeles; si no caben,
 reduce el tamaño o la cantidad de imágenes. `idle` necesita al menos un frame y la escala debe
 ser mayor que cero. Los archivos deben ser PNG reales, no solo archivos renombrados.

@@ -24,9 +24,9 @@ import com.fnfmodmaker.model.slugify
 import com.fnfmodmaker.mod.ModBuilder
 import com.fnfmodmaker.mod.ModImporter
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import androidx.compose.ui.unit.size
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
 import com.fnfmodmaker.model.ChartEditorState
 import com.fnfmodmaker.model.DragState

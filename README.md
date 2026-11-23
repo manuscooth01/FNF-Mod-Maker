@@ -138,8 +138,10 @@ Si quieres tu propio personaje en vez de `bf`/`dad`:
 El editor también está disponible como herramienta independiente. Puedes trabajar con una
 cuadrícula o elegir **Frames PNG** para importar varios PNG por animación, reordenarlos y
 previsualizarlos. La app genera el PNG y el XML Sparrow, y guarda FPS, bucle y offsets por
-animación en los JSON de Psych y V-Slice. La vista previa no aplica los offsets: compruébalos
-en el juego. El límite es 100 frames y una hoja final de 4096 × 4096 píxeles; si no caben,
+animación en los JSON de Psych y V-Slice. En ambos modos puedes previsualizar la animación,
+pausar y avanzar frames, y arrastrar el personaje, el offset de animación o el foco de cámara;
+también puedes introducir sus coordenadas. La vista es orientativa: la posición final depende
+del escenario y de cada motor, por lo que hay que comprobarla en el juego. El límite es 100 frames y una hoja final de 4096 × 4096 píxeles; si no caben,
 reduce el tamaño o la cantidad de imágenes. `idle` necesita al menos un frame y la escala debe
 ser mayor que cero. Los archivos deben ser PNG reales, no solo archivos renombrados.
 El editor no importa todavía atlas XML existentes ni animaciones personalizadas adicionales.

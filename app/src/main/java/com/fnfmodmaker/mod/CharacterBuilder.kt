@@ -7,6 +7,8 @@ import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.CHARACTER_ANIMATIONS
 import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.planCharacterAtlas
+import com.fnfmodmaker.model.placement
+import com.fnfmodmaker.model.psychCameraX
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.CharacterVariation
 import com.fnfmodmaker.model.ModConfig
@@ -284,14 +286,16 @@ object CharacterBuilder {
                 colors = hexToRgb(config.weekColor)
             }
         }
+        val placement = (charData as? CharacterDraft)?.placement()
+        val psychCameraX = if (charData is CharacterDraft) placement!!.psychCameraX(charData.side) else 0
         return JSONObject()
             .put("animations", animationArray)
             .put("image", "characters/$charId")
             .put("scale", scaleValue)
             .put("sing_duration", 4)
             .put("healthicon", iconId)
-            .put("position", JSONArray().put(0).put(0))
-            .put("camera_position", JSONArray().put(0).put(0))
+            .put("position", JSONArray().put(placement?.x ?: 0).put(placement?.y ?: 0))
+            .put("camera_position", JSONArray().put(psychCameraX).put(placement?.cameraY ?: 0))
             .put("flip_x", flipX)
             .put("no_antialiasing", false)
             .put(
@@ -327,6 +331,7 @@ object CharacterBuilder {
                     .put("offsets", JSONArray().put(settings?.offsetX?.toIntOrNull() ?: 0).put(settings?.offsetY?.toIntOrNull() ?: 0))
             )
         }
+        val placement = (charData as? CharacterDraft)?.placement()
         return JSONObject()
             .put("version", "1.0.0")
             .put("name", displayName.trim().ifEmpty { charId })
@@ -338,8 +343,8 @@ object CharacterBuilder {
                 else -> 1.0f
             })
             .put("healthIcon", JSONObject().put("id", iconId))
-            .put("offsets", JSONArray().put(0).put(0))
-            .put("cameraOffsets", JSONArray().put(0).put(0))
+            .put("offsets", JSONArray().put(placement?.x ?: 0).put(placement?.y ?: 0))
+            .put("cameraOffsets", JSONArray().put(placement?.cameraX ?: 0).put(placement?.cameraY ?: 0))
             .put("singTime", 4.0)
             .put("animations", animationArray)
             .put("startingAnimation", "idle")

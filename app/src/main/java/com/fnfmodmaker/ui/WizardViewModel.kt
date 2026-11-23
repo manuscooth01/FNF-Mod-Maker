@@ -1006,6 +1006,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun setCharScale(value: String) =
         updateCharacter { it.copy(scale = value.filter { c -> c.isDigit() || c == '.' || c == ',' }.replace(',', '.').take(5)) }
 
+    internal fun setCharacterPosition(x: String, y: String) = updateCharacter {
+        it.copy(positionX = x.take(7), positionY = y.take(7))
+    }
+
+    internal fun setCharacterCamera(x: String, y: String) = updateCharacter {
+        it.copy(cameraX = x.take(7), cameraY = y.take(7))
+    }
+
     internal fun setCharFlipX(enabled: Boolean) = updateCharacter { it.copy(flipX = enabled) }
 
     internal fun setCharIdleFrames(value: String) =

@@ -67,4 +67,25 @@ class CharacterValidationTest {
         assertTrue(planCharacterAtlas(listOf(4097 to 2)) == null)
         assertTrue(planCharacterAtlas(List(5) { 3000 to 3000 }) == null)
     }
+    @Test fun gridPreviewUsesSameAnimationOrderAsExport() {
+        val animations = listOf("idle" to 2, "singLEFT" to 3, "singDOWN" to 1)
+        val regions = gridAnimationRegions(300, 200, 100, 100, animations, "singLEFT")
+        assertTrue(regions == listOf(
+            GridFrameRegion(200, 0, 100, 100),
+            GridFrameRegion(0, 100, 100, 100),
+            GridFrameRegion(100, 100, 100, 100)
+        ))
+        assertTrue(gridAnimationRegions(300, 100, 100, 100, animations, "singLEFT").isEmpty())
+        assertTrue(gridAnimationRegions(300, 100, 0, 100, animations, "idle").isEmpty())
+    }
+
+    @Test fun positionValidationAndCameraCoordinateConversion() {
+        val draft = CharacterDraft(enabled = true, positionX = "123", positionY = "-45", cameraX = "20", cameraY = "-7")
+        val placement = draft.placement()
+        assertTrue(placement == CharacterPlacement(123, -45, 20, -7))
+        assertTrue(placement.psychCameraX(CharacterSide.PLAYER) == -20)
+        assertTrue(placement.psychCameraX(CharacterSide.OPPONENT) == 20)
+        assertTrue(draft.copy(positionX = "-").problems.any { it.contains("posiciones") })
+        assertFalse(draft.problems.any { it.contains("posiciones") })
+    }
 }

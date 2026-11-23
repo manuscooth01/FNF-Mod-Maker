@@ -1,7 +1,5 @@
 package com.fnfmodmaker.ui
 
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,17 +29,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -59,9 +51,6 @@ import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.StageDraft
 import com.fnfmodmaker.model.StageSprite
 import com.fnfmodmaker.model.TargetEngine
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 
 // Shared UI components
 
@@ -472,14 +461,26 @@ fun CharacterForm(
             }
         }
         val animation = draft.settingsFor(selectedAnimation)
+        CharacterPreview(vm, draft, selectedAnimation)
+        Text("Posición del personaje (px)", fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Field("Personaje X", draft.positionX, { vm.setCharacterPosition(it, draft.positionY) },
+                modifier = Modifier.weight(1f), enabled = !vm.busy)
+            Field("Personaje Y", draft.positionY, { vm.setCharacterPosition(draft.positionX, it) },
+                modifier = Modifier.weight(1f), enabled = !vm.busy)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Desplazamiento de cámara (px)", fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Field("Cámara X", draft.cameraX, { vm.setCharacterCamera(it, draft.cameraY) },
+                modifier = Modifier.weight(1f), enabled = !vm.busy)
+            Field("Cámara Y", draft.cameraY, { vm.setCharacterCamera(draft.cameraX, it) },
+                modifier = Modifier.weight(1f), enabled = !vm.busy)
+        }
+        Spacer(Modifier.height(12.dp))
         if (draft.useIndividualFrames) {
             val frames = draft.animationFrames[selectedAnimation].orEmpty()
             Text("${frames.size} frames · $selectedAnimation", fontWeight = FontWeight.SemiBold)
-            if (frames.isNotEmpty()) {
-                CharacterAnimationPreview(frames, animation.fps.toIntOrNull()?.coerceIn(1, 60) ?: 24)
-                Text("Vista previa en bucle; comprueba los offsets dentro del juego.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = { onPickFrames(selectedAnimation) }, enabled = !vm.busy) {
                 Text("Añadir imágenes PNG")
@@ -534,37 +535,6 @@ fun CharacterForm(
         } else {
             Spacer(Modifier.height(16.dp))
             MessageCard("Personaje listo para generar.", error = false)
-        }
-    }
-}
-
-/** Decodifica una miniatura para no cargar la imagen original completa en la vista previa. */
-@Composable
-private fun CharacterAnimationPreview(frames: List<com.fnfmodmaker.model.CharacterFrame>, fps: Int) {
-    var index by remember(frames) { mutableStateOf(0) }
-    LaunchedEffect(frames, fps) {
-        while (true) {
-            delay((1000L / fps).coerceAtLeast(16L))
-            index = (index + 1) % frames.size
-        }
-    }
-    val frame = frames[index.coerceIn(frames.indices)]
-    val preview by produceState<ImageBitmap?>(initialValue = null, key1 = frame.image.path) {
-        value = withContext(Dispatchers.IO) {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(frame.image.path, bounds)
-            var sample = 1
-            while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2
-            val options = BitmapFactory.Options().apply { inSampleSize = sample }
-            BitmapFactory.decodeFile(frame.image.path, options)?.asImageBitmap()
-        }
-    }
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
-        if (preview != null) {
-            Image(bitmap = preview!!, contentDescription = "Vista previa del frame ${index + 1}",
-                modifier = Modifier.size(180.dp), contentScale = ContentScale.Fit)
-        } else {
-            Text("Cargando vista previa…", modifier = Modifier.padding(16.dp))
         }
     }
 }

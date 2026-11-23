@@ -62,6 +62,38 @@ fun planCharacterAtlas(sizes: List<Pair<Int, Int>>, limit: Int = 4096): Characte
     }.minWithOrNull(compareBy<CharacterAtlasLayout> { it.width.toLong() * it.height }.thenBy { kotlin.math.abs(it.width - it.height) })
 }
 
+/** Referencia espacial del editor, expresada en píxeles respecto al punto del escenario. */
+data class CharacterPlacement(val x: Int, val y: Int, val cameraX: Int, val cameraY: Int)
+
+fun CharacterDraft.placement(): CharacterPlacement = CharacterPlacement(
+    positionX.toIntOrNull() ?: 0, positionY.toIntOrNull() ?: 0,
+    cameraX.toIntOrNull() ?: 0, cameraY.toIntOrNull() ?: 0
+)
+
+/** Psych invierte el eje X de camera_position para Boyfriend; V-Slice no. */
+fun CharacterPlacement.psychCameraX(side: CharacterSide): Int =
+    if (side == CharacterSide.PLAYER) -cameraX else cameraX
+
+data class GridFrameRegion(val x: Int, val y: Int, val width: Int, val height: Int)
+
+/** Igual que el exportador: las animaciones se reparten consecutivamente por filas. */
+fun gridAnimationRegions(
+    sheetWidth: Int, sheetHeight: Int, frameWidth: Int, frameHeight: Int,
+    animations: List<Pair<String, Int>>, selected: String
+): List<GridFrameRegion> {
+    if (frameWidth <= 0 || frameHeight <= 0 || sheetWidth <= 0 || sheetHeight <= 0) return emptyList()
+    val columns = sheetWidth / frameWidth
+    val rows = sheetHeight / frameHeight
+    if (columns <= 0 || rows <= 0 || animations.any { it.second < 0 }) return emptyList()
+    val count = animations.firstOrNull { it.first == selected }?.second ?: return emptyList()
+    val start = animations.takeWhile { it.first != selected }.sumOf { it.second.toLong() }
+    if (start + count > columns.toLong() * rows || count > 100) return emptyList()
+    return (0 until count).map { index ->
+        val cursor = start + index
+        GridFrameRegion(((cursor % columns) * frameWidth).toInt(), ((cursor / columns) * frameHeight).toInt(), frameWidth, frameHeight)
+    }
+}
+
 /** Quién usa el personaje creado. */
 enum class CharacterSide(val label: String) {
     PLAYER("Jugador"),
@@ -143,7 +175,11 @@ data class CharacterDraft(
     val variations: List<CharacterVariation> = emptyList(),
     val useIndividualFrames: Boolean = false,
     val animationFrames: Map<String, List<CharacterFrame>> = emptyMap(),
-    val animationSettings: Map<String, CharacterAnimationSettings> = emptyMap()
+    val animationSettings: Map<String, CharacterAnimationSettings> = emptyMap(),
+    val positionX: String = "0",
+    val positionY: String = "0",
+    val cameraX: String = "0",
+    val cameraY: String = "0"
 ) {
     /** Carpeta/ID del personaje (minúsculas y guiones). */
     val charFolder: String
@@ -197,6 +233,9 @@ data class CharacterDraft(
             } else {
                 addAll(characterProblems(sheet != null, sheetWidth, sheetHeight, frameWidth, frameHeight, scale,
                     listOf(idleFrames, leftFrames, downFrames, upFrames, rightFrames)))
+            }
+            if (listOf(positionX, positionY, cameraX, cameraY).any { it.toIntOrNull() == null }) {
+                add("Las posiciones del personaje y de la cámara deben ser números enteros.")
             }
             for ((animation, _) in animations) {
                 val settings = settingsFor(animation)

@@ -80,7 +80,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Ajuste", style = MaterialTheme.typography.labelMedium)
-                    listOf(2 to "1/8", 4 to "1/16", 8 to "1/32").forEach { (value, label) ->
+                    listOf(1 to "1/4", 2 to "1/8", 4 to "1/16", 8 to "1/32").forEach { (value, label) ->
                         FilterChip(divisions == value, { val time = grid.pageStart(page); divisions = value; page = TouchGrid(song.bpmValue, value, vm.liveDurationMs).pageForTime(time) },
                             enabled = !locked, label = { Text(label) })
                     }
@@ -124,6 +124,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     else OutlinedButton(onClick = { vm.setLivePosition(grid.pageStart(page)); vm.startLivePlayback(false) }, enabled = vm.liveCanPlay) { Text("▶ Escuchar desde aquí") }
                     TextButton(onClick = { showButtonEditor = true }, enabled = !locked && !vm.busy) { Text("Edición por botones") }
                     TextButton(onClick = { vm.undoGridEdit(); selected = null }, enabled = !locked && vm.gridUndoCount > 0) { Text("Deshacer (${vm.gridUndoCount})") }
+                    TextButton(onClick = { vm.redoGridEdit(); selected = null }, enabled = !locked && vm.gridRedoCount > 0) { Text("Rehacer (${vm.gridRedoCount})") }
                 }
                 Text("Los cambios se guardan en esta dificultad. Escucha solo la instrumental; prueba el chart en el juego.", style = MaterialTheme.typography.labelSmall)
             }

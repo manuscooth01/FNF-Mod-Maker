@@ -31,18 +31,25 @@ class TouchChartGridTest {
         assertEquals(listOf(hold), replaceGridNote(notes, chord, null, 2000))
         assertNull(replaceGridNote(notes, null, ChartNote(2000, 1), 2000))
     }
-    @Test fun undoRestoresAbsentChartAndIsBounded() {
+    @Test fun undoRedoRestoresAbsentChartAndIsBounded() {
         val history = GridUndoHistory(2)
-        val draft = ChartDraft(notes = listOf(ChartNote(10, 0)))
-        history.push(null); history.push(draft)
-        assertEquals(draft, history.pop()!!.chart)
-        assertNull(history.pop()!!.chart)
-        assertNull(history.pop())
-        history.push(null); history.push(draft); history.push(draft.copy(bpm = 100))
+        val first = ChartDraft(notes = listOf(ChartNote(10, 0)))
+        val second = first.copy(notes = first.notes + ChartNote(100, 4))
+        history.push(null); history.push(first)
+        assertEquals(first, history.undo(second)!!.chart)
+        assertNull(history.undo(first)!!.chart)
+        assertNull(history.undo(null))
+        assertEquals(first, history.redo(null)!!.chart)
+        assertEquals(second, history.redo(first)!!.chart)
+        assertNull(history.redo(second))
+        assertEquals(first, history.undo(second)!!.chart)
+        history.push(first) // New edits discard redo.
+        assertEquals(0, history.redoSize)
+        history.push(second)
         assertEquals(2, history.size)
-        assertEquals(100, history.pop()!!.chart!!.bpm)
-        assertEquals(draft, history.pop()!!.chart)
-        assertNull(history.pop())
-        history.push(draft); history.clear(); assertEquals(0, history.size)
+        assertEquals(second, history.undo(null)!!.chart)
+        assertEquals(first, history.undo(second)!!.chart)
+        assertNull(history.undo(first))
+        history.clear(); assertEquals(0, history.size); assertEquals(0, history.redoSize)
     }
 }

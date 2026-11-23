@@ -35,3 +35,12 @@ con pruebas y APK exitosos. No se ejecutaron pruebas en dispositivo.
 
 No se distribuyen assets oficiales de FNF. No se incluirán motores, cambios de esquema no
 verificados ni importación ficticia como si fueran funcionalidades terminadas.
+
+## Avance de la primera entrega
+
+Se introdujo `project/ProjectStore.kt`: documentos internos versión 1, directorios de recursos,
+reemplazo temporal con copia previa, migración no destructiva del borrador existente y manejo de
+varios proyectos en Inicio. Hay pruebas unitarias para recuperación, validación de IDs/versión y
+copiado de recursos. Los ZIP de mods siguen sin importarse y no hay copia de proyecto portable.
+La cuadrícula incorpora rehacer de sesión y snap de 1/4; el historial sigue sin persistir entre
+sesiones y no equivale al Chart Studio completo del plan.

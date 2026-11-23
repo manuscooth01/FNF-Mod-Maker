@@ -612,14 +612,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private val gridHistory = com.fnfmodmaker.model.GridUndoHistory()
     var gridUndoCount by mutableStateOf(0)
         private set
+    var gridRedoCount by mutableStateOf(0)
+        private set
     private var gridSessionKey: Pair<String, String>? = null
     internal fun beginGridSession() {
-        gridHistory.clear(); gridUndoCount = 0
+        gridHistory.clear(); gridUndoCount = 0; gridRedoCount = 0
         gridSessionKey = liveSong?.songFolder?.let { it to liveDifficulty }
     }
     internal fun endGridSession() {
         if (livePlaying || liveLoading) pauseLivePlayback()
-        gridHistory.clear(); gridUndoCount = 0; gridSessionKey = null; forceAutoSave()
+        gridHistory.clear(); gridUndoCount = 0; gridRedoCount = 0; gridSessionKey = null; forceAutoSave()
     }
     private fun gridSessionMatches(): Boolean = gridSessionKey != null && gridSessionKey == liveSong?.songFolder?.let { it to liveDifficulty }
     internal fun applyGridNote(original: ChartNote?, replacement: ChartNote?): Boolean {
@@ -634,20 +636,24 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val notes = com.fnfmodmaker.model.replaceGridNote(draft.notes, original, replacement, liveDurationMs)
         if (notes == null) { liveNotice = "No se puede colocar: hay otra nota o sostenido en ese carril, o supera el final."; return false }
         if (notes == draft.notes) return false
-        gridHistory.push(existing); gridUndoCount = gridHistory.size
+        gridHistory.push(existing); gridUndoCount = gridHistory.size; gridRedoCount = gridHistory.redoSize
         liveUndo.clear(); liveUndoCount = 0
         config = config.withChart(song.songFolder, liveDifficulty, draft.copy(notes = notes))
         liveNotice = "Cambio guardado en el borrador."; scheduleAutoSave()
         return true
     }
-    internal fun undoGridEdit() {
+    internal fun undoGridEdit() = restoreGridHistory(redo = false)
+    internal fun redoGridEdit() = restoreGridHistory(redo = true)
+    private fun restoreGridHistory(redo: Boolean) {
         if (!gridSessionMatches() || busy || livePlaying || liveLoading || !liveChartAvailable) return
         val song = liveSong ?: return
-        val entry = gridHistory.pop() ?: return
-        gridUndoCount = gridHistory.size
+        val current = config.getChart(song.songFolder, liveDifficulty)
+        val entry = (if (redo) gridHistory.redo(current) else gridHistory.undo(current)) ?: return
+        gridUndoCount = gridHistory.size; gridRedoCount = gridHistory.redoSize
         config = if (entry.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
             else config.withChart(song.songFolder, liveDifficulty, entry.chart)
-        liveNotice = "Se deshizo el último cambio de la cuadrícula."; scheduleAutoSave()
+        liveNotice = if (redo) "Se rehízo el último cambio de la cuadrícula." else "Se deshizo el último cambio de la cuadrícula."
+        scheduleAutoSave()
     }
     internal fun deleteLiveCustomChart() {
         if (livePlaying || liveLoading) return
@@ -1367,7 +1373,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             } } }
             result.onSuccess { list ->
                 projects = list
-                if (currentProjectId == id && projectRevision == revision) projectSaveStatus = "Guardado en este dispositivo"
+                if (currentProjectId == id && projectRevision == revision) {
+                    projectSaveStatus = "Guardado en este dispositivo"
+                    if (projectMessage?.startsWith("No se pudo guardar el proyecto:") == true) projectMessage = null
+                }
             }.onFailure {
                 projectSaveStatus = "Error al guardar"
                 projectMessage = "No se pudo guardar el proyecto: ${it.message}. Comprueba el espacio e intenta de nuevo."

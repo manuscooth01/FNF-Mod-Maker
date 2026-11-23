@@ -102,11 +102,11 @@ data class ChartDraft(
                 val isPlayerSide = note.lane in 0..3
                 val lane = note.lane % 4
                 val data = if (mustHit == isPlayerSide) lane else lane + 4
-                val sustain = if (note.isHold) (note.lengthMs / beatMs).toLong() else 0
+                val sustain = note.lengthMs.coerceAtLeast(0L)
                 
                 sectionNotes.put(
                     JSONArray()
-                        .put((note.timeMs - sectionStartMs).toLong())
+                        .put(note.timeMs)
                         .put(data)
                         .put(sustain)
                 )
@@ -147,12 +147,12 @@ data class ChartDraft(
         val notesArray = JSONArray()
         
         for (note in notes) {
-            val data = if (note.lane in 0..3) note.lane else note.lane - 4
+            val data = note.lane
             notesArray.put(
                 JSONObject()
                     .put("t", note.timeMs)
                     .put("d", data)
-                    .put("l", if (note.isHold) 1 else 0)
+                    .put("l", note.lengthMs.coerceAtLeast(0L))
             )
         }
         notesJson.put(difficulty, notesArray)
@@ -170,12 +170,12 @@ data class ChartDraft(
     fun toVSliceNotes(): JSONArray {
         val notesArray = JSONArray()
         for (note in notes) {
-            val data = if (note.lane in 0..3) note.lane else note.lane - 4
+            val data = note.lane
             notesArray.put(
                 JSONObject()
                     .put("t", note.timeMs)
                     .put("d", data)
-                    .put("l", if (note.isHold) 1 else 0)
+                    .put("l", note.lengthMs.coerceAtLeast(0L))
             )
         }
         return notesArray

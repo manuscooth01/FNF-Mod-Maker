@@ -97,8 +97,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
             ToolCard(
                 glyph = "🧩",
                 title = "Crear un mod completo",
-                description = "Nombre, canción, dificultades y audio. Al final sale un ZIP " +
-                    "que puedes meter en mods/ y jugar.",
+                description = "Un recorrido guiado para preparar canciones, personaje y audio, y guardar un ZIP.",
                 badge = "Desde cero",
                 onClick = { vm.openTool(Tool.MOD) }
             )
@@ -120,21 +119,8 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 onClick = { vm.openTool(Tool.AUDIO) }
             )
             Spacer(Modifier.height(12.dp))
-            ToolCard(
-                glyph = "📥",
-                title = "Importar mod existente",
-                description = "Carga un ZIP de mod (V-Slice o Psych Engine) y edítalo: canciones, charts, personajes, audio.",
-                badge = "Nuevo",
-                onClick = { vm.openTool(Tool.IMPORT) }
-            )
-            Spacer(Modifier.height(12.dp))
-            ToolCard(
-                glyph = "🏞️",
-                title = "Crear un stage (escenario)",
-                description = "Fondo personalizado, sprites, cámara y límites. Genera archivos para V-Slice y Psych.",
-                badge = "Nuevo",
-                onClick = { vm.openTool(Tool.STAGE) }
-            )
+            Text("Importación de mods y creación de escenarios: aún no disponibles.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(Modifier.height(20.dp))
             Surface(

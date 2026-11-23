@@ -30,6 +30,8 @@ import com.fnfmodmaker.model.PickedAudio
 import com.fnfmodmaker.model.PickedImage
 import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.TargetEngine
+import com.fnfmodmaker.model.WizardIssue
+import com.fnfmodmaker.model.validateWizard
 import com.fnfmodmaker.model.slugify
 import com.fnfmodmaker.mod.ModBuilder
 import com.fnfmodmaker.mod.ModImporter
@@ -56,22 +58,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         internal set
 
     /** ¿Qué falta para poder exportar el mod completo? */
-    val missingForExport: List<String>
-        get() = buildList {
-            if (config.modTitle.isBlank()) add("Nombre del mod")
-            if (config.songs.isEmpty()) add("Al menos una canción")
-            if (config.character.enabled) {
-                config.character.problems.forEach { add("Personaje: $it") }
-            }
-            config.songs.forEachIndexed { index, song ->
-                if (song.songName.isBlank()) add("Nombre de la canción ${index + 1}")
-                if (song.bpmValue !in 1..400) add("BPM válido en la canción ${index + 1}")
-                if (song.difficulties.isEmpty()) add("Al menos una dificultad en la canción ${index + 1}")
-                if (song.instrumental == null) add("La instrumental de la canción ${index + 1}")
-            }
-        }
-
-    val exportReady: Boolean get() = missingForExport.isEmpty()
+    val validationIssues: List<WizardIssue> get() = validateWizard(config)
+    val missingForExport: List<String> get() = validationIssues.map { it.message }
+    val exportReady: Boolean get() = validationIssues.isEmpty()
+    val currentStepIssues: List<WizardIssue> get() = validationIssues.filter { it.step == step }
 
     /** Personaje suelto: mismo formulario, pero sin depender del resto del mod. */
     val characterOnlyReady: Boolean
@@ -126,18 +116,26 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (busy) return
         config = config.copy(songs = config.songs + SongConfig())
         activeSongIndex = config.songs.lastIndex
+        scheduleAutoSave()
     }
 
     internal fun removeSong(index: Int) {
-        if (busy || config.songs.size <= 1) return
+        if (busy || config.songs.size <= 1 || index !in config.songs.indices) return
+        val removedFolder = config.songs[index].songFolder
         val updated = config.songs.toMutableList()
         updated.removeAt(index)
-        if (activeSongIndex >= updated.size) activeSongIndex = updated.lastIndex
-        config = config.copy(songs = updated)
+        activeSongIndex = when {
+            index < activeSongIndex -> activeSongIndex - 1
+            activeSongIndex >= updated.size -> updated.lastIndex
+            else -> activeSongIndex
+        }
+        activeChartSongIndex = activeChartSongIndex.coerceIn(0, updated.lastIndex)
+        config = config.copy(songs = updated, charts = if (updated.any { it.songFolder == removedFolder }) config.charts else config.charts - removedFolder)
+        scheduleAutoSave()
     }
 
     internal fun selectSong(index: Int) {
-        if (busy) return
+        if (busy || config.songs.isEmpty()) return
         activeSongIndex = index.coerceIn(0, config.songs.lastIndex)
     }
 
@@ -735,6 +733,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     internal fun goHome() {
         if (busy) return
+        forceAutoSave()
         error = null
         status = ""
         tool = Tool.HOME
@@ -745,7 +744,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // Auto-save
     private var autoSaveJob: kotlinx.coroutines.Job? = null
-    private var characterAutoSaveJob: kotlinx.coroutines.Job? = null
+    private var pendingAutoSaveJob: kotlinx.coroutines.Job? = null
     // Uri es abstracto; Gson no puede reconstruirlo sin un adaptador.
     private val autoSaveGson = GsonBuilder().registerTypeAdapter(Uri::class.java, object : TypeAdapter<Uri>() {
         override fun write(out: JsonWriter, value: Uri) = out.value(value.toString()).let { Unit }
@@ -758,7 +757,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }.nullSafe()).create()
     private val autoSaveFile: File
-        get() = File(getApplication<Application>().cacheDir, "autosave_modconfig.json")
+        get() = File(getApplication<Application>().filesDir, "autosave_modconfig.json")
+
+    private var modIdEdited = false
 
     init {
         loadAutoSave()
@@ -785,10 +786,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun loadAutoSave() {
         try {
-            if (autoSaveFile.exists()) {
-                val json = autoSaveFile.readText()
+            val legacyFile = File(getApplication<Application>().cacheDir, "autosave_modconfig.json")
+            val source = if (autoSaveFile.exists()) autoSaveFile else legacyFile
+            if (source.exists()) {
+                val json = source.readText()
                 val loaded = autoSaveGson.fromJson(json, ModConfig::class.java)
                 config = loaded
+                modIdEdited = loaded.modId.isNotBlank() && loaded.modId != slugify(loaded.modTitle)
             }
         } catch (e: Exception) {
             // Silencioso
@@ -820,20 +824,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var builtFiles by mutableStateOf<List<String>>(emptyList())
         private set
 
-    private var modIdEdited = false
+    val canAdvance: Boolean get() = step < 5 && currentStepIssues.isEmpty()
 
-    val canAdvance: Boolean
-        get() = when (step) {
-            0 -> config.modTitle.isNotBlank()
-            1 -> config.songs.isNotEmpty() && activeSong.songName.isNotBlank() &&
-                activeSong.bpmValue in 1..400 &&
-                activeSong.speedValue > 0f &&
-                activeSong.difficulties.isNotEmpty()
-            2 -> config.character.isReady
-            3 -> activeSong.instrumental != null
-            4 -> true // Chart step siempre puede avanzar (es opcional)
-            else -> false
-        }
+    internal fun resolveIssue(issue: WizardIssue) {
+        if (busy) return
+        issue.songIndex?.let { selectSong(it) }
+        step = issue.step
+        error = null
+    }
 
     val zipFileName: String
         get() = "${config.modFolder}.zip"
@@ -862,8 +860,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun reset() {
+        releaseMediaPlayer()
         config = ModConfig()
         activeSongIndex = 0
+        activeChartSongIndex = 0
+        activeChartDifficulty = "normal"
+        activeVariationIndex = null
+        chartEditorState = ChartEditorState()
         modIdEdited = false
         step = 0
         busy = false
@@ -872,12 +875,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         warnings = emptyList()
         savedName = null
         builtFiles = emptyList()
+        scheduleAutoSave()
     }
 
     // ---------------- Datos del mod ----------------
 
     internal fun setEngine(engine: TargetEngine) {
         config = config.copy(engine = engine)
+        scheduleAutoSave()
     }
 
     internal fun setModTitle(value: String) {
@@ -886,34 +891,48 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         } else {
             config.copy(modTitle = value, modId = slugify(value))
         }
+        scheduleAutoSave()
     }
 
     internal fun setModId(value: String) {
         modIdEdited = true
         config = config.copy(modId = value)
+        scheduleAutoSave()
     }
 
     internal fun setAuthor(value: String) {
         config = config.copy(author = value)
+        scheduleAutoSave()
     }
 
     internal fun setDescription(value: String) {
         config = config.copy(description = value)
+        scheduleAutoSave()
     }
 
     internal fun setWeekColor(value: String) {
         config = config.copy(weekColor = value)
+        scheduleAutoSave()
     }
 
     internal fun setShowInStoryMode(enabled: Boolean) {
         config = config.copy(showInStoryMode = enabled)
+        scheduleAutoSave()
     }
 
     // ---------------- Canción activa ----------------
 
     internal fun setActiveSongName(value: String) {
         val clean = value.filterNot { it in "/\\|:*?\"<>" }
+        val oldFolder = activeSong.songFolder
         updateActiveSong { it.copy(songName = clean) }
+        val newFolder = activeSong.songFolder
+        if (oldFolder != newFolder && oldFolder in config.charts && newFolder !in config.charts &&
+            config.songs.count { it.songFolder == oldFolder } == 0) {
+            val moved = config.charts.getValue(oldFolder).mapValues { (_, chart) -> chart.copy(songFolder = newFolder) }
+            config = config.copy(charts = config.charts - oldFolder + (newFolder to moved))
+            scheduleAutoSave()
+        }
     }
 
     internal fun setActiveSongArtist(value: String) {
@@ -972,21 +991,44 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun updateActiveSong(block: (SongConfig) -> SongConfig) {
+        if (config.songs.isEmpty()) return
         val index = activeSongIndex.coerceIn(0, config.songs.lastIndex)
         val updated = config.songs.toMutableList()
         updated[index] = block(updated[index])
         config = config.copy(songs = updated)
+        scheduleAutoSave()
+    }
+
+    internal fun clearSongAudio(slot: AudioSlot) {
+        if (busy) return
+        updateActiveSong { song ->
+            when (slot) {
+                AudioSlot.INSTRUMENTAL -> song.copy(instrumental = null)
+                AudioSlot.VOICES_PLAYER -> song.copy(vocalsPlayer = null)
+                AudioSlot.VOICES_OPPONENT -> song.copy(vocalsOpponent = null)
+            }
+        }
+    }
+
+    internal fun clearModIcon() {
+        if (busy) return
+        config = config.copy(icon = null)
+        scheduleAutoSave()
     }
 
     // ---------------- Personaje propio ----------------
 
-    private fun updateCharacter(block: (CharacterDraft) -> CharacterDraft) {
-        config = config.copy(character = block(config.character))
-        characterAutoSaveJob?.cancel()
-        characterAutoSaveJob = viewModelScope.launch {
+    private fun scheduleAutoSave() {
+        pendingAutoSaveJob?.cancel()
+        pendingAutoSaveJob = viewModelScope.launch {
             delay(1000)
             saveAutoSave()
         }
+    }
+
+    private fun updateCharacter(block: (CharacterDraft) -> CharacterDraft) {
+        config = config.copy(character = block(config.character))
+        scheduleAutoSave()
     }
 
     internal fun setCharacterEnabled(enabled: Boolean) = updateCharacter { it.copy(enabled = enabled) }
@@ -1287,6 +1329,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             }
             result.onSuccess { picked ->
                 config = config.copy(icon = picked)
+                scheduleAutoSave()
             }.onFailure {
                 error = it.message ?: "No se pudo leer la imagen elegida."
             }
@@ -1810,6 +1853,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun export(uri: Uri) {
         if (busy) return
+        if (!exportReady) {
+            error = "Completa los datos pendientes antes de exportar."
+            return
+        }
         val app = getApplication<Application>()
         busy = true
         error = null

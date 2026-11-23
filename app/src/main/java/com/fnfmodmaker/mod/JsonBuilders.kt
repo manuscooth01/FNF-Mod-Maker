@@ -171,10 +171,13 @@ object JsonBuilders {
     // ------------------------------------------------------------------
 
     /** Chart en formato psych_v1 - usa chart editado si existe. */
-    fun psychChart(config: ModConfig, song: SongConfig, durationMs: Long): String {
-        val customChart = config.getChart(song.songFolder, song.orderedDifficulties.firstOrNull() ?: "normal")
+    fun psychChart(config: ModConfig, song: SongConfig, durationMs: Long,
+        difficulty: String = song.orderedDifficulties.firstOrNull() ?: "normal"): String {
+        val customChart = config.getChart(song.songFolder, difficulty)
         if (customChart != null) {
-            return customChart.toPsychJson()
+            return customChart.copy(songFolder = song.songName.trim(), bpm = song.bpmValue, scrollSpeed = song.speedValue,
+                offsetMs = song.offsetValue, needsVoices = song.hasVocals, player1 = song.player,
+                player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych).toPsychJson()
         }
         return psychChartGenerated(song, durationMs)
     }

@@ -150,40 +150,12 @@ object ModBuilder {
                 )
             }
 
-            // Un solo nivel que referencia todas las canciones.
-            for (entry in songEntries) {
-                val song = entry.song
-                writeText(
-                    root,
-                    "data/levels/$modFolder.json",
-                    JsonBuilders.vsliceLevel(
-                        song,
-                        modFolder,
-                        config.modTitle,
-                        config.showInStoryMode
-                    )
-                )
-                // Si hay varias canciones, sobreescribiríamos el nivel; en su lugar
-                // generamos un nivel por canción con nombre único para no perder nada.
-                // Pero para mantener compatibilidad con un nivel por mod, dejamos el último.
-            }
-            // Nota: si hay varias canciones, idealmente habría un nivel por canción.
-            // Por ahora generamos un nivel por canción con sufijo si hay más de una.
-            if (songEntries.size > 1) {
-                for ((index, entry) in songEntries.withIndex()) {
-                    val song = entry.song
-                    val levelName = if (songEntries.size == 1) modFolder else "$modFolder-${index + 1}"
-                    writeText(
-                        root,
-                        "data/levels/$levelName.json",
-                        JsonBuilders.vsliceLevel(
-                            song,
-                            levelName,
-                            config.modTitle,
-                            config.showInStoryMode
-                        )
-                    )
-                }
+            // Una entrada por canción, todas comparten la imagen de título del mod.
+            for ((index, entry) in songEntries.withIndex()) {
+                val levelName = if (songEntries.size == 1) modFolder else "$modFolder-${index + 1}"
+                writeText(root, "data/levels/$levelName.json", JsonBuilders.vsliceLevel(
+                    entry.song, modFolder, config.modTitle, config.showInStoryMode
+                ))
             }
 
             onProgress("Generando el título de la semana…")
@@ -201,14 +173,15 @@ object ModBuilder {
             for (entry in songEntries) {
                 val song = entry.song
                 val songFolder = song.songFolder
-                val chartJson = JsonBuilders.psychChart(config, song, entry.durationMs)
                 val difficulties = song.orderedDifficulties
                 for (difficulty in difficulties) {
                     val fileName = if (difficulty == "normal") "$songFolder.json" else "$songFolder-$difficulty.json"
+                    val chartJson = JsonBuilders.psychChart(config, song, entry.durationMs, difficulty)
                     writeText(root, "data/$songFolder/$fileName", chartJson)
                 }
                 // Psych abre siempre la dificultad "Normal", que es el archivo SIN sufijo.
                 if (difficulties.none { it == "normal" }) {
+                    val chartJson = JsonBuilders.psychChart(config, song, entry.durationMs, difficulties.first())
                     writeText(root, "data/$songFolder/$songFolder.json", chartJson)
                     warnings.add(
                         "Psych arranca en la dificultad Normal de $songFolder: se copió " +

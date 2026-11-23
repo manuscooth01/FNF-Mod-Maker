@@ -52,4 +52,16 @@ class ProjectStoreTest {
         assertEquals(42, copy.config.getAsJsonObject("unknown").get("value").asInt)
         assertEquals(input.path, root.getAsJsonObject("character").getAsJsonObject("sheet").get("path").asString)
     }
+    @Test fun interruptedWriteRecoversBackupWhenPrimaryIsMissing() {
+        val file = File(temp.root, "interrupted.json")
+        val safe = SafeFile(file)
+        safe.write("{\"value\":1}"); safe.write("{\"value\":2}")
+        assertTrue(file.delete()) // Crash after moving the old primary but before publishing the new file.
+        File(temp.root, "interrupted.json.tmp").writeText("incomplete")
+        val parse: (String) -> Int = { JsonParser.parseString(it).asJsonObject.get("value").asInt }
+        assertEquals(1, safe.read(parse))
+        safe.write("{\"value\":3}")
+        assertEquals(3, safe.read(parse))
+    }
+
 }

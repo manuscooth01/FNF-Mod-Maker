@@ -1437,7 +1437,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val token = ++portableOperation
         viewModelScope.launch {
             val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
-                if (id == active) projectStore.save(id, configJson(snapshot))
+                // Switching the target must not discard a pending save of the active project.
+                if (active != null) projectStore.save(active, configJson(snapshot))
                 val record = projectStore.load(id)
                 check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear el archivo temporal." }
                 val output = File.createTempFile("export_", ".fnfproject", portableCache)

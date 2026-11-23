@@ -146,4 +146,15 @@ class PortableProjectTest {
         assertEquals(pair.first, store.activeId()); assertEquals(1, store.list().size)
     }
 
+    @Test fun repeatedSuccessfulImportsLeaveTheActiveProjectIntact() {
+        val (store, pair) = fixture(temp.root); val (originalId, originalConfig) = pair
+        val portable = PortableProject(temp.root); val archive = File(temp.root, "copy.fnfproject")
+        portable.export(originalConfig, store.assets(originalId), archive)
+        val first = store.publishImport(portable.prepare(archive, store.newImportStage()), portable) { }
+        val second = store.publishImport(portable.prepare(archive, store.newImportStage()), portable) { }
+        assertNotEquals(first, second); assertNotEquals(first, originalId); assertNotEquals(second, originalId)
+        assertEquals(originalId, store.activeId()); assertEquals(originalConfig, store.load(originalId).config)
+        assertEquals(3, store.list().size)
+    }
+
 }

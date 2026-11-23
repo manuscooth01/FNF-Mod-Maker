@@ -2,37 +2,7 @@ package com.fnfmodmaker.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,6 +44,18 @@ import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.StageDraft
 import com.fnfmodmaker.model.StageSprite
 import com.fnfmodmaker.model.TargetEngine
+
+@Composable
+fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
+    when (vm.tool) {
+        Tool.HOME -> HomeScreen(vm)
+        Tool.MOD -> WizardScreen(vm)
+        Tool.CHARACTER -> CharacterToolScreen(vm)
+        Tool.AUDIO -> AudioToolScreen(vm)
+        Tool.IMPORT -> ImportScreen(vm)
+        Tool.STAGE -> StageToolScreen(vm)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Inicio: elegir herramienta
@@ -178,53 +160,6 @@ internal fun HomeScreen(vm: WizardViewModel) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ToolCard(
-    glyph: String,
-    title: String,
-    description: String,
-    badge: String?,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        color = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(modifier = Modifier.padding(16.dp)) {
-            Text(glyph, style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    if (badge != null) {
-                        Spacer(Modifier.width(8.dp))
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                badge,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Herramienta: importar mod existente
 // ---------------------------------------------------------------------------
@@ -288,7 +223,7 @@ internal fun ImportScreen(vm: WizardViewModel) {
                             )
                         }
                         Spacer(Modifier.width(10.dp))
-                        OutlinedButton(onClick = { 
+                        OutlinedButton(onClick = {
                             // Import placeholder
                         }, enabled = false) { Text("📥 Importar ZIP (pendiente)") }
                     }
@@ -586,185 +521,4 @@ internal fun AudioToolScreen(vm: WizardViewModel) {
             Spacer(Modifier.height(24.dp))
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Piezas compartidas de las herramientas
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun InfoLine(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(
-            label,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-internal fun ToolStatus(
-    status: String,
-    error: String?,
-    saved: String?,
-    warnings: List<String>,
-    savedLabel: String
-) {
-    if (status.isNotBlank()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            CircularProgressIndicator(modifier = Modifier.height(16.dp).width(16.dp), strokeWidth = 2.dp)
-            Spacer(Modifier.width(10.dp))
-            Text(status, style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.height(8.dp))
-    }
-
-    if (error != null) {
-        Surface(
-            color = MaterialTheme.colorScheme.errorContainer,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                error,
-                modifier = Modifier.padding(14.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-    }
-
-    if (saved != null) {
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(14.dp)) {
-                Text("$savedLabel:", style = MaterialTheme.typography.labelSmall)
-                Text(saved, fontWeight = FontWeight.SemiBold)
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-    }
-
-    warnings.forEach { message ->
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                "Aviso: $message",
-                modifier = Modifier.padding(14.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-    }
-}
-
-@Composable
-private fun HelpCard(text: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(14.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-private fun SectionTitle(text: String) {
-    Spacer(Modifier.height(18.dp))
-    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-    Spacer(Modifier.height(8.dp))
-}
-
-@Composable
-private fun Field(
-    label: String,
-    value: String,
-    onChange: (String) -> Unit,
-    hint: String = "",
-    keyboardType: KeyboardType = KeyboardType.Text,
-    singleLine: Boolean = true,
-    modifier: Modifier = Modifier
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        androidx.compose.material3.OutlinedTextField(
-            value = value,
-            onValueChange = onChange,
-            label = { Text(label) },
-            singleLine = singleLine,
-            minLines = if (singleLine) 1 else 3,
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = keyboardType),
-            modifier = Modifier.fillMaxWidth()
-        )
-        if (hint.isNotEmpty()) {
-            Text(
-                hint,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun EngineCard(engine: TargetEngine, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
-            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Text(engine.label, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(2.dp))
-            Text(
-                engine.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun FilterChip(
-    selected: Boolean,
-    onClick: () -> Unit,
-    label: @Composable () -> Unit
-) {
-    androidx.compose.material3.FilterChip(
-        selected = selected,
-        onClick = onClick,
-        label = label,
-        modifier = Modifier.fillMaxWidth(),
-        colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            unselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            unselectedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    )
 }

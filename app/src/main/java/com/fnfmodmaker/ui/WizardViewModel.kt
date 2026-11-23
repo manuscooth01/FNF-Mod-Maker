@@ -167,7 +167,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val draft = config.character
         val context = "Lado: ${draft.side.label}. Escala: ${draft.scale}. Posición: ${draft.positionX}, ${draft.positionY}. Cámara: ${draft.cameraX}, ${draft.cameraY}. Animaciones: ${draft.animationNames.joinToString()}."
         val base = aiBaseUrl
-        aiBusy = true; aiError = null; aiResult = null; aiStatus = "Consultando al proveedor…"
+        aiBusy = true; aiError = null; aiResult = null; aiProposal = null; aiProposalNotice = null; aiStatus = "Consultando al proveedor…"
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { com.fnfmodmaker.ai.AiClient.chat(base, key, model, question, context, image) } }
             result.onSuccess { aiResult = it }.onFailure { aiError = if (it is com.fnfmodmaker.ai.AiException) it.message else "No se pudo conectar con el proveedor. Comprueba Internet y la configuración." }
@@ -204,12 +204,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun applyAiProposal() {
         val proposal = aiProposal ?: return
         if (busy || aiBusy) return
-        if (config != proposal.base) {
+        val updated = try { com.fnfmodmaker.ai.ProjectProposalPlanner.applyIfUnchanged(config, proposal) }
+        catch (e: com.fnfmodmaker.ai.AiException) {
             aiProposal = null
-            aiError = "El proyecto cambió desde la propuesta. Solicítala de nuevo antes de aplicar."
+            aiError = e.message
             return
         }
-        config = proposal.result
+        config = updated
         characterSaved = null
         aiProposal = null
         aiError = null
@@ -231,7 +232,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (prompt.isBlank() || prompt.length > 4000) { aiError = "Escribe una descripción de hasta 4000 caracteres."; return }
         if (key.isBlank() || key.contains('\n') || key.contains('\r')) { aiError = "Introduce una clave API válida en la app."; return }
         if (model.isBlank()) { aiError = "Indica un modelo de imágenes compatible."; return }
-        aiBusy = true; aiError = null; aiSavedImage = null; aiStatus = "Generando imagen…"
+        aiBusy = true; aiError = null; aiSavedImage = null; aiProposal = null; aiProposalNotice = null; aiStatus = "Generando imagen…"
         val app = getApplication<Application>()
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching {

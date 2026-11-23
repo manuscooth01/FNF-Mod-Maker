@@ -47,6 +47,15 @@ class ProjectProposalTest {
         assertTrue(base.psychScripts.isEmpty())
     }
 
+    @Test fun applyingAStaleProposalIsRejectedAtomically() {
+        val args = """{"summary":"x","changes":[{"type":"character","positionX":10}]}"""
+        val plan = ProjectProposalPlanner.plan(base, args)
+        assertEquals("10", ProjectProposalPlanner.applyIfUnchanged(base, plan).character.positionX)
+        val changed = base.copy(modTitle = "Otro")
+        assertTrue(runCatching { ProjectProposalPlanner.applyIfUnchanged(changed, plan) }.isFailure)
+        assertEquals("0", changed.character.positionX)
+    }
+
     @Test fun respectsCharacterScopeEngineAndExistingEvents() {
         val script = """{"summary":"x","changes":[{"type":"script","name":"test","content":"return"}]}"""
         assertTrue(runCatching { ProjectProposalPlanner.plan(base, script, characterOnly = true) }.isFailure)
@@ -77,7 +86,6 @@ class ProjectProposalTest {
     @Test fun toolProtocolAcceptsOnlyTheProposalTool() {
         val body = AiProtocol.projectToolsBody("model", "haz cambios", "{}")
         assertTrue(body.contains("propose_project_changes"))
-        val answer = """{"choices":[{"message":{"content":null,"tool_calls":[{"type":"function","function":{"name":"propose_project_changes","arguments":"{\\"summary\\":\\"x\\",\\"changes\\":[]}"}}]}}]}"""
         // Build a correctly escaped response rather than relying on a network provider.
         val arguments = """{"summary":"x","changes":[]}"""
         val function = com.google.gson.JsonObject().apply { addProperty("name", "propose_project_changes"); addProperty("arguments", arguments) }

@@ -52,6 +52,11 @@ object ProjectProposalPlanner {
         if ((obj.keySet() - metadata).isEmpty()) fail("no hay cambios")
     }
 
+    fun applyIfUnchanged(current: ModConfig, proposal: ProjectProposal): ModConfig {
+        if (current != proposal.base) throw AiException("El proyecto cambió desde la propuesta. Solicítala de nuevo antes de aplicar.")
+        return proposal.result
+    }
+
     fun plan(base: ModConfig, arguments: String, characterOnly: Boolean = false): ProjectProposal {
         if (arguments.length > 250_000) fail("demasiado grande")
         val root = try { JsonParser.parseString(arguments).asJsonObject } catch (_: Exception) { fail("JSON incorrecto") }
@@ -81,7 +86,7 @@ object ProjectProposalPlanner {
                         scale = number(change, "scale", 0.05f, 20f)?.toString() ?: before.scale,
                         flipX = bool(change, "flipX") ?: before.flipX, side = side)
                     current = current.copy(character = updated)
-                    items.add(ProposalItem("Personaje · posición y apariencia", "Antes: posición (${before.positionX}, ${before.positionY}), cámara (${before.cameraX}, ${before.cameraY}), escala ${before.scale}, voltear ${before.flipX}, lado ${before.side.label}\nDespués: posición (${updated.positionX}, ${updated.positionY}), cámara (${updated.cameraX}, ${updated.cameraY}), escala ${updated.scale}, voltear ${updated.flipX}, lado ${updated.side.label}"))
+                    items.add(ProposalItem("Personaje · posición y apariencia", "${if (!before.enabled) "Aviso: el personaje propio está desactivado; actívalo para usarlo en el mod.\n" else ""}Antes: posición (${before.positionX}, ${before.positionY}), cámara (${before.cameraX}, ${before.cameraY}), escala ${before.scale}, voltear ${before.flipX}, lado ${before.side.label}\nDespués: posición (${updated.positionX}, ${updated.positionY}), cámara (${updated.cameraX}, ${updated.cameraY}), escala ${updated.scale}, voltear ${updated.flipX}, lado ${updated.side.label}"))
                 }
                 "animation" -> {
                     val metadata = setOf("type", "name")

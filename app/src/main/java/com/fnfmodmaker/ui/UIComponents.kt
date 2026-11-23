@@ -91,6 +91,18 @@ fun Field(
 }
 
 @Composable
+fun StepHeader(title: String, subtitle: String) {
+    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(4.dp))
+    Text(
+        subtitle,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(14.dp))
+}
+
+@Composable
 fun HelpCard(text: String) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -147,18 +159,6 @@ fun MessageCard(text: String, error: Boolean) {
             else MaterialTheme.colorScheme.onSecondaryContainer
         )
     }
-}
-
-@Composable
-fun StepHeader(title: String, subtitle: String) {
-    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-    Spacer(Modifier.height(4.dp))
-    Text(
-        subtitle,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(14.dp))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -328,5 +328,22 @@ fun InfoLine(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+fun InfoRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }

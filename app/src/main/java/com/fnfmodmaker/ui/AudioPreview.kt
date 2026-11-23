@@ -101,10 +101,11 @@ internal class AudioPreviewController(context: Context, private val scope: Corou
         timer = scope.launch {
             while (player === mp && playing) {
                 position = runCatching { mp.currentPosition.toLong() }.getOrDefault(position)
-                delay(150)
+                delay(33)
             }
         }
     }
+    fun currentPositionMs(): Long = if (playing) runCatching { player?.currentPosition?.toLong() ?: position }.getOrDefault(position) else position
     fun pause() {
         if (loading) { stop(); return }
         val mp = player ?: return

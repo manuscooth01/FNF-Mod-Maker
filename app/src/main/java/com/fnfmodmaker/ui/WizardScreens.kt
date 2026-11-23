@@ -26,6 +26,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +39,7 @@ private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Nota
 @Composable
 internal fun WizardScreen(vm: WizardViewModel) {
     val config = vm.config
+    var showModPreview by remember { mutableStateOf(false) }
     val instrumental = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickActiveSongAudio(uri, AudioSlot.INSTRUMENTAL)
     }
@@ -94,7 +97,10 @@ internal fun WizardScreen(vm: WizardViewModel) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             WizardProgress(vm.step, !vm.busy, vm::goTo)
-            TextButton(onClick = { vm.openTool(Tool.ASSISTANT) }, enabled = !vm.busy) { Text("✦ Asistente IA del mod") }
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                TextButton(onClick = { showModPreview = true }, enabled = !vm.busy) { Text("▶ Vista conjunta y prueba") }
+                TextButton(onClick = { vm.openTool(Tool.ASSISTANT) }, enabled = !vm.busy) { Text("✦ Asistente IA") }
+            }
             key(vm.step) {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                     Spacer(Modifier.height(8.dp))
@@ -131,6 +137,7 @@ internal fun WizardScreen(vm: WizardViewModel) {
             }
         }
     }
+    if (showModPreview) ModPreviewScreen(vm, onClose = { showModPreview = false })
 }
 
 @Composable

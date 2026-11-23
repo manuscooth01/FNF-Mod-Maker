@@ -62,15 +62,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
-private data class PreviewSource(
+internal data class PreviewSource(
     val path: String, val left: Int, val top: Int, val width: Int, val height: Int,
     val isGrid: Boolean, val frameX: Int = 0, val frameY: Int = 0,
     val frameWidth: Int = width, val frameHeight: Int = height
 )
-private data class PreviewFrame(val image: ImageBitmap, val width: Int, val height: Int,
+internal data class PreviewFrame(val image: ImageBitmap, val width: Int, val height: Int,
     val frameX: Int, val frameY: Int, val frameWidth: Int, val frameHeight: Int)
 
-private fun previewSources(draft: CharacterDraft, animation: String): List<PreviewSource> {
+internal fun previewSources(draft: CharacterDraft, animation: String): List<PreviewSource> {
     if (draft.useAtlas) {
         val path = draft.atlasSheet?.path ?: return emptyList()
         return atlasFramesForPrefix(draft.atlasFrames, draft.prefixFor(animation)).take(100).map {
@@ -90,7 +90,7 @@ private fun previewSources(draft: CharacterDraft, animation: String): List<Previ
 }
 
 /** Las miniaturas se generan en IO y con límites de tamaño para no cargar el atlas completo. */
-private fun decodePreviewFrames(sources: List<PreviewSource>): List<PreviewFrame>? {
+internal fun decodePreviewFrames(sources: List<PreviewSource>): List<PreviewFrame>? {
     if (sources.isEmpty()) return emptyList()
     val decoders = mutableMapOf<String, BitmapRegionDecoder>()
     return try {

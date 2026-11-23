@@ -43,7 +43,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 @Composable
-private fun imageThumbnail(path: String?): ImageBitmap? {
+internal fun imageThumbnail(path: String?): ImageBitmap? {
     val image by produceState<ImageBitmap?>(null, path) {
         value = if (path == null) null else withContext(Dispatchers.IO) {
             runCatching {

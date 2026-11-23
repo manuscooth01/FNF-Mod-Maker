@@ -47,13 +47,13 @@ herramienta por separado. Hace esto:
 
 Lo que **todavía no** hace (siguiente fase):
 
-- Editor de notas en cuadrícula con eventos dentro de la app.
+- Eventos avanzados y cambios de BPM dentro del editor de notas.
 - Escenarios avanzados con capas, animaciones y cámara dinámica; cinemáticas y diálogos exportables.
 - Iconos y animaciones *miss* por personaje (la app usa los de `bf`/`dad`).
 - Importar un mod completo existente para editarlo.
 
 Puedes grabar notas en vivo dentro de la app y usar el editor del juego (Psych o V-Slice) para
-las funciones avanzadas que aún faltan, como eventos y edición en cuadrícula.
+las funciones avanzadas que aún faltan, como eventos y cambios de BPM.
 
 ---
 
@@ -463,3 +463,20 @@ oficial de FNF sigue sin redistribuirse; los usuarios pueden elegir sus propios 
 ### Cuadrícula táctil de charts
 
 En **Grabación en vivo**, elige canción y dificultad y abre **Cuadrícula táctil** con la instrumental disponible, duración conocida y BPM válido. Cada página contiene cuatro pulsos: rival a la izquierda y jugador a la derecha. Toca para añadir o seleccionar; arrastra una nota para moverla, o elige «Sostenido» y arrastra para ajustar su final. También hay controles de duración, eliminación y edición por botones. Se rechazan solapamientos y notas fuera de la canción. Escucha solo la instrumental; la edición se bloquea mientras suena. Deshacer conserva hasta 50 cambios mientras la cuadrícula está abierta. Si no había chart propio, la primera nota sustituye las notas de práctica de esa dificultad (se avisa antes de entrar); deshacer o borrar el chart propio recupera ese comportamiento. Los charts con eventos o secciones no editables están protegidos. La visualización no es una prueba de juego ni incluye eventos o cambios de BPM.
+
+### Vista conjunta y prueba táctil orientativa
+
+En cualquier paso de **Tu mod**, pulsa **Vista conjunta y prueba**. Elige canción y dificultad para
+ver el fondo propio, el personaje propio animado y las notas sobre una misma escena, escuchar la
+instrumental y tocar las flechas del jugador. Puedes elegir la animación manualmente y revisar los
+datos y recursos del borrador. Los gráficos y posiciones son aproximados; los personajes ausentes
+aparecen como siluetas. Si no existe chart propio, se muestran las notas de práctica generadas cuando
+estén activadas y el BPM sea válido. La prueba cuenta toques cercanos una sola vez por nota; reinicia
+el contador si quieres repetirlos. No simula la puntuación, precisión ni latencia del juego.
+
+No es Psych ni V-Slice: no ejecuta scripts, eventos, cámara dinámica ni reglas de sostenidos, no
+mezcla las voces, no aplica el offset y usa velocidad visual fija. Las animaciones no reaccionan a
+las notas. La vista se basa en el borrador actual, no en un ZIP exportado, y puede diferir del mod
+final; hay que probarlo en el motor correspondiente. Los archivos originales de FNF no están incluidos.
+Todavía no se pueden importar ZIP de mods externos de forma segura. El autoguardado permite volver
+al borrador actual en la misma instalación, pero no constituye una copia de seguridad portable.

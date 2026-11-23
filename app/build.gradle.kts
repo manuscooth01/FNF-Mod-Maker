@@ -69,7 +69,10 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // Community-maintained rebuild of FFmpegKit (original project was retired).
-    // The "audio" package includes libvorbis, which we need for OGG export.
-    implementation("io.github.maitrungduc1410:ffmpeg-kit-audio:9.0.2")
+    // JSON para auto-guardado de ModConfig en caché.
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // FFmpegKit activamente mantenido (drop-in replacement del proyecto retirado).
+    // El paquete "audio" incluye libvorbis, que necesitamos para exportar OGG.
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-audio:8.1.9")
 }

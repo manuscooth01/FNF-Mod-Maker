@@ -21,7 +21,7 @@ private const val MAX_TOTAL = 1024L * 1024 * 1024
 private const val MAX_ASSET = 256L * 1024 * 1024
 private const val MAX_JSON = 8L * 1024 * 1024
 
-internal data class PortableSummary(val title: String, val songs: Int, val charts: Int, val assets: Int, val bytes: Long)
+internal data class PortableSummary(val title: String, val songs: Int, val charts: Int, val assets: Int, val bytes: Long, val songNames: List<String>, val character: Boolean, val stage: Boolean, val scripts: Int)
 internal data class PreparedPortable(val directory: File, val config: JsonObject, val summary: PortableSummary, val checksums: Map<String, Pair<Long, String>>)
 
 /** A private project backup format, not a mod ZIP importer. Does not execute scripts. */
@@ -45,10 +45,18 @@ internal class PortableProject(private val appRoot: File) {
             if (node.isJsonArray) node.asJsonArray.forEach { visit(it, depth + 1) }
             else if (node.isJsonObject) {
                 val obj = node.asJsonObject
-                if (obj.has("path") && obj.has("displayName")) {
-                    require(obj.get("path").isJsonPrimitive && obj.get("path").asJsonPrimitive.isString && obj.get("displayName").isJsonPrimitive && obj.get("displayName").asJsonPrimitive.isString) { "Referencia de recurso inválida." }
+                if (obj.has("path")) {
+                    require(obj.has("displayName") && obj.get("path").isJsonPrimitive && obj.get("path").asJsonPrimitive.isString && obj.get("displayName").isJsonPrimitive && obj.get("displayName").asJsonPrimitive.isString) { "Referencia de recurso inválida." }
                     action(obj)
-                } else obj.entrySet().forEach { visit(it.value, depth + 1) }
+                } else {
+                    val assetKeys = setOf("instrumental", "vocalsPlayer", "vocalsOpponent", "sheet", "atlasSheet", "atlasXml", "icon", "backgroundImage", "image")
+                    obj.entrySet().forEach { (key, value) ->
+                        if (key in assetKeys && !value.isJsonNull) {
+                            require(value.isJsonObject && value.asJsonObject.has("path") && value.asJsonObject.has("displayName")) { "Recurso $key inválido." }
+                        }
+                        visit(value, depth + 1)
+                    }
+                }
             }
         }
         visit(root, 0)
@@ -88,8 +96,11 @@ internal class PortableProject(private val appRoot: File) {
             sources[name] = file; sourcePaths[file.canonicalPath] = name
         }
         // Preserve unreferenced files too. Never follow symlinks while walking.
+        var directoryCount = 0
         fun scan(folder: File, prefix: String) {
-            folder.listFiles()?.sortedBy { it.name }?.forEach { f ->
+            require(++directoryCount <= MAX_FILES && (prefix == "assets" || validName(prefix))) { "Demasiadas carpetas o ruta inválida." }
+            val files = folder.listFiles() ?: error("No se pudo leer una carpeta de recursos.")
+            files.sortedBy { it.name }.forEach { f ->
                 require(f.canonicalFile == f.absoluteFile) { "No se pueden empaquetar enlaces simbólicos." }
                 val name = "$prefix/${f.name}"
                 if (f.isDirectory) scan(f, name) else add(name, f)
@@ -181,7 +192,11 @@ internal class PortableProject(private val appRoot: File) {
                 }
                 val songs = config.get("songs")?.takeIf { it.isJsonArray }?.asJsonArray?.size() ?: error("El proyecto no contiene una lista de canciones válida.")
                 val charts = config.get("charts")?.takeIf { it.isJsonObject }?.asJsonObject?.entrySet()?.sumOf { it.value.asJsonObject.size() } ?: 0
-                val summary = PortableSummary(config.get("modTitle")?.asString?.ifBlank { "Proyecto sin nombre" } ?: "Proyecto sin nombre", songs, charts, described.size, archive.length())
+                val songNames = config.getAsJsonArray("songs").map { it.asJsonObject.get("songName")?.asString?.ifBlank { "Sin nombre" } ?: "Sin nombre" }
+                val summary = PortableSummary(config.get("modTitle")?.asString?.ifBlank { "Proyecto sin nombre" } ?: "Proyecto sin nombre", songs, charts, described.size, archive.length(), songNames,
+                    config.getAsJsonObject("character")?.get("enabled")?.asBoolean == true,
+                    config.getAsJsonObject("stageDraft")?.get("enabled")?.asBoolean == true,
+                    config.get("psychScripts")?.takeIf { it.isJsonObject }?.asJsonObject?.size() ?: 0)
                 return PreparedPortable(stage, config, summary, described)
             }
         } catch (e: Throwable) { stage.deleteRecursively(); throw e }

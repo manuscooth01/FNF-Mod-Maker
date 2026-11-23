@@ -109,4 +109,24 @@ class PortableProjectTest {
         assertThrows(Exception::class.java) { portable.export(config, store.assets(id), File(temp.root, "missing.fnfproject")) }
         assertEquals(id, store.activeId()); assertEquals(config, store.load(id).config)
     }
+    @Test fun failedValidationAndAbandonedStageNeverPublishOrReplaceActive() {
+        val (store, pair) = fixture(temp.root); val id = pair.first
+        val portable = PortableProject(temp.root); val file = File(temp.root, "good.fnfproject")
+        portable.export(pair.second, store.assets(id), file)
+        val prepared = portable.prepare(file, store.newImportStage())
+        assertThrows(IllegalStateException::class.java) { store.publishImport(prepared, portable) { error("invalid model") } }
+        assertEquals(id, store.activeId()); assertEquals(1, store.list().size)
+        // Simulates process termination prior to the directory rename.
+        store.clearAbandonedImports()
+        assertFalse(prepared.directory.exists()); assertEquals(1, store.list().size)
+    }
+
+    @Test fun malformedReferencesAreRejectedBeforeAnyProjectIsPublished() {
+        val (store, pair) = fixture(temp.root); val config = pair.second.deepCopy()
+        config.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("instrumental").remove("displayName")
+        val archive = File(temp.root, "bad.fnfproject")
+        assertThrows(Exception::class.java) { PortableProject(temp.root).export(config, store.assets(pair.first), archive) }
+        assertEquals(pair.first, store.activeId()); assertEquals(1, store.list().size)
+    }
+
 }

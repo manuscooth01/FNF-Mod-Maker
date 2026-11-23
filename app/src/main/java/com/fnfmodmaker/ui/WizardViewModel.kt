@@ -45,6 +45,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.fnfmodmaker.project.ProjectStore
 import com.fnfmodmaker.project.ProjectSummary
+import com.fnfmodmaker.project.PortableProject
+import com.fnfmodmaker.project.PreparedPortable
+import com.fnfmodmaker.project.PortableSummary
 import com.fnfmodmaker.model.DragState
 import com.fnfmodmaker.model.SelectedNote
 import java.io.File
@@ -1321,8 +1324,41 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }.nullSafe()).create()
     private val autoSaveFile: File get() = File(getApplication<Application>().filesDir, "autosave_modconfig.json")
     private var modIdEdited = false
+    private val portable = PortableProject(File(application.applicationInfo.dataDir))
+    private var preparedImport: PreparedPortable? = null
+    private var preparedExport: File? = null
+    internal var portableImportSummary by mutableStateOf<PortableSummary?>(null)
+        private set
+    var portableExportName by mutableStateOf<String?>(null)
+        private set
+    var portableExportSize by mutableStateOf(0L)
+        private set
+    var portableProgress by mutableStateOf<String?>(null)
+        private set
+    var portableMessage by mutableStateOf<String?>(null)
+        private set
+    private val portableCache get() = File(getApplication<Application>().cacheDir, "portable-projects")
+    private val progressHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var portableOperation = 0L
+    private fun reportPortableProgress(token: Long, text: String) {
+        progressHandler.post { if (portableOperation == token && busy) portableProgress = text }
+    }
 
     private fun configJson(value: ModConfig) = autoSaveGson.toJsonTree(value).asJsonObject
+    /** Fill fields missing from older local saves while retaining unknown JSON fields. */
+    private fun portableConfig(source: com.google.gson.JsonObject): com.google.gson.JsonObject {
+        val target = configJson(parseConfig(source))
+        fun merge(to: com.google.gson.JsonObject, from: com.google.gson.JsonObject) {
+            from.entrySet().forEach { (name, value) ->
+                val existing = to.get(name)
+                if (value.isJsonObject && existing?.isJsonObject == true) merge(existing.asJsonObject, value.asJsonObject)
+                else to.add(name, value.deepCopy())
+            }
+        }
+        merge(target, source)
+        validatePortableConfig(target)
+        return target
+    }
     private fun parseConfig(value: com.google.gson.JsonObject): ModConfig =
         autoSaveGson.fromJson(value, ModConfig::class.java) ?: error("El proyecto está vacío.")
 
@@ -1330,6 +1366,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val app = getApplication<Application>()
             val result = withContext(Dispatchers.IO) { runCatching {
+                projectStore.clearAbandonedImports()
+                portableCache.deleteRecursively()
                 val active = projectStore.activeId()
                 val existing = projectStore.list()
                 val id = active ?: existing.firstOrNull()?.id
@@ -1389,6 +1427,186 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val ext = name.substringAfterLast('.', "").filter(Char::isLetterOrDigit).take(10)
         return File.createTempFile("asset_", if (ext.isEmpty()) ".dat" else ".$ext", projectAssetDirectory())
     }
+
+    /** Create a verified local package before asking the user where to save it. */
+    internal fun preparePortableExport(id: String) {
+        if (busy || currentProjectId == null || preparedImport != null) return
+        val active = currentProjectId; val snapshot = config
+        pendingAutoSaveJob?.cancel()
+        busy = true; portableMessage = null; portableProgress = "Preparando proyecto…"
+        val token = ++portableOperation
+        viewModelScope.launch {
+            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
+                if (id == active) projectStore.save(id, configJson(snapshot))
+                val record = projectStore.load(id)
+                check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear el archivo temporal." }
+                val output = File.createTempFile("export_", ".fnfproject", portableCache)
+                portable.export(portableConfig(record.config), projectStore.assets(id), output) { reportPortableProgress(token, it) }
+                val title = record.config.get("modTitle")?.asString.orEmpty()
+                Triple(output, slugify(title).ifBlank { "proyecto" } + ".fnfproject", output.length())
+            } } }
+            result.onSuccess { (file, name, size) ->
+                preparedExport?.delete(); preparedExport = file; portableExportName = name; portableExportSize = size
+            }.onFailure { portableMessage = "No se pudo exportar: ${it.message}. Revisa los recursos y el espacio disponible." }
+            portableProgress = null; busy = false
+        }
+    }
+    internal fun cancelPortableExport() {
+        if (busy) return
+        preparedExport?.delete(); preparedExport = null; portableExportName = null; portableExportSize = 0
+    }
+    internal fun savePortableExport(uri: Uri) {
+        if (busy) return
+        val file = preparedExport ?: return
+        val app = getApplication<Application>()
+        busy = true; portableMessage = null; portableProgress = "Guardando paquete en el archivo elegido…"
+        ++portableOperation
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val destination = app.contentResolver.openOutputStream(uri, "w") ?: error("No se pudo abrir el destino.")
+                destination.use { output -> file.inputStream().use { it.copyTo(output) } }
+                MediaTools.displayName(app, uri)
+            } }
+            result.onSuccess {
+                portableMessage = "Proyecto exportado: $it (${file.length()} bytes)."
+                preparedExport?.delete(); preparedExport = null; portableExportName = null; portableExportSize = 0
+            }
+                .onFailure {
+                    // Some document providers cannot delete a failed output; tell the user to check it.
+                    val deleted = runCatching { app.contentResolver.delete(uri, null, null) > 0 }.getOrDefault(false)
+                    portableMessage = "No se pudo guardar el paquete: ${it.message}. " + if (deleted) "Se eliminó el archivo incompleto." else "Comprueba y elimina el archivo incompleto en el destino."
+                }
+            portableProgress = null; busy = false
+        }
+    }
+    internal fun preparePortableImport(uri: Uri) {
+        if (busy || currentProjectId == null || preparedImport != null) return
+        val app = getApplication<Application>()
+        busy = true; portableMessage = null; portableProgress = "Leyendo paquete…"
+        val token = ++portableOperation
+        viewModelScope.launch {
+            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
+                check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear la carpeta temporal." }
+                val archive = File.createTempFile("import_", ".fnfproject", portableCache)
+                val stage = projectStore.newImportStage()
+                try {
+                    val source = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el archivo.")
+                    source.use { input -> archive.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024); var total = 0L
+                        while (true) {
+                            val n = input.read(buffer); if (n < 0) break
+                            total += n; require(total <= 1024L * 1024 * 1024) { "El paquete supera 1 GiB." }
+                            output.write(buffer, 0, n)
+                        }
+                    } }
+                    val prepared = portable.prepare(archive, stage) { reportPortableProgress(token, it) }
+                    try { validatePortableConfig(prepared.config) } catch (e: Exception) { projectStore.discardImportStage(stage); throw e }
+                    prepared
+                } finally { archive.delete() }
+            } } }
+            result.onSuccess { prepared -> preparedImport = prepared; portableImportSummary = prepared.summary }
+                .onFailure { portableMessage = "No se pudo validar el proyecto: ${it.message}. Los proyectos existentes no cambiaron." }
+            portableProgress = null; busy = false
+        }
+    }
+    internal fun cancelPortableImport() {
+        if (busy) return
+        val prepared = preparedImport
+        preparedImport = null; portableImportSummary = null
+        if (prepared != null) viewModelScope.launch(Dispatchers.IO) { projectStore.discardImportStage(prepared.directory) }
+    }
+    internal fun confirmPortableImport() {
+        if (busy) return
+        val prepared = preparedImport ?: return
+        busy = true; portableMessage = null; portableProgress = "Importando proyecto…"
+        ++portableOperation
+        viewModelScope.launch {
+            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
+                try { projectStore.publishImport(prepared, portable, ::validatePortableConfig) }
+                catch (e: Exception) { projectStore.discardImportStage(prepared.directory); throw e }
+            } } }
+            preparedImport = null; portableImportSummary = null
+            result.onSuccess { id ->
+                projects = withContext(Dispatchers.IO) { runCatching { projectStore.list() }.getOrDefault(projects) }
+                portableMessage = "Proyecto importado como copia independiente. El proyecto actual no cambió."
+            }.onFailure { portableMessage = "No se pudo importar: ${it.message}. Los proyectos existentes no cambiaron." }
+            portableProgress = null; busy = false
+        }
+    }
+
+    /** Reject malformed model shapes before they can reach screens or be published. */
+    private fun validatePortableConfig(value: com.google.gson.JsonObject) {
+        fun compare(input: com.google.gson.JsonObject, template: com.google.gson.JsonObject) {
+            template.entrySet().forEach { (key, sample) ->
+                val item = input.get(key) ?: return@forEach
+                require(!item.isJsonNull && item.isJsonObject == sample.isJsonObject && item.isJsonArray == sample.isJsonArray && item.isJsonPrimitive == sample.isJsonPrimitive) { "Campo inválido: $key." }
+                if (sample.isJsonPrimitive) {
+                    val a = item.asJsonPrimitive; val b = sample.asJsonPrimitive
+                    require(a.isBoolean == b.isBoolean && a.isNumber == b.isNumber && a.isString == b.isString && (!a.isNumber || a.asDouble.isFinite())) { "Tipo inválido: $key." }
+                } else if (sample.isJsonObject) compare(item.asJsonObject, sample.asJsonObject)
+                else if (sample.isJsonArray && sample.asJsonArray.size() > 0) {
+                    val first = sample.asJsonArray[0]
+                    item.asJsonArray.forEach { child ->
+                        require(!child.isJsonNull && child.isJsonObject == first.isJsonObject && child.isJsonPrimitive == first.isJsonPrimitive) { "Elemento inválido: $key." }
+                        if (first.isJsonObject) compare(child.asJsonObject, first.asJsonObject)
+                        else if (first.isJsonPrimitive) require(child.asJsonPrimitive.isString == first.asJsonPrimitive.isString) { "Elemento inválido: $key." }
+                    }
+                }
+            }
+        }
+        require(value.get("songs")?.isJsonArray == true && value.get("character")?.isJsonObject == true && value.get("stageDraft")?.isJsonObject == true && value.get("charts")?.isJsonObject == true) { "Faltan datos del proyecto." }
+        compare(value, configJson(ModConfig()))
+        value.get("engine")?.let { require(it.asString in TargetEngine.entries.map { engine -> engine.name }) { "Motor desconocido." } }
+        val character = value.getAsJsonObject("character")
+        character.get("side")?.let { require(it.asString in CharacterSide.entries.map { side -> side.name }) { "Lado de personaje inválido." } }
+        fun objectArray(parent: com.google.gson.JsonObject, key: String, template: com.google.gson.JsonObject, extra: (com.google.gson.JsonObject) -> Unit = {}) {
+            parent.get(key)?.let { array ->
+                require(array.isJsonArray) { "$key debe ser una lista." }
+                array.asJsonArray.forEach { item ->
+                    require(item.isJsonObject) { "Elemento inválido en $key." }
+                    compare(item.asJsonObject, template); extra(item.asJsonObject)
+                }
+            }
+        }
+        objectArray(character, "variations", autoSaveGson.toJsonTree(com.fnfmodmaker.model.CharacterVariation()).asJsonObject)
+        objectArray(character, "atlasFrames", autoSaveGson.toJsonTree(com.fnfmodmaker.model.SparrowFrame("frame", 0, 0, 1, 1)).asJsonObject)
+        character.get("animationFrames")?.let { frames ->
+            require(frames.isJsonObject) { "Frames inválidos." }
+            frames.asJsonObject.entrySet().forEach { (_, array) ->
+                require(array.isJsonArray) { "Frames inválidos." }
+                array.asJsonArray.forEach { frame ->
+                    require(frame.isJsonObject && frame.asJsonObject.get("image")?.isJsonObject == true && frame.asJsonObject.get("width")?.isJsonPrimitive == true && frame.asJsonObject.get("height")?.isJsonPrimitive == true) { "Frame sin imagen o dimensiones." }
+                }
+            }
+        }
+        character.get("animationSettings")?.let { settings ->
+            require(settings.isJsonObject) { "Ajustes de animación inválidos." }
+            settings.asJsonObject.entrySet().forEach { (_, item) ->
+                require(item.isJsonObject) { "Ajustes de animación inválidos." }
+                compare(item.asJsonObject, autoSaveGson.toJsonTree(CharacterAnimationSettings()).asJsonObject)
+            }
+        }
+        objectArray(value.getAsJsonObject("stageDraft"), "sprites", autoSaveGson.toJsonTree(com.fnfmodmaker.model.StageSprite()).asJsonObject) { sprite ->
+            sprite.get("layer")?.let { require(it.asString in com.fnfmodmaker.model.StageSprite.Layer.entries.map { layer -> layer.name }) { "Capa inválida." } }
+        }
+        value.getAsJsonObject("charts").entrySet().forEach { (_, perSong) ->
+            require(perSong.isJsonObject) { "Charts inválidos." }
+            perSong.asJsonObject.entrySet().forEach { (_, chart) ->
+                require(chart.isJsonObject) { "Chart inválido." }
+                compare(chart.asJsonObject, configJsonChartTemplate())
+                objectArray(chart.asJsonObject, "events", autoSaveGson.toJsonTree(com.fnfmodmaker.model.ChartEvent()).asJsonObject) { event ->
+                    event.get("type")?.let { require(it.asString in com.fnfmodmaker.model.ChartEvent.EventType.entries.map { type -> type.name }) { "Evento inválido." } }
+                }
+                objectArray(chart.asJsonObject, "sections", autoSaveGson.toJsonTree(com.fnfmodmaker.model.ChartSection()).asJsonObject)
+                chart.asJsonObject.get("notes")?.let { notes ->
+                    require(notes.isJsonArray) { "Notas inválidas." }
+                    notes.asJsonArray.forEach { n -> require(n.isJsonObject); compare(n.asJsonObject, autoSaveGson.toJsonTree(ChartNote()).asJsonObject) }
+                }
+            }
+        }
+        parseConfig(value)
+    }
+    private fun configJsonChartTemplate() = autoSaveGson.toJsonTree(ChartDraft()).asJsonObject
 
     /** Save current work before switching. Failed copies/opening never replace the current draft. */
     internal fun switchProject(target: String? = null, duplicate: Boolean = false) {

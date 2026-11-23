@@ -479,7 +479,7 @@ mezcla las voces, no aplica el offset y usa velocidad visual fija. Las animacion
 las notas. La vista se basa en el borrador actual, no en un ZIP exportado, y puede diferir del mod
 final; hay que probarlo en el motor correspondiente. Los archivos originales de FNF no están incluidos.
 Todavía no se pueden importar ZIP de mods externos de forma segura. El autoguardado permite volver
-al borrador actual en la misma instalación, pero no constituye una copia de seguridad portable.
+al borrador actual en la misma instalación, pero no sustituye una copia `.fnfproject` guardada fuera de la app.
 
 ## Proyectos locales (primera fase)
 
@@ -492,6 +492,27 @@ migración. La duplicación hace copias independientes de los recursos disponibl
 falta alguno. El indicador de guardado y los errores aparecen en el asistente.
 
 Los proyectos permanecen en esta instalación de la app: desinstalarla o borrar sus datos puede
-eliminarlos. Todavía no hay copia portable ni importación de ZIP de mods existentes. Los formatos
+eliminarlos. Ya se pueden crear copias portables `.fnfproject`; todavía no se pueden importar ZIP de mods existentes. Los formatos
 V-Slice y Psych continúan necesitando pruebas reales en sus motores. No hay prueba en dispositivo
 para la migración ni garantía ante una interrupción forzada durante un guardado pendiente.
+
+## Copias portables `.fnfproject`
+
+En **Proyectos locales**, pulsa **Exportar proyecto** junto al proyecto que quieras respaldar.
+Se prepara el paquete, se indica su tamaño y puedes guardarlo mediante el selector de Android en
+una carpeta, tarjeta o proveedor externo. Comprueba que el destino elegido está fuera de los datos
+privados de la app antes de desinstalarla. Para restaurarlo en otra instalación, pulsa **Importar
+proyecto**, elige el archivo, revisa su resumen y confirma. Se crea un proyecto nuevo y el actual
+no se modifica. Los scripts se almacenan como datos y no se ejecutan al importar.
+
+El formato versión 1 es un ZIP propio con `manifest.json`, `project.json` y `assets/`; incluye la
+configuración, charts, audios, imágenes, atlas y demás archivos del directorio de recursos. El
+manifiesto registra tamaños y hashes SHA-256 para detectar corrupción; no autentica el origen ni
+hace seguro ejecutar scripts posteriormente en un juego. Las URI temporales del selector Android no
+son transferibles y se reemplazan por rutas internas de los recursos empaquetados. Se rechazan
+rutas peligrosas, duplicados, recursos faltantes o dañados y versiones no compatibles. Los límites
+son 4096 entradas, 256 MiB por recurso y 1 GiB total y de paquete. La importación se prepara en un
+directorio temporal y se publica con un identificador nuevo tras la confirmación. Si falta un recurso
+antiguo de la caché, vuelve a elegirlo antes de exportar. La exportación de mods para el juego es
+una operación distinta: `.fnfproject` no es un mod instalable, y la importación de ZIP de mods
+externos sigue deshabilitada.

@@ -3,6 +3,7 @@ package com.fnfmodmaker.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -35,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -76,6 +79,30 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
 
 @Composable
 internal fun HomeScreen(vm: WizardViewModel) {
+    val context = LocalContext.current
+    val importProject = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.preparePortableImport(uri) }
+    val exportProject = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        if (uri == null) vm.cancelPortableExport() else vm.savePortableExport(uri)
+    }
+    vm.portableImportSummary?.let { summary ->
+        AlertDialog(onDismissRequest = vm::cancelPortableImport, title = { Text("¿Importar este proyecto?") },
+            text = { Column {
+                Text(summary.title, fontWeight = FontWeight.Bold)
+                Text("${summary.songs} canciones · ${summary.charts} charts · ${summary.assets} recursos")
+                Text("Canciones: ${summary.songNames.take(6).joinToString().ifBlank { "ninguna" }}${if (summary.songNames.size > 6) "…" else ""}")
+                Text("Personaje: ${if (summary.character) "sí" else "no"} · Escenario: ${if (summary.stage) "sí" else "no"} · Scripts: ${summary.scripts}")
+                Text("Paquete: ${android.text.format.Formatter.formatFileSize(context, summary.bytes)}")
+                Text("Se creará una copia independiente. El proyecto actual no se modificará. Los scripts no se ejecutarán.")
+            } },
+            confirmButton = { TextButton(onClick = vm::confirmPortableImport, enabled = !vm.busy) { Text("Importar copia") } },
+            dismissButton = { TextButton(onClick = vm::cancelPortableImport, enabled = !vm.busy) { Text("Cancelar") } })
+    }
+    vm.portableExportName?.let { name ->
+        AlertDialog(onDismissRequest = vm::cancelPortableExport, title = { Text("Exportar proyecto") },
+            text = { Text("Paquete preparado: $name\nTamaño: ${android.text.format.Formatter.formatFileSize(context, vm.portableExportSize)}\nElige dónde guardar tu copia .fnfproject.") },
+            confirmButton = { TextButton(onClick = { exportProject.launch(name) }, enabled = !vm.busy) { Text("Elegir destino") } },
+            dismissButton = { TextButton(onClick = vm::cancelPortableExport, enabled = !vm.busy) { Text("Cancelar") } })
+    }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -118,25 +145,31 @@ internal fun HomeScreen(vm: WizardViewModel) {
 
             Text("Proyectos locales", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Cada proyecto tiene sus propias canciones, charts y recursos. Se guardan en este dispositivo.", style = MaterialTheme.typography.bodySmall)
-            if (vm.busy) Text("Preparando proyectos…", style = MaterialTheme.typography.bodySmall)
+            if (vm.busy) Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.height(18.dp).width(18.dp), strokeWidth = 2.dp)
+                Text(vm.portableProgress ?: "Preparando proyectos…", modifier = Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodySmall)
+            }
+            vm.portableMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             vm.projectMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            Row {
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
                 Button(onClick = { vm.switchProject() }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Nuevo proyecto") }
                 TextButton(onClick = { vm.switchProject(duplicate = true) }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Duplicar actual") }
+                TextButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Importar proyecto") }
             }
             vm.projects.forEach { project ->
                 Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(project.title, fontWeight = FontWeight.SemiBold)
-                            Text(project.problem ?: if (project.id == vm.currentProjectId) "Proyecto actual" else "Guardado en el dispositivo", style = MaterialTheme.typography.labelSmall)
+                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        Text(project.title, fontWeight = FontWeight.SemiBold)
+                        Text(project.problem ?: if (project.id == vm.currentProjectId) "Proyecto actual" else "Guardado en el dispositivo", style = MaterialTheme.typography.labelSmall)
+                        Row(Modifier.horizontalScroll(rememberScrollState())) {
+                            TextButton(onClick = { if (project.id == vm.currentProjectId) vm.openTool(Tool.MOD) else vm.switchProject(project.id) },
+                                enabled = !vm.busy && project.problem == null && vm.currentProjectId != null) { Text(if (project.id == vm.currentProjectId) "Continuar" else "Abrir") }
+                            TextButton(onClick = { vm.preparePortableExport(project.id) }, enabled = !vm.busy && project.problem == null) { Text("Exportar proyecto") }
                         }
-                        TextButton(onClick = { if (project.id == vm.currentProjectId) vm.openTool(Tool.MOD) else vm.switchProject(project.id) },
-                            enabled = !vm.busy && project.problem == null && vm.currentProjectId != null) { Text(if (project.id == vm.currentProjectId) "Continuar" else "Abrir") }
                     }
                 }
             }
-            Text("La importación de ZIP externos aún no está disponible. El autoguardado no es una copia de seguridad portable.", style = MaterialTheme.typography.labelSmall)
+            Text("Guarda un .fnfproject fuera de la app para conservar una copia. La importación de ZIP de mods externos sigue sin estar disponible.", style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(12.dp))
             ToolCard(
                 icon = com.fnfmodmaker.R.drawable.tool_person,

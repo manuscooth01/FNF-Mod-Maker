@@ -25,7 +25,16 @@ import com.fnfmodmaker.mod.ModBuilder
 import com.fnfmodmaker.mod.ModImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import androidx.compose.ui.unit.size
+import kotlinx.coroutines.delay
+import kotlin.math.roundToLong
+import com.fnfmodmaker.model.ChartEditorState.DragState
+import com.fnfmodmaker.model.ChartEditorState.DragState.Scroll
+import com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize
+import com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox
+import com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag
+import com.fnfmodmaker.model.SelectedNote
+import com.fnfmodmaker.model.ChartEditorState.DragState
 import java.io.File
 
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
@@ -309,15 +318,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val instrumental = song.instrumental ?: return null
         val mp = MediaPlayer().apply {
             try {
-                setDataSource(applicationContext, Uri.parse(instrumental.path))
+                setDataSource(getApplication<Application>().applicationContext, Uri.parse(instrumental.path))
                 prepare()
                 setOnCompletionListener { onPlaybackComplete() }
             } catch (e: Exception) {
                 e.printStackTrace()
                 release()
                 return@apply null
-}
+            }
         }
+        return mp
     }
 
     // ---------------- Importar Mod ----------------

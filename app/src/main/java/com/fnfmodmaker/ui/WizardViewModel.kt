@@ -28,13 +28,13 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.size
 import kotlinx.coroutines.delay
 import kotlin.math.roundToLong
-import com.fnfmodmaker.model.ChartEditorState.DragState
-import com.fnfmodmaker.model.ChartEditorState.DragState.Scroll
-import com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize
-import com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox
-import com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag
+import com.fnfmodmaker.model.ChartEditorState
+import com.fnfmodmaker.model.DragState
+import com.fnfmodmaker.model.DragState.Scroll
+import com.fnfmodmaker.model.DragState.HoldResize
+import com.fnfmodmaker.model.DragState.SelectionBox
+import com.fnfmodmaker.model.DragState.MultiDrag
 import com.fnfmodmaker.model.SelectedNote
-import com.fnfmodmaker.model.ChartEditorState.DragState
 import java.io.File
 
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */

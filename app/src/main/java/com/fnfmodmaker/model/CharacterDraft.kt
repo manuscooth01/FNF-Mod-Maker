@@ -1,5 +1,37 @@
 package com.fnfmodmaker.model
 
+/** Validación compartida entre el formulario y la exportación del personaje base. */
+internal fun characterProblems(
+    hasSheet: Boolean,
+    sheetWidth: Int,
+    sheetHeight: Int,
+    frameWidth: String,
+    frameHeight: String,
+    scale: String,
+    frameCounts: List<String>
+): List<String> = buildList {
+    if (!hasSheet) add("Elige una hoja de sprites PNG.")
+    val width = frameWidth.toIntOrNull() ?: 0
+    val height = frameHeight.toIntOrNull() ?: 0
+    if (width <= 0 || height <= 0) add("Indica un ancho y alto de frame mayores que cero.")
+    val scaleValue = scale.toFloatOrNull()
+    if (scaleValue == null || !scaleValue.isFinite() || scaleValue <= 0f) {
+        add("Indica una escala mayor que cero.")
+    }
+    val counts = frameCounts.map { it.toIntOrNull() }
+    if (counts.any { it == null || it < 0 }) {
+        add("Indica un número de frames válido para cada animación; usa 0 para omitirla.")
+    } else {
+        if ((counts.firstOrNull() ?: 0) <= 0) add("La animación idle necesita al menos un frame.")
+        if (hasSheet && width > 0 && height > 0) {
+            val available = (sheetWidth / width).toLong() * (sheetHeight / height).toLong()
+            val required = counts.sumOf { it!!.toLong() }
+            if (available <= 0) add("La hoja es más pequeña que un frame.")
+            else if (required > available) add("Las animaciones necesitan $required frames, pero solo caben $available.")
+        }
+    }
+}
+
 /** Quién usa el personaje creado. */
 enum class CharacterSide(val label: String) {
     PLAYER("Jugador"),
@@ -44,7 +76,7 @@ data class CharacterVariation(
     val totalFrames: Int get() = animations.sumOf { it.second }
     val columns: Int get() = if (frameWidthValue > 0 && sheetWidth > 0) sheetWidth / frameWidthValue else 0
     val rows: Int get() = if (frameHeightValue > 0 && sheetHeight > 0) sheetHeight / frameHeightValue else 0
-    val availableFrames: Int get() = columns * rows
+    val availableFrames: Int get() = (columns.toLong() * rows).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     
     val isReady: Boolean
         get() = sheet != null &&
@@ -110,17 +142,16 @@ data class CharacterDraft(
         get() = if (frameWidthValue > 0 && sheetWidth > 0) sheetWidth / frameWidthValue else 0
     val rows: Int
         get() = if (frameHeightValue > 0 && sheetHeight > 0) sheetHeight / frameHeightValue else 0
-    val availableFrames: Int get() = columns * rows
+    val availableFrames: Int get() = (columns.toLong() * rows).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
-    /** ¿Están todos los datos mínimos y caben los frames? */
-    val isReady: Boolean
-        get() = !enabled || (
-            sheet != null &&
-                frameWidthValue > 0 &&
-                frameHeightValue > 0 &&
-                totalFrames > 0 &&
-                availableFrames >= totalFrames
-            )
+    /** Errores concretos que impiden generar el personaje base. */
+    val problems: List<String>
+        get() = characterProblems(
+            sheet != null, sheetWidth, sheetHeight, frameWidth, frameHeight, scale,
+            listOf(idleFrames, leftFrames, downFrames, upFrames, rightFrames)
+        )
+
+    val isReady: Boolean get() = !enabled || problems.isEmpty()
 
     /** Obtiene una variación por ID, o null si no existe. */
     fun getVariation(variationId: String): CharacterVariation? =

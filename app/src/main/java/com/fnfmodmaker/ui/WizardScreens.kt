@@ -191,7 +191,7 @@ internal fun WizardScreen(vm: WizardViewModel) {
                     2 -> StepCharacter(
                         vm = vm,
                         config = config,
-                        onPickSheet = { pickCharSheet.launch(arrayOf("image/*")) },
+                        onPickSheet = { pickCharSheet.launch(arrayOf("image/png")) },
                         onPickIcon = { pickCharIcon.launch(arrayOf("image/*")) }
                     )
                     3 -> StepAudio(
@@ -506,10 +506,18 @@ private fun StepSongs(vm: WizardViewModel, onAddSong: () -> Unit, onRemoveSong: 
 @Composable
 private fun StepCharacter(vm: WizardViewModel, config: ModConfig, onPickSheet: () -> Unit, onPickIcon: () -> Unit) {
     StepHeader("3. Personaje", "Crea tu propio personaje a partir de una hoja de sprites.")
-    Spacer(Modifier.height(8.dp))
-    Text("Configura el personaje en la herramienta 'Crear un personaje' del inicio.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Spacer(Modifier.height(12.dp))
-    Button(onClick = { vm.openTool(Tool.CHARACTER) }, enabled = !vm.busy) { Text("Ir al creador de personajes") }
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Usar un personaje propio", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+        Switch(checked = config.character.enabled, onCheckedChange = vm::setCharacterEnabled, enabled = !vm.busy)
+    }
+    if (config.character.enabled) {
+        CharacterForm(vm, config.character, onPickSheet, onPickIcon)
+        Spacer(Modifier.height(12.dp))
+        ToolStatus(vm.status, vm.error, null, emptyList(), "")
+    } else {
+        Text("Se usarán los personajes de la canción.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 // ---------------------------------------------------------------------------

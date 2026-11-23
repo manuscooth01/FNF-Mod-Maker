@@ -135,6 +135,10 @@ Si quieres tu propio personaje en vez de `bf`/`dad`:
 - **Icono de vida** (opcional): la app lo deja en 300x150 con dos frames (normal/perdiendo). Si tu
   imagen ya trae los dos, los respeta. Si no eliges ninguno, se usa el del personaje base.
 
+El editor también está disponible como herramienta independiente. Muestra las dimensiones,
+la cuadrícula y los motivos que impiden exportar; `idle` debe tener al menos un frame y la
+escala debe ser mayor que cero. La hoja debe ser un PNG real, no solo un archivo renombrado.
+
 La app comprueba que los frames quepan en la hoja antes de dejarte continuar, y luego genera
 `images/characters/<id>.png` + `.xml`, `characters/<id>.json` (Psych),
 `data/characters/<id>.json` (V-Slice) e `images/icons/icon-<id>.png`.

@@ -177,6 +177,23 @@ object MediaTools {
         return lastError
     }
 
+    /** La hoja se copia sin convertir: comprobamos su contenido, no solo la extensión. */
+    fun isPng(input: File): Boolean = try {
+        val signature = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+        input.inputStream().use { stream ->
+            val header = ByteArray(signature.size)
+            var offset = 0
+            while (offset < header.size) {
+                val read = stream.read(header, offset, header.size - offset)
+                if (read <= 0) break
+                offset += read
+            }
+            offset == header.size && header.contentEquals(signature)
+        }
+    } catch (_: Exception) {
+        false
+    }
+
     /** Tamaño real de una imagen, sin cargarla entera en memoria. */
     fun imageSize(input: File): Pair<Int, Int>? {
         return try {

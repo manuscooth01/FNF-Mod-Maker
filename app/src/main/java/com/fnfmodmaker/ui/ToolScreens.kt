@@ -372,18 +372,9 @@ internal fun CharacterToolScreen(vm: WizardViewModel) {
             CharacterForm(
                 vm = vm,
                 draft = draft,
-                onPickSheet = { pickSheet.launch(arrayOf("image/*")) },
+                onPickSheet = { pickSheet.launch(arrayOf("image/png")) },
                 onPickIcon = { pickIcon.launch(arrayOf("image/*")) }
             )
-
-            if (!vm.characterOnlyReady && draft.sheet != null) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "Revisa el tamaño de frame y los frames por animación para poder generar.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error
-                )
-            }
 
             Spacer(Modifier.height(16.dp))
             ToolStatus(

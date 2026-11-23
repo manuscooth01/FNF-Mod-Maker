@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -67,12 +68,14 @@ fun Field(
     hint: String = "",
     keyboardType: KeyboardType = KeyboardType.Text,
     singleLine: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         androidx.compose.material3.OutlinedTextField(
             value = value,
             onValueChange = onChange,
+            enabled = enabled,
             label = { Text(label) },
             singleLine = singleLine,
             minLines = if (singleLine) 1 else 3,
@@ -351,19 +354,97 @@ fun InfoRow(label: String, value: String) {
 @Composable
 fun CharacterForm(
     vm: WizardViewModel,
-    draft: com.fnfmodmaker.model.CharacterDraft,
+    draft: CharacterDraft,
     onPickSheet: () -> Unit,
     onPickIcon: () -> Unit
 ) {
-    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-        Text("Personaje: ${draft.charFolder}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(16.dp))
-        Text("ID: ${draft.charId}", style = MaterialTheme.typography.bodyMedium)
+    Column(Modifier.fillMaxWidth()) {
+        SectionTitle("Identidad")
+        Field("Nombre visible", draft.displayName, vm::setCharName,
+            hint = "El nombre que verás en el juego.", enabled = !vm.busy)
+        Spacer(Modifier.height(10.dp))
+        Field("ID del personaje", draft.charId, vm::setCharId,
+            hint = "Opcional; ID de salida: ${draft.charFolder}.", enabled = !vm.busy)
+        Spacer(Modifier.height(12.dp))
+        Text("Lado en el mod", fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CharacterSide.entries.forEach { side ->
+                androidx.compose.material3.FilterChip(
+                    selected = draft.side == side,
+                    onClick = { vm.setCharSide(side) },
+                    enabled = !vm.busy,
+                    label = { Text(side.label) }
+                )
+            }
+        }
+
+        SectionTitle("Hoja de sprites")
+        HelpCard("Usa un PNG con frames del mismo tamaño, en cuadrícula y sin huecos. " +
+            "Se leen de izquierda a derecha y de arriba abajo: idle, LEFT, DOWN, UP y RIGHT.")
+        Spacer(Modifier.height(10.dp))
+        Text(draft.sheet?.displayName ?: "Ninguna hoja elegida", fontWeight = FontWeight.SemiBold)
+        if (draft.sheet != null) {
+            Text("Imagen: ${draft.sheetWidth} × ${draft.sheetHeight} px",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(6.dp))
+        OutlinedButton(onClick = onPickSheet, enabled = !vm.busy) { Text("Elegir hoja PNG") }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Field("Ancho del frame", draft.frameWidth, vm::setCharFrameWidth,
+                keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f), enabled = !vm.busy)
+            Field("Alto del frame", draft.frameHeight, vm::setCharFrameHeight,
+                keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f), enabled = !vm.busy)
+        }
+        if (draft.sheet != null && draft.columns > 0 && draft.rows > 0) {
+            Spacer(Modifier.height(8.dp))
+            Text("Cuadrícula: ${draft.columns} × ${draft.rows} · ${draft.availableFrames} frames disponibles",
+                style = MaterialTheme.typography.bodySmall)
+            Text("Frames usados: ${draft.totalFrames}", style = MaterialTheme.typography.bodySmall)
+            if (draft.sheetWidth % draft.frameWidthValue != 0 || draft.sheetHeight % draft.frameHeightValue != 0) {
+                Text("La imagen no se divide exactamente; se ignorarán los píxeles sobrantes.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        SectionTitle("Frames por animación")
+        Text("Idle es obligatorio; usa 0 para las demás animaciones que no necesites.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(8.dp))
-        Text("Ancho frame: ${draft.frameWidth}, Alto: ${draft.frameHeight}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onPickSheet, enabled = !vm.busy) { Text("Elegir hoja de sprites") }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Field("Idle", draft.idleFrames, vm::setCharIdleFrames, keyboardType = KeyboardType.Number,
+                modifier = Modifier.weight(1f), enabled = !vm.busy)
+            Field("Izquierda", draft.leftFrames, vm::setCharLeftFrames, keyboardType = KeyboardType.Number,
+                modifier = Modifier.weight(1f), enabled = !vm.busy)
+        }
         Spacer(Modifier.height(8.dp))
-        Button(onClick = onPickIcon, enabled = !vm.busy) { Text("Elegir icono de vida") }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Field("Abajo", draft.downFrames, vm::setCharDownFrames, keyboardType = KeyboardType.Number,
+                modifier = Modifier.weight(1f), enabled = !vm.busy)
+            Field("Arriba", draft.upFrames, vm::setCharUpFrames, keyboardType = KeyboardType.Number,
+                modifier = Modifier.weight(1f), enabled = !vm.busy)
+        }
+        Spacer(Modifier.height(8.dp))
+        Field("Derecha", draft.rightFrames, vm::setCharRightFrames, keyboardType = KeyboardType.Number,
+            enabled = !vm.busy)
+
+        SectionTitle("Apariencia")
+        Field("Escala", draft.scale, vm::setCharScale, keyboardType = KeyboardType.Decimal, enabled = !vm.busy)
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("Voltear horizontalmente", modifier = Modifier.weight(1f))
+            Switch(checked = draft.flipX, onCheckedChange = vm::setCharFlipX, enabled = !vm.busy)
+        }
+        Text(draft.icon?.displayName ?: "Sin icono propio: se usará bf o dad según el lado.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(6.dp))
+        OutlinedButton(onClick = onPickIcon, enabled = !vm.busy) { Text("Elegir icono de vida (opcional)") }
+
+        if (draft.problems.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            MessageCard(draft.problems.joinToString("\n") { "• $it" }, error = true)
+        } else {
+            Spacer(Modifier.height(16.dp))
+            MessageCard("Personaje listo para generar.", error = false)
+        }
     }
 }

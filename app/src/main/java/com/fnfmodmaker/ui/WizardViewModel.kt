@@ -50,6 +50,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         get() = buildList {
             if (config.modTitle.isBlank()) add("Nombre del mod")
             if (config.songs.isEmpty()) add("Al menos una canción")
+            if (config.character.enabled) {
+                config.character.problems.forEach { add("Personaje: $it") }
+            }
             config.songs.forEachIndexed { index, song ->
                 if (song.songName.isBlank()) add("Nombre de la canción ${index + 1}")
                 if (song.bpmValue !in 1..400) add("BPM válido en la canción ${index + 1}")
@@ -1188,6 +1191,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "spritesheet.png" }
                     val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
                     MediaTools.copyTo(app, uri, target)
+                    if (!MediaTools.isPng(target)) {
+                        target.delete()
+                        throw IllegalStateException("La hoja de sprites debe ser un archivo PNG.")
+                    }
                     val size = MediaTools.imageSize(target)
                         ?: throw IllegalStateException("No se pudo leer la imagen de la hoja de sprites.")
                     PickedImage(uri = uri, displayName = displayName, path = target.absolutePath) to size

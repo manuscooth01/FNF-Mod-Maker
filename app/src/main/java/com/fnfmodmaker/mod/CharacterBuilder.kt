@@ -33,6 +33,7 @@ object CharacterBuilder {
     ) {
         val draft = config.character
         if (!draft.enabled) return
+        require(draft.problems.isEmpty()) { draft.problems.joinToString(" ") }
 
         val id = draft.charFolder
         
@@ -99,6 +100,12 @@ object CharacterBuilder {
         }
 
         val sheetFile = File(sheet!!.path)
+        if (!MediaTools.isPng(sheetFile)) {
+            throw IllegalStateException("La hoja de sprites de $charId debe ser un PNG válido.")
+        }
+        if (frameWidth <= 0 || frameHeight <= 0) {
+            throw IllegalStateException("El tamaño de frame de $charId debe ser mayor que cero.")
+        }
         val size = MediaTools.imageSize(sheetFile)
             ?: throw IllegalStateException("No se pudo leer la hoja de sprites: $charId")
         val columns = size.first / frameWidth

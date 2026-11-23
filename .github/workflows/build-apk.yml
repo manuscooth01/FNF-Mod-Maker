@@ -32,7 +32,16 @@ jobs:
           gradle-version: "8.9"
 
       - name: Compilar
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        shell: bash
+        run: |
+          set +e
+          gradle :app:assembleDebug --no-daemon --stacktrace 2>&1 | tee build-output.log
+          build_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$build_status" -ne 0 ]; then
+            python3 ci/annotate-build-log.py build-output.log
+          fi
+          exit "$build_status"
 
       - name: Publicar el APK
         uses: actions/upload-artifact@v7

@@ -28,12 +28,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.fnfmodmaker.model.DragState
-import com.fnfmodmaker.model.DragState.Scroll
-import com.fnfmodmaker.model.DragState.HoldResize
-import com.fnfmodmaker.model.DragState.SelectionBox
-import com.fnfmodmaker.model.DragState.MultiDrag
 import com.fnfmodmaker.model.SelectedNote
 import java.io.File
+import org.json.JSONObject
+import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
 enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT, STAGE }
 
@@ -313,18 +312,17 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private fun initMediaPlayer(): MediaPlayer? {
         val song = config.songs.getOrElse(activeChartSongIndex) { return null }
         val instrumental = song.instrumental ?: return null
-        val mp = MediaPlayer().apply {
-            try {
-                setDataSource(getApplication<Application>().applicationContext, Uri.parse(instrumental.path))
-                prepare()
-                setOnCompletionListener { onPlaybackComplete() }
-            } catch (e: Exception) {
-                e.printStackTrace()
-                release()
-                return@apply null
-            }
+        val mp = MediaPlayer()
+        return try {
+            mp.setDataSource(instrumental.path)
+            mp.prepare()
+            mp.setOnCompletionListener { onPlaybackComplete() }
+            mp
+        } catch (e: Exception) {
+            e.printStackTrace()
+            mp.release()
+            null
         }
-        return mp
     }
 
     // ---------------- Importar Mod ----------------
@@ -447,14 +445,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Inicia drag de scroll (pan). */
     internal fun startScrollDrag(startX: Float, startScroll: Float) {
         chartEditorState = chartEditorState.copy(
-            dragState = com.fnfmodmaker.model.ChartEditorState.DragState.Scroll(startX, startScroll)
+            dragState = DragState.Scroll(startX, startScroll)
         )
     }
 
     /** Actualiza drag de scroll. */
     internal fun updateScrollDrag(currentX: Float) {
         val state = chartEditorState.dragState
-        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.Scroll) {
+        if (state is DragState.Scroll) {
             val newScroll = (state.startScroll - (currentX - state.startX)).coerceIn(0f, Float.MAX_VALUE)
             chartEditorState = chartEditorState.copy(scrollX = newScroll)
         }
@@ -468,7 +466,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Inicia drag de resize hold note. */
     internal fun startHoldResize(noteIndex: Int, startTimeMs: Long, lane: Int, startLengthMs: Long, dragStartX: Float) {
         chartEditorState = chartEditorState.copy(
-            dragState = com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize(
+            dragState = DragState.HoldResize(
                 noteIndex, startTimeMs, lane, startLengthMs, dragStartX
             )
         )
@@ -477,7 +475,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Actualiza drag de resize hold note. */
     internal fun updateHoldResize(currentX: Float, beatWidthPx: Float, beatMs: Double) {
         val state = chartEditorState.dragState
-        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.HoldResize) {
+        if (state is DragState.HoldResize) {
             val deltaX = currentX - state.dragStartX
             val deltaBeats = deltaX / beatWidthPx * 4 // 4 beats por unidad visual
             val deltaMs = (deltaBeats * beatMs).roundToLong()
@@ -502,7 +500,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Inicia selección múltiple (box selection). */
     internal fun startSelectionBox(startX: Float, startY: Float) {
         chartEditorState = chartEditorState.copy(
-            dragState = com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox(startX, startY),
+            dragState = DragState.SelectionBox(startX, startY),
             selectedNotes = emptyList()
         )
     }
@@ -510,10 +508,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Actualiza selección múltiple. */
     internal fun updateSelectionBox(currentX: Float, currentY: Float, beatWidthPx: Float, beatMs: Double, laneHeightPx: Float, timeRulerHeightPx: Float, headerHeightPx: Float) {
         val state = chartEditorState.dragState
-        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox) {
+        if (state is DragState.SelectionBox) {
             val draft = activeChartDraft
             val minX = minOf(state.startX, currentX)
             val maxX = maxOf(state.startX, currentX)
+            val minY = minOf(state.startY, currentY)
+            val maxY = maxOf(state.startY, currentY)
 
             // Convertir a tiempo y lanes
             val startTimeMs = ((minX / beatWidthPx * 4) * beatMs).roundToLong()
@@ -537,7 +537,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Termina selección múltiple. */
     internal fun endSelectionBox() {
         val state = chartEditorState.dragState
-        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.SelectionBox) {
+        if (state is DragState.SelectionBox) {
             chartEditorState = chartEditorState.copy(dragState = null)
         }
     }
@@ -547,7 +547,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val selected = chartEditorState.selectedNotes
         if (selected.isNotEmpty()) {
             chartEditorState = chartEditorState.copy(
-                dragState = com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag(selected, dragStartX, dragStartY)
+                dragState = DragState.MultiDrag(selected, dragStartX, dragStartY)
             )
         }
     }
@@ -555,7 +555,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Actualiza drag de notas seleccionadas. */
     internal fun updateMultiDrag(currentX: Float, currentY: Float, beatWidthPx: Float, beatMs: Double, laneHeightPx: Float) {
         val state = chartEditorState.dragState
-        if (state is com.fnfmodmaker.model.ChartEditorState.DragState.MultiDrag) {
+        if (state is DragState.MultiDrag) {
             val deltaX = currentX - state.dragStartX
             val deltaY = currentY - state.dragStartY
             val deltaBeats = deltaX / beatWidthPx * 4
@@ -1367,7 +1367,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     if (extractDir.exists()) extractDir.deleteRecursively()
                     extractDir.mkdirs()
                     java.util.zip.ZipFile(tempZip).use { zip ->
-                        zip.entries().forEach { entry ->
+                        val entries = zip.entries()
+                        while (entries.hasMoreElements()) {
+                            val entry = entries.nextElement()
                             val outFile = File(extractDir, entry.name)
                             if (entry.isDirectory) outFile.mkdirs()
                             else {
@@ -1397,8 +1399,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     var downFrames = "1"
                     var upFrames = "1"
                     var rightFrames = "1"
-                    animations?.forEach { anim ->
-                        val a = anim as JSONObject
+                    for (index in 0 until (animations?.length() ?: 0)) {
+                        val a = animations!!.getJSONObject(index)
                         val animName = a.optString("name", a.optString("anim", ""))
                         when (animName) {
                             "idle" -> idleFrames = "2"

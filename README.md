@@ -161,18 +161,15 @@ Si quieres tu propio personaje en vez de `bf`/`dad`:
 - **Icono de vida** (opcional): la app lo deja en 300x150 con dos frames (normal/perdiendo). Si tu
   imagen ya trae los dos, los respeta. Si no eliges ninguno, se usa el del personaje base.
 
-El editor también está disponible como herramienta independiente. Puedes trabajar con una
-cuadrícula o elegir **Frames PNG** para importar varios PNG por animación, reordenarlos y
-previsualizarlos. La app genera el PNG y el XML Sparrow, y guarda FPS, bucle y offsets por
-animación en los JSON de Psych y V-Slice. En ambos modos puedes previsualizar la animación,
-pausar y avanzar frames, y arrastrar el personaje, el offset de animación o el foco de cámara;
-también puedes introducir sus coordenadas. **Abrir editor visual a pantalla completa** muestra
-una lista de animaciones, escenario, zoom y flechas táctiles con pasos de 1 o 10 píxeles. Gira el
-teléfono para ver los paneles lado a lado. La vista es orientativa: la posición final depende
-del escenario y de cada motor, por lo que hay que comprobarla en el juego. El límite es 100 frames y una hoja final de 4096 × 4096 píxeles; si no caben,
-reduce el tamaño o la cantidad de imágenes. `idle` necesita al menos un frame y la escala debe
-ser mayor que cero. Los archivos deben ser PNG reales, no solo archivos renombrados.
-El editor no importa todavía atlas XML existentes ni animaciones personalizadas adicionales.
+El editor también está disponible como herramienta independiente. Abre el espacio de personaje
+para seleccionar **Frames PNG**, **Cuadrícula** o **Atlas PNG + XML**. Las pestañas Animación y
+Posición permiten elegir animaciones y ajustar FPS, bucle, offsets, escala y cámara; la vista previa
+permite arrastrar, pausar y avanzar frames. En pantallas anchas o en horizontal se muestran paneles
+lado a lado. La escena es orientativa: comprueba el resultado en el juego.
+
+Para PNG individuales, el límite es de 100 frames y una hoja generada de 4096 × 4096 píxeles.
+`idle` necesita al menos un frame y la escala debe ser mayor que cero. El atlas Sparrow existente
+se conserva, incluidos sus recortes; los atlas con rotación no se admiten.
 
 La app comprueba que los frames quepan en la hoja antes de dejarte continuar, y luego genera
 `images/characters/<id>.png` + `.xml`, `characters/<id>.json` (Psych),
@@ -188,8 +185,8 @@ La conversión ocurre en el teléfono. Un tema de 2 minutos suele tardar entre 1
 > Si solo quieres el audio convertido, usa la herramienta **Convertir audio a OGG** del inicio: no
 > hace falta crear un mod.
 
-### Paso 5 — Crear el mod
-Pulsa **Crear .zip** y elige dónde guardarlo (por ejemplo, `Descargas`). Al terminar verás la lista
+### Pasos 5 y 6 — Notas y exportación
+Elige si quieres notas de práctica o un chart vacío. En Exportar pulsa **Guardar ZIP** y elige dónde guardarlo (por ejemplo, `Descargas`). Al terminar verás la lista
 exacta de archivos generados.
 
 ---

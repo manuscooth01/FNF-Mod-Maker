@@ -36,7 +36,8 @@ fun parseSparrowAtlas(xml: String): List<SparrowFrame> {
         fun optional(key: String, fallback: Int): Int = if (node.hasAttribute(key)) required(key) else fallback
         val name = node.getAttribute("name")
         require(name.isNotBlank()) { "SubTexture ${index + 1}: falta el nombre." }
-        require(!node.getAttribute("rotated").equals("true", true)) { "Los atlas con frames rotados no son compatibles." }
+        val rotated = node.getAttribute("rotated").lowercase()
+        require(rotated.isEmpty() || rotated == "false" || rotated == "0") { "Los atlas con frames rotados no son compatibles." }
         val x = required("x"); val y = required("y"); val width = required("width"); val height = required("height")
         require(x >= 0 && y >= 0 && width > 0 && height > 0) { "SubTexture $name tiene dimensiones o coordenadas inválidas." }
         val frameX = optional("frameX", 0); val frameY = optional("frameY", 0)

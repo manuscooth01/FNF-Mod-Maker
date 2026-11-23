@@ -30,10 +30,19 @@ class SparrowAtlasTest {
         val bad = listOf(
             """<!DOCTYPE TextureAtlas [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><TextureAtlas><SubTexture name="&xxe;" x="0" y="0" width="1" height="1"/></TextureAtlas>""",
             """<TextureAtlas><SubTexture name="x" x="0" y="0" width="1" height="1" rotated="true"/></TextureAtlas>""",
+            """<TextureAtlas><SubTexture name="x" x="0" y="0" width="1" height="1" rotated="1"/></TextureAtlas>""",
             """<TextureAtlas><SubTexture name="x" x="-1" y="0" width="1" height="1"/></TextureAtlas>""",
             """<TextureAtlas><SubTexture name="x" x="0" y="0" width="1" height="1"/><SubTexture name="x" x="1" y="0" width="1" height="1"/></TextureAtlas>"""
         )
         bad.forEach { value -> assertTrue(runCatching { parseSparrowAtlas(value) }.isFailure) }
+    }
+
+    @Test fun oldSavedDraftGetsDefaultsForNewFields() {
+        val draft = com.google.gson.Gson().fromJson("""{"displayName":"Anterior"}""", CharacterDraft::class.java)
+        assertEquals("Anterior", draft.displayName)
+        assertFalse(draft.useAtlas)
+        assertTrue(draft.customAnimations.isEmpty())
+        assertTrue(draft.atlasFrames.isEmpty())
     }
 
     @Test fun customAnimationsParticipateInAllModes() {

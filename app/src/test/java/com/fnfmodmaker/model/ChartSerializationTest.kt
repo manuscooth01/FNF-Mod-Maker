@@ -65,4 +65,24 @@ class ChartSerializationTest {
             if (engine.includesPsych) assertThrows(IllegalArgumentException::class.java) { com.fnfmodmaker.mod.JsonBuilders.psychChart(config, song, 1000, "hard") }
         }
     }
+    @Test fun supportedChartsCanBePackagedInModZipWithoutProjectHistory() {
+        val song = SongConfig(songName = "Test", bpm = "120", practiceNotes = false)
+        val draft = ChartDraft(songFolder = song.songFolder, difficulty = "normal", notes = listOf(ChartNote(500, 4, 250)))
+        val history = recordChartHistory(ChartPersistentHistory(), null, draft)
+        val config = ModConfig(engine = TargetEngine.BOTH, songs = listOf(song), chartHistories = mapOf(song.songFolder to mapOf("normal" to history)))
+            .withChart(song.songFolder, "normal", draft)
+        val root = java.nio.file.Files.createTempDirectory("chart-zip-test").toFile()
+        try {
+            val v = java.io.File(root, "data/songs/test/test-chart.json").apply { parentFile.mkdirs(); writeText(com.fnfmodmaker.mod.JsonBuilders.vsliceChart(config, song, 5000)) }
+            val p = java.io.File(root, "data/test/test.json").apply { parentFile.mkdirs(); writeText(com.fnfmodmaker.mod.JsonBuilders.psychChart(config, song, 5000, "normal")) }
+            val bytes = java.io.ByteArrayOutputStream(); com.fnfmodmaker.mod.ModBuilder.zip(root, bytes, includeRoot = false)
+            val archive = java.util.zip.ZipInputStream(bytes.toByteArray().inputStream())
+            val files = mutableMapOf<String, String>()
+            archive.use { input -> while (true) { val entry = input.nextEntry ?: break; files[entry.name] = input.readBytes().toString(Charsets.UTF_8) } }
+            assertEquals(setOf("data/songs/test/test-chart.json", "data/test/test.json"), files.keys)
+            assertEquals(v.readText(), files.getValue("data/songs/test/test-chart.json")); assertEquals(p.readText(), files.getValue("data/test/test.json"))
+            assertFalse(files.values.any { it.contains("chartHistories") })
+            assertEquals(250, JSONObject(files.getValue("data/songs/test/test-chart.json")).getJSONObject("notes").getJSONArray("normal").getJSONObject(0).getInt("l"))
+        } finally { root.deleteRecursively() }
+    }
 }

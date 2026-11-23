@@ -12,14 +12,21 @@ data class SparrowFrame(
 
 private fun readAtlasDocument(xml: String): org.w3c.dom.Document {
     require(xml.length <= 4_000_000) { "El XML es demasiado grande (máximo 4 MB)." }
+    // Android's XML providers do not all support the same optional SAX features.
+    // Reject any DTD before parsing and never resolve an external entity.
+    require(!Regex("<!\\s*(DOCTYPE|ENTITY)", RegexOption.IGNORE_CASE).containsMatchIn(xml)) {
+        "El XML no puede contener DTD ni entidades externas."
+    }
     val factory = DocumentBuilderFactory.newInstance().apply {
         isNamespaceAware = false
-        setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
-        setFeature("http://xml.org/sax/features/external-general-entities", false)
-        setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-        isExpandEntityReferences = false
+        runCatching { setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) }
+        runCatching { setFeature("http://xml.org/sax/features/external-general-entities", false) }
+        runCatching { setFeature("http://xml.org/sax/features/external-parameter-entities", false) }
+        runCatching { isExpandEntityReferences = false }
     }
-    val document = factory.newDocumentBuilder().parse(InputSource(StringReader(xml)))
+    val builder = factory.newDocumentBuilder()
+    builder.setEntityResolver { _, _ -> throw IllegalArgumentException("Las entidades externas no están permitidas.") }
+    val document = builder.parse(InputSource(StringReader(xml)))
     require(document.documentElement.tagName == "TextureAtlas") { "El XML debe ser un atlas Sparrow TextureAtlas." }
     return document
 }

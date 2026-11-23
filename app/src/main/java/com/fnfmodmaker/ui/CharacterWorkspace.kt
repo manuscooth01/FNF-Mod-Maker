@@ -265,8 +265,8 @@ private fun CharacterPosition(vm: WizardViewModel, draft: CharacterDraft, select
     }
     Text("${adjustment.label} · ${if (adjustment == CharacterAdjustment.ANIMATION) selected else "todas las animaciones"}", style = MaterialTheme.typography.bodySmall)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Field("X", x, { set(it, y) }, modifier = Modifier.weight(1f), keyboardType = KeyboardType.Number, enabled = !vm.busy)
-        Field("Y", y, { set(x, it) }, modifier = Modifier.weight(1f), keyboardType = KeyboardType.Number, enabled = !vm.busy)
+        Field("X", x, { set(it, y) }, modifier = Modifier.weight(1f), keyboardType = KeyboardType.Text, enabled = !vm.busy)
+        Field("Y", y, { set(x, it) }, modifier = Modifier.weight(1f), keyboardType = KeyboardType.Text, enabled = !vm.busy)
     }
     var step by rememberSaveable { mutableStateOf(1) }
     TextButton(onClick = { step = if (step == 1) 10 else 1 }) { Text("Paso: $step px · cambiar") }

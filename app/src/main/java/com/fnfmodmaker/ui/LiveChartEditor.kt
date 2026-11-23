@@ -74,6 +74,8 @@ private val arrowNames = listOf("izquierda", "abajo", "arriba", "derecha")
 
 @Composable
 internal fun LiveChartEditor(vm: WizardViewModel, onClose: () -> Unit) {
+    var showGrid by rememberSaveable { mutableStateOf(false) }
+    var confirmGridPractice by remember { mutableStateOf(false) }
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -102,7 +104,9 @@ internal fun LiveChartEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     Row(Modifier.fillMaxSize().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { LiveSetup(vm) }
                         Column(Modifier.weight(1f).fillMaxSize()) {
-                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { LiveTransport(vm) }
+                            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { LiveTransport(vm, onOpenGrid = {
+                                if (vm.liveChart == null && vm.liveSong?.practiceNotes == true) confirmGridPractice = true else showGrid = true
+                            }) }
                             ArrowPad(vm)
                         }
                     }
@@ -110,7 +114,9 @@ internal fun LiveChartEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                         Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                             LiveSetup(vm)
-                            LiveTransport(vm)
+                            LiveTransport(vm, onOpenGrid = {
+                                if (vm.liveChart == null && vm.liveSong?.practiceNotes == true) confirmGridPractice = true else showGrid = true
+                            })
                             Spacer(Modifier.height(12.dp))
                         }
                         ArrowPad(vm)
@@ -119,6 +125,11 @@ internal fun LiveChartEditor(vm: WizardViewModel, onClose: () -> Unit) {
             }
         }
     }
+    if (confirmGridPractice) AlertDialog(onDismissRequest = { confirmGridPractice = false }, title = { Text("Crear un chart propio") },
+        text = { Text("Al añadir la primera nota, las notas de práctica dejarán de generarse para esta dificultad. Las otras dificultades no cambian. Puedes deshacer mientras la cuadrícula esté abierta o borrar el chart propio para recuperarlas.") },
+        confirmButton = { TextButton(onClick = { confirmGridPractice = false; showGrid = true }) { Text("Continuar") } },
+        dismissButton = { TextButton(onClick = { confirmGridPractice = false }) { Text("Cancelar") } })
+    if (showGrid) TouchChartGridEditor(vm, onClose = { showGrid = false })
 }
 
 @Composable
@@ -169,7 +180,7 @@ private fun LiveSetup(vm: WizardViewModel) {
 }
 
 @Composable
-private fun LiveTransport(vm: WizardViewModel) {
+private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
     var confirmPractice by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     Text("3 · Escucha y graba", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -198,6 +209,9 @@ private fun LiveTransport(vm: WizardViewModel) {
         text = { Text("Al guardar la primera nota se dejarán de generar las notas de práctica para esta dificultad. Las demás dificultades no cambian. Puedes deshacer la nota o borrar el chart personalizado.") },
         confirmButton = { TextButton(onClick = { confirmPractice = false; vm.startLivePlayback(true) }) { Text("Entendido") } },
         dismissButton = { TextButton(onClick = { confirmPractice = false }) { Text("Cancelar") } })
+    OutlinedButton(onClick = onOpenGrid, enabled = !vm.livePlaying && !vm.liveLoading && !vm.busy && vm.liveCanPlay && vm.liveDurationMs > 0 && (vm.liveSong?.bpmValue ?: 0) in 1..400) { Text("▦ Abrir cuadrícula táctil") }
+    if (vm.liveCanPlay && vm.liveDurationMs <= 0) Text("Escucha y pausa la instrumental para detectar su duración antes de abrir la cuadrícula.", style = MaterialTheme.typography.labelSmall)
+    if (vm.liveCanPlay && (vm.liveSong?.bpmValue ?: 0) !in 1..400) Text("Para la cuadrícula, indica un BPM entre 1 y 400 en Canciones.", style = MaterialTheme.typography.labelSmall)
     val chart = vm.liveChart
     Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
     LiveTimeline(vm.livePreviewNotes, vm.livePositionMs)

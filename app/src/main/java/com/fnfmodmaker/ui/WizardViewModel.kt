@@ -398,7 +398,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         closeLiveChart()
         liveSongIndex = index
         val song = config.songs[index]
-        liveDifficulty = if ("normal" in song.difficulties) "normal" else song.orderedDifficulties.first()
+        liveDifficulty = if ("normal" in song.difficulties) "normal" else song.orderedDifficulties.firstOrNull() ?: "normal"
         liveDurationMs = song.instrumental?.durationMs ?: 0L; livePositionMs = 0L
         liveError = null; liveNotice = null; liveUndo.clear(); liveUndoCount = 0
     }
@@ -603,6 +603,47 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         config = config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = notes))
         liveUndo.removeAll { it.note == note }; liveUndoCount = liveUndo.size
         liveNotice = "Nota eliminada."; scheduleAutoSave()
+    }
+    // Grid edits have their own bounded undo stack; never share stale live-recording undo entries.
+    private val gridHistory = com.fnfmodmaker.model.GridUndoHistory()
+    var gridUndoCount by mutableStateOf(0)
+        private set
+    private var gridSessionKey: Pair<String, String>? = null
+    internal fun beginGridSession() {
+        gridHistory.clear(); gridUndoCount = 0
+        gridSessionKey = liveSong?.songFolder?.let { it to liveDifficulty }
+    }
+    internal fun endGridSession() {
+        if (livePlaying || liveLoading) pauseLivePlayback()
+        gridHistory.clear(); gridUndoCount = 0; gridSessionKey = null; forceAutoSave()
+    }
+    private fun gridSessionMatches(): Boolean = gridSessionKey != null && gridSessionKey == liveSong?.songFolder?.let { it to liveDifficulty }
+    internal fun applyGridNote(original: ChartNote?, replacement: ChartNote?): Boolean {
+        if (!gridSessionMatches() || busy || livePlaying || liveLoading || !liveChartAvailable || !liveCanPlay || liveDurationMs <= 0L) return false
+        val song = liveSong ?: return false
+        val existing = config.getChart(song.songFolder, liveDifficulty)
+        if (existing == null && original != null) return false
+        val draft = existing ?: ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
+            scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
+            player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych)
+        if (original == null && draft.notes.size >= 10000) { liveNotice = "Límite de 10 000 notas en esta dificultad."; return false }
+        val notes = com.fnfmodmaker.model.replaceGridNote(draft.notes, original, replacement, liveDurationMs)
+        if (notes == null) { liveNotice = "No se puede colocar: hay otra nota o sostenido en ese carril, o supera el final."; return false }
+        if (notes == draft.notes) return false
+        gridHistory.push(existing); gridUndoCount = gridHistory.size
+        liveUndo.clear(); liveUndoCount = 0
+        config = config.withChart(song.songFolder, liveDifficulty, draft.copy(notes = notes))
+        liveNotice = "Cambio guardado en el borrador."; scheduleAutoSave()
+        return true
+    }
+    internal fun undoGridEdit() {
+        if (!gridSessionMatches() || busy || livePlaying || liveLoading || !liveChartAvailable) return
+        val song = liveSong ?: return
+        val entry = gridHistory.pop() ?: return
+        gridUndoCount = gridHistory.size
+        config = if (entry.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
+            else config.withChart(song.songFolder, liveDifficulty, entry.chart)
+        liveNotice = "Se deshizo el último cambio de la cuadrícula."; scheduleAutoSave()
     }
     internal fun deleteLiveCustomChart() {
         if (livePlaying || liveLoading) return

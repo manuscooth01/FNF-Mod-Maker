@@ -459,3 +459,7 @@ como una plantilla de carpetas para V-Slice 0.8.6–0.8.8 que se extrae en `mods
 o tutoriales. Se usó como referencia de flujo, no se ha incluido ni analizado su ZIP ni se ha
 verificado que nuestro ZIP sea idéntico o compatible con esas versiones específicas. El contenido
 oficial de FNF sigue sin redistribuirse; los usuarios pueden elegir sus propios recursos.
+
+### Cuadrícula táctil de charts
+
+En **Grabación en vivo**, elige canción y dificultad y abre **Cuadrícula táctil** con la instrumental disponible, duración conocida y BPM válido. Cada página contiene cuatro pulsos: rival a la izquierda y jugador a la derecha. Toca para añadir o seleccionar; arrastra una nota para moverla, o elige «Sostenido» y arrastra para ajustar su final. También hay controles de duración, eliminación y edición por botones. Se rechazan solapamientos y notas fuera de la canción. Escucha solo la instrumental; la edición se bloquea mientras suena. Deshacer conserva hasta 50 cambios mientras la cuadrícula está abierta. Si no había chart propio, la primera nota sustituye las notas de práctica de esa dificultad (se avisa antes de entrar); deshacer o borrar el chart propio recupera ese comportamiento. Los charts con eventos o secciones no editables están protegidos. La visualización no es una prueba de juego ni incluye eventos o cambios de BPM.

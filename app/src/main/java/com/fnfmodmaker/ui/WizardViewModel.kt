@@ -28,7 +28,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToLong
-import com.fnfmodmaker.model.ChartEditorState
 import com.fnfmodmaker.model.DragState
 import com.fnfmodmaker.model.DragState.Scroll
 import com.fnfmodmaker.model.DragState.HoldResize

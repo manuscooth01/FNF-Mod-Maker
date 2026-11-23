@@ -19,6 +19,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,6 +48,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.fnfmodmaker.model.ChartNote
 import com.fnfmodmaker.model.TouchGrid
+import com.fnfmodmaker.model.translateGridNotes
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
@@ -63,8 +67,15 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
     var selected by remember { mutableStateOf<ChartNote?>(null) }
     var resizeMode by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var multiMode by rememberSaveable { mutableStateOf(false) }
+    var group by remember { mutableStateOf<Set<ChartNote>>(emptySet()) }
+    var clipboard by remember { mutableStateOf<List<ChartNote>>(emptyList()) }
+    var editTime by remember { mutableStateOf(false) }
+    var timeText by remember { mutableStateOf("") }
+    var timeError by remember { mutableStateOf<String?>(null) }
     var showButtonEditor by remember { mutableStateOf(false) }
-    val locked = vm.livePlaying || vm.liveLoading
+    val audioActive = vm.livePlaying || vm.liveLoading
+    val locked = vm.liveRecording || vm.liveLoading || vm.busy
     val notes = vm.liveChart?.notes.orEmpty()
     DisposableEffect(Unit) { vm.beginGridSession(); onDispose { vm.endGridSession() } }
 
@@ -85,12 +96,14 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                             enabled = !locked, label = { Text(label) })
                     }
                     FilterChip(!resizeMode, { resizeMode = false }, enabled = !locked, label = { Text("Mover") })
-                    FilterChip(resizeMode, { resizeMode = true }, enabled = !locked, label = { Text("Sostenido") })
+                    FilterChip(resizeMode, { resizeMode = true }, enabled = !locked && !multiMode, label = { Text("Sostenido") })
+                    FilterChip(multiMode, { multiMode = !multiMode; group = emptySet(); selected = null; resizeMode = false }, enabled = !locked, label = { Text("Selección múltiple") })
                 }
                 Text("RIVAL    ${gridArrows.joinToString("  ")}       JUGADOR    ${gridArrows.joinToString("  ")}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-                Text("Toca un espacio para añadir. Toca una nota para seleccionarla; arrastra para moverla o, en Sostenido, cambiar su final.", style = MaterialTheme.typography.labelSmall)
+                Text(if (multiMode) "Toca notas para seleccionarlas, incluso en otras páginas. Usa los botones para mover, copiar o borrar el grupo." else "Toca para añadir o seleccionar; arrastra para mover o, en Sostenido, cambiar el final. Tiempo exacto permite movimiento libre.", style = MaterialTheme.typography.labelSmall)
                 vm.liveNotice?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall) }
                 vm.liveError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+                ChartWaveform(song, vm.liveDurationMs, grid, page, vm.livePositionMs, onPage = { page = it })
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = { page = (page - 1).coerceAtLeast(0) }, enabled = !locked && page > 0) { Text("‹") }
                     Slider(value = page.toFloat(), onValueChange = { page = it.toInt().coerceIn(0, grid.pageCount - 1) },
@@ -99,13 +112,16 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     Text("${page + 1}/${grid.pageCount}", style = MaterialTheme.typography.labelSmall)
                 }
                 Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    GridCanvas(grid, page, notes, vm.livePositionMs, selected, resizeMode, locked,
-                        onSelect = { selected = it }, onChange = { old, new ->
-                            if (vm.applyGridNote(old, new)) selected = new
+                    GridCanvas(grid, page, notes, vm.livePositionMs, if (multiMode) group else setOfNotNull(selected), resizeMode, multiMode, locked,
+                        onSelect = { note ->
+                            if (multiMode && note != null) group = if (note in group) group - note else group + note
+                            else if (!multiMode) selected = note
+                        }, onChange = { old, new ->
+                            if (!multiMode && vm.applyGridNote(old, new)) selected = new
                         })
                 }
                 val note = selected
-                if (note != null) {
+                if (!multiMode && note != null) {
                     Text("Seleccionada: ${if (note.lane < 4) "Jugador" else "Rival"} ${gridArrows[note.lane % 4]} · ${gridClock(note.timeMs)} · ${note.lengthMs} ms", style = MaterialTheme.typography.labelMedium)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton(onClick = {
@@ -116,31 +132,77 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                             val updated = note.copy(lengthMs = note.lengthMs + grid.stepMs.roundToLong())
                             if (vm.applyGridNote(note, updated)) selected = updated
                         }, enabled = !locked) { Text("Sostenido +") }
+                        TextButton(onClick = { timeText = note.timeMs.toString(); timeError = null; editTime = true }, enabled = !locked) { Text("Tiempo exacto") }
                         TextButton(onClick = { confirmDelete = true }, enabled = !locked) { Text("Quitar") }
                     }
                 }
+                if (multiMode) {
+                    val chosen = group.sortedWith(compareBy<ChartNote> { it.timeMs }.thenBy { it.lane })
+                    fun moveGroup(deltaMs: Long, deltaColumn: Int) {
+                        val moved = translateGridNotes(chosen, deltaMs, deltaColumn)
+                        if (moved != null && vm.applyGridChanges(chosen, moved)) group = moved.toSet()
+                    }
+                    Text("${group.size} seleccionadas · ${clipboard.size} copiadas", style = MaterialTheme.typography.labelMedium)
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { clipboard = chosen }, enabled = chosen.isNotEmpty() && !locked) { Text("Copiar") }
+                        TextButton(onClick = {
+                            val first = clipboard.minOfOrNull { it.timeMs }
+                            val pasted = first?.let { translateGridNotes(clipboard, grid.pageStart(page) - it, 0) }
+                            if (pasted != null && vm.applyGridChanges(emptyList(), pasted)) group = pasted.toSet()
+                        }, enabled = clipboard.isNotEmpty() && !locked) { Text("Pegar al inicio de página") }
+                        TextButton(onClick = {
+                            val copies = translateGridNotes(chosen, (grid.rows * grid.stepMs).roundToLong(), 0)
+                            if (copies != null && vm.applyGridChanges(emptyList(), copies)) group = copies.toSet()
+                        }, enabled = chosen.isNotEmpty() && !locked) { Text("Duplicar +1 compás") }
+                        TextButton(onClick = { confirmDelete = true }, enabled = chosen.isNotEmpty() && !locked) { Text("Quitar grupo") }
+                        TextButton(onClick = { group = emptySet() }, enabled = chosen.isNotEmpty()) { Text("Deseleccionar") }
+                    }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        TextButton(onClick = { moveGroup(-grid.stepMs.roundToLong(), 0) }, enabled = chosen.isNotEmpty() && !locked) { Text("Tiempo −") }
+                        TextButton(onClick = { moveGroup(grid.stepMs.roundToLong(), 0) }, enabled = chosen.isNotEmpty() && !locked) { Text("Tiempo +") }
+                        TextButton(onClick = { moveGroup(0, -1) }, enabled = chosen.isNotEmpty() && !locked) { Text("Carril ←") }
+                        TextButton(onClick = { moveGroup(0, 1) }, enabled = chosen.isNotEmpty() && !locked) { Text("Carril →") }
+                    }
+                }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (locked) Button(onClick = vm::pauseLivePlayback) { Text(if (vm.liveLoading) "Cancelar" else "Pausar") }
+                    if (audioActive) Button(onClick = vm::pauseLivePlayback) { Text(if (vm.liveLoading) "Cancelar" else "Pausar") }
                     else OutlinedButton(onClick = { vm.setLivePosition(grid.pageStart(page)); vm.startLivePlayback(false) }, enabled = vm.liveCanPlay) { Text("▶ Escuchar desde aquí") }
                     TextButton(onClick = { showButtonEditor = true }, enabled = !locked && !vm.busy) { Text("Edición por botones") }
-                    TextButton(onClick = { vm.undoGridEdit(); selected = null }, enabled = !locked && vm.gridUndoCount > 0) { Text("Deshacer (${vm.gridUndoCount})") }
-                    TextButton(onClick = { vm.redoGridEdit(); selected = null }, enabled = !locked && vm.gridRedoCount > 0) { Text("Rehacer (${vm.gridRedoCount})") }
+                    TextButton(onClick = { vm.undoGridEdit(); selected = null; group = emptySet() }, enabled = !locked && vm.gridUndoCount > 0) { Text("Deshacer (${vm.gridUndoCount})") }
+                    TextButton(onClick = { vm.redoGridEdit(); selected = null; group = emptySet() }, enabled = !locked && vm.gridRedoCount > 0) { Text("Rehacer (${vm.gridRedoCount})") }
                 }
-                Text("Los cambios se guardan en esta dificultad. Escucha solo la instrumental; prueba el chart en el juego.", style = MaterialTheme.typography.labelSmall)
+                Text("Puedes editar mientras escuchas la instrumental. Las voces no se reproducen aquí; prueba el chart en el juego.", style = MaterialTheme.typography.labelSmall)
             }
         }
     }
-    if (showButtonEditor) GridButtonEditor(grid, page, notes, selected, onClose = { showButtonEditor = false },
+    if (editTime && selected != null) AlertDialog(onDismissRequest = { editTime = false }, title = { Text("Tiempo exacto") },
+        text = { Column {
+            Text("Introduce el tiempo desde el inicio de la canción en milisegundos, sin ajuste a la cuadrícula.")
+            OutlinedTextField(value = timeText, onValueChange = { timeText = it.filter(Char::isDigit).take(12); timeError = null }, label = { Text("Tiempo en ms") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+            timeError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } },
+        confirmButton = { TextButton(onClick = {
+            val old = selected; val time = timeText.toLongOrNull()
+            if (old != null && time != null) {
+                if (time == old.timeMs) editTime = false
+                else { val updated = old.copy(timeMs = time); if (vm.applyGridNote(old, updated)) { selected = updated; page = grid.pageForTime(time); editTime = false } else timeError = "No cabe en la canción o coincide con otra nota." }
+            } else timeError = "Indica un tiempo válido."
+        }, enabled = !locked) { Text("Guardar") } }, dismissButton = { TextButton(onClick = { editTime = false }) { Text("Cancelar") } })
+    if (showButtonEditor && !multiMode) GridButtonEditor(grid, page, notes, selected, onClose = { showButtonEditor = false },
         onSelect = { selected = it }, onChange = { old, new -> if (vm.applyGridNote(old, new)) { selected = new; showButtonEditor = false } else { showButtonEditor = false } })
-    if (confirmDelete && selected != null) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text("¿Quitar esta nota?") },
+    if (confirmDelete && (selected != null || group.isNotEmpty())) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text(if (multiMode) "¿Quitar ${group.size} notas?" else "¿Quitar esta nota?") },
         text = { Text("Puedes deshacer esta acción mientras la cuadrícula esté abierta.") },
-        confirmButton = { TextButton(onClick = { if (vm.applyGridNote(selected, null)) selected = null; confirmDelete = false }) { Text("Quitar") } },
+        confirmButton = { TextButton(onClick = {
+            if (multiMode) { if (vm.applyGridChanges(group.toList(), emptyList())) group = emptySet() }
+            else if (vm.applyGridNote(selected, null)) selected = null
+            confirmDelete = false
+        }, enabled = !locked) { Text("Quitar") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } })
 }
 
 @Composable
-private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playheadMs: Long, selected: ChartNote?, resizeMode: Boolean,
-    locked: Boolean, onSelect: (ChartNote?) -> Unit, onChange: (ChartNote?, ChartNote?) -> Unit) {
+private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playheadMs: Long, selected: Set<ChartNote>, resizeMode: Boolean,
+    multiMode: Boolean, locked: Boolean, onSelect: (ChartNote?) -> Unit, onChange: (ChartNote?, ChartNote?) -> Unit) {
     val currentNotes by rememberUpdatedState(notes)
     val currentOnChange by rememberUpdatedState(onChange)
     val currentOnSelect by rememberUpdatedState(onSelect)
@@ -148,7 +210,7 @@ private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playh
     var dragPosition by remember { mutableStateOf<Offset?>(null) }
     val height = (grid.rows * 36).dp
     Canvas(Modifier.fillMaxWidth().height(height).semantics { contentDescription = "Cuadrícula táctil: rival en las cuatro columnas izquierdas, jugador en las cuatro derechas. Tiempo de arriba abajo." }
-        .pointerInput(grid, page, resizeMode, locked) {
+        .pointerInput(grid, page, resizeMode, multiMode, locked) {
             val rowH = size.height.toFloat() / grid.rows
             val colW = size.width.toFloat() / 8f
             fun noteY(time: Long) = ((time / grid.stepMs - page.toLong() * grid.rows) + .5).toFloat() * rowH
@@ -176,7 +238,7 @@ private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playh
                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
                     if (change.isConsumed && !dragging) consumedByParent = true
                     last = change.position
-                    if (!locked && origin != null && !consumedByParent && (last - down.position).getDistance() > viewConfiguration.touchSlop) dragging = true
+                    if (!locked && !multiMode && origin != null && !consumedByParent && (last - down.position).getDistance() > viewConfiguration.touchSlop) dragging = true
                     if (dragging) { change.consume(); dragNote = origin; dragPosition = last }
                     if (!change.pressed) {
                         if (!locked && !consumedByParent) {
@@ -213,7 +275,7 @@ private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playh
             val color = gridColors[note.lane % 4]
             if (note.lengthMs > 0) drawLine(color.copy(alpha = .8f), Offset(x, y.coerceAtLeast(0f)), Offset(x, endY.coerceAtMost(size.height)), colW * .32f)
             if (y in 0f..size.height) {
-                if (note == selected) drawCircle(Color.White, colW * .36f, Offset(x, y))
+                if (note in selected) drawCircle(Color.White, colW * .36f, Offset(x, y))
                 drawCircle(color, colW * .27f, Offset(x, y))
             }
         }

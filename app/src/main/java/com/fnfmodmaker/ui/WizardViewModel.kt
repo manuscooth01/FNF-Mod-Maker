@@ -79,6 +79,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         private set
 
     internal fun clearAiKey() { aiKey = "" }
+    internal fun clearAiSession() {
+        if (aiBusy) return
+        aiKey = ""; aiPrompt = ""; aiResult = null; aiError = null
+        aiAnalysisFile = null; aiAnalysisName = null; aiGeneratedFile = null; aiSavedImage = null
+        File(getApplication<Application>().cacheDir, "ai").deleteRecursively()
+    }
 
     /** Select a local image; resize and strip metadata before any optional upload. */
     internal fun pickAiAnalysisImage(uri: Uri) {
@@ -910,6 +916,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private var modIdEdited = false
 
     init {
+        // AI files are temporary and are never part of the saved project.
+        File(application.cacheDir, "ai").deleteRecursively()
         loadAutoSave()
         startAutoSave()
     }

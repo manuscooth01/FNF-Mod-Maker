@@ -113,7 +113,8 @@ estás editando se mueve y se exporta; las posiciones exactas dependen del escen
 La pestaña **Asistente IA** es opcional y requiere Internet. Configura una URL **HTTPS** de un
 proveedor de confianza compatible con `chat/completions` y, para generar ilustraciones,
 `images/generations`, más los modelos y tu propia clave API. La clave solo permanece en memoria
-mientras la app está abierta; no se guarda en el proyecto. No todos los servicios o modelos
+mientras la app está abierta; no se guarda en el proyecto. Puedes borrar la clave o limpiar toda la
+sesión y sus imágenes temporales desde la configuración. No todos los servicios o modelos
 compatibles admiten visión o imágenes, y pueden aplicar cargos y sus propias políticas de datos.
 Cada solicitud requiere confirmación: los consejos envían la consulta y los ajustes básicos; el
 análisis envía además la imagen que elijas (reducida a 1024 px y sin metadatos, con transparencia

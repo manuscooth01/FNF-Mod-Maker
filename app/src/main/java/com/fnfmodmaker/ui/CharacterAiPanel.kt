@@ -42,6 +42,7 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
     }
     var settingsOpen by rememberSaveable { mutableStateOf(true) }
     var confirmAction by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmClear by rememberSaveable { mutableStateOf(false) }
     Text("Asistente de IA", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Text("Opcional: usa un proveedor HTTPS compatible con la API de OpenAI. Cada proveedor y modelo admite funciones distintas y puede cobrar por uso.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = { settingsOpen = !settingsOpen }) { Text(if (settingsOpen) "Ocultar configuración ↑" else "Configurar proveedor ↓") }
@@ -54,7 +55,15 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
             singleLine = true, enabled = !vm.aiBusy, modifier = Modifier.fillMaxWidth(),
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password))
         Text("La clave solo se mantiene en memoria mientras la app está abierta; no se guarda en el proyecto.", style = MaterialTheme.typography.labelSmall)
-        TextButton(onClick = vm::clearAiKey, enabled = !vm.aiBusy && vm.aiKey.isNotEmpty()) { Text("Borrar clave") }
+        Row {
+            TextButton(onClick = vm::clearAiKey, enabled = !vm.aiBusy && vm.aiKey.isNotEmpty()) { Text("Borrar clave") }
+            TextButton(onClick = { confirmClear = true }, enabled = !vm.aiBusy) { Text("Limpiar sesión IA") }
+        }
+        if (confirmClear) androidx.compose.material3.AlertDialog(onDismissRequest = { confirmClear = false },
+            title = { Text("¿Limpiar la sesión de IA?") },
+            text = { Text("Se borrarán la clave, la consulta, la respuesta y las imágenes temporales. Las imágenes que guardaste no se modificarán.") },
+            confirmButton = { TextButton(onClick = { vm.clearAiSession(); confirmClear = false }) { Text("Limpiar") } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancelar") } })
         Field("Modelo de texto / visión", vm.aiChatModel, { vm.aiChatModel = it }, hint = "Debe admitir chat/completions; para imágenes, también visión.", enabled = !vm.aiBusy)
         Spacer(Modifier.height(8.dp))
         Field("Modelo de imágenes", vm.aiImageModel, { vm.aiImageModel = it }, hint = "Debe admitir images/generations y devolver b64_json o URL HTTPS.", enabled = !vm.aiBusy)

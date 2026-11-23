@@ -53,7 +53,7 @@ import com.fnfmodmaker.model.TargetEngine
 
 @Composable
 fun SectionTitle(text: String) {
-    androidx.compose.foundation.layout.Spacer(androidx.compose.ui.unit.Dp(18))
+    Spacer(Modifier.height(18.dp))
     androidx.compose.material3.Text(
         text,
         style = MaterialTheme.typography.titleSmall,
@@ -173,6 +173,8 @@ fun StepHeader(title: String, subtitle: String) {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun FilterChip(
     selected: Boolean,
     onClick: () -> Unit,
@@ -182,16 +184,11 @@ fun FilterChip(
         selected = selected,
         onClick = onClick,
         label = label,
-        modifier = Modifier.fillMaxWidth(),
-        colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-            unselectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-            unselectedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        modifier = Modifier.fillMaxWidth()
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ToolTopBar(
     title: String,

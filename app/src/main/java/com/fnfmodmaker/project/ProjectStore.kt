@@ -76,6 +76,31 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         }, { ProjectSummary(folder.name, "Proyecto no legible", folder.lastModified(), "No se pudo abrir; sus archivos se conservan.") })
     }.sortedByDescending { it.updatedAt }
 
+    /** Hidden staging lives beside final projects: publication is one same-filesystem rename. */
+    fun newImportStage(): File = File(root, ".pending-${newId()}")
+    fun discardImportStage(stage: File) {
+        require(stage.parentFile.canonicalFile == root.canonicalFile && stage.name.startsWith(".pending-") && idPattern.matches(stage.name.removePrefix(".pending-")))
+        stage.deleteRecursively()
+    }
+    fun clearAbandonedImports() {
+        root.listFiles().orEmpty().filter { it.name.startsWith(".pending-") && idPattern.matches(it.name.removePrefix(".pending-")) }.forEach { discardImportStage(it) }
+    }
+    fun publishImport(prepared: PreparedPortable, portable: PortableProject, validate: (JsonObject) -> Unit): String {
+        val stage = prepared.directory
+        require(stage.parentFile.canonicalFile == root.canonicalFile && stage.name.startsWith(".pending-") && idPattern.matches(stage.name.removePrefix(".pending-")) && stage.isDirectory)
+        val id = newId()
+        val finalDir = dir(id)
+        require(!finalDir.exists()) { "No se pudo crear un identificador único." }
+        val config = portable.materialize(prepared, finalDir)
+        validate(config)
+        val wrapper = JsonObject().apply {
+            addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
+        }
+        SafeFile(File(stage, "project.json")).write(wrapper.toString())
+        check(stage.renameTo(finalDir)) { "No se pudo incorporar el proyecto; los proyectos existentes no cambiaron." }
+        return id
+    }
+
     /** Copy all recognized PickedImage/PickedAudio objects. Missing legacy assets remain referenced and are reported. */
     fun copyAssets(config: JsonObject, id: String): CopiedAssets {
         val result = config.deepCopy()

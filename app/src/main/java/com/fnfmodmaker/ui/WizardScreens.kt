@@ -72,6 +72,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material.icons.Icons
 import kotlin.math.min
+import kotlin.text.isDigit
+import kotlin.text.isLetterOrDigit
 
 private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Chart", "Listo")
 
@@ -244,8 +246,8 @@ private fun VariationEditorModal(
         // Modal content
         Surface(
             modifier = Modifier
-                .width((90.dp).min(LocalConfiguration.current.screenWidthDp.dp))
-                .height((90.dp).min(LocalConfiguration.current.screenHeightDp.dp))
+                .width(minOf(90.dp, LocalConfiguration.current.screenWidthDp.dp))
+                .height(minOf(90.dp, LocalConfiguration.current.screenHeightDp.dp))
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
             tonalElevation = 8.dp
@@ -270,7 +272,7 @@ private fun VariationEditorModal(
                 Spacer(Modifier.height(16.dp))
 
                 // ID y nombre
-                Field(label = "ID de la variación", value = variation.variationId, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(variationId = it.filter { it.isLetterOrDigit() || it in "-_" }) } }, hint = "minúsculas, números, guiones")
+                Field(label = "ID de la variación", value = variation.variationId, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(variationId = it.filter { it.isLetterOrDigit || it in "-_" }) } }, hint = "minúsculas, números, guiones")
                 Spacer(Modifier.height(8.dp))
                 Field(label = "Nombre visible", value = variation.displayName, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(displayName = it) } }, hint = "Ej: Erect, Pico, Dead")
                 Spacer(Modifier.height(8.dp))
@@ -313,8 +315,8 @@ private fun VariationEditorModal(
                 Spacer(Modifier.height(12.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Field(label = "Ancho frame", value = variation.frameWidth, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(frameWidth = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
-                    Field(label = "Alto frame", value = variation.frameHeight, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(frameHeight = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "Ancho frame", value = variation.frameWidth, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(frameWidth = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "Alto frame", value = variation.frameHeight, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(frameHeight = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
                 }
 
                 if (variation.columns > 0 && variation.rows > 0) {
@@ -331,20 +333,20 @@ private fun VariationEditorModal(
                 Spacer(Modifier.height(16.dp))
                 SectionTitle("Animaciones (frames por animación)")
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Field(label = "idle", value = variation.idleFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(idleFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
-                    Field(label = "singLEFT", value = variation.leftFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(leftFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "idle", value = variation.idleFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(idleFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "singLEFT", value = variation.leftFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(leftFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Field(label = "singDOWN", value = variation.downFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(downFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
-                    Field(label = "singUP", value = variation.upFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(upFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "singDOWN", value = variation.downFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(downFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
+                    Field(label = "singUP", value = variation.upFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(upFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(10.dp))
-                Field(label = "singRIGHT", value = variation.rightFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(rightFrames = it.filter { it.isDigit() }) } }, keyboardType = KeyboardType.Number)
+                Field(label = "singRIGHT", value = variation.rightFrames, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(rightFrames = it.filter { it.isDigit }) } }, keyboardType = KeyboardType.Number)
 
                 Spacer(Modifier.height(16.dp))
                 SectionTitle("Ajustes")
-                Field(label = "Escala", value = variation.scale, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(scale = it.filter { it.isDigit() || it == '.' }) } }, keyboardType = KeyboardType.Decimal)
+                Field(label = "Escala", value = variation.scale, onChange = { vm.updateVariation(vm.activeVariationIndex!!) { it.copy(scale = it.filter { it.isDigit || it == '.' }) } }, keyboardType = KeyboardType.Decimal)
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) { Text("Voltear horizontalmente", fontWeight = FontWeight.SemiBold) }
@@ -419,6 +421,131 @@ internal fun StepBar(current: Int, onSelect: (Int) -> Unit) {
     }
 }
 
+@Composable
+private fun StepHeader(title: String, subtitle: String) {
+    Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(4.dp))
+    Text(
+        subtitle,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(14.dp))
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Spacer(Modifier.height(18.dp))
+    Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun Field(
+    label: String,
+    value: String,
+    onChange: (String) -> Unit,
+    hint: String = "",
+    keyboardType: KeyboardType = KeyboardType.Text,
+    singleLine: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onChange,
+            label = { Text(label) },
+            singleLine = singleLine,
+            minLines = if (singleLine) 1 else 3,
+            keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (hint.isNotEmpty()) {
+            Text(
+                hint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HelpCard(text: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(14.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            label,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun EngineCard(engine: TargetEngine, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(14.dp),
+        border = BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(engine.label, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                engine.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun MessageCard(text: String, error: Boolean) {
+    Surface(
+        color = if (error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(14.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = if (error) MaterialTheme.colorScheme.onErrorContainer
+            else MaterialTheme.colorScheme.onSecondaryContainer
+        )
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Paso 1: datos del mod

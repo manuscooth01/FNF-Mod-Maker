@@ -346,4 +346,17 @@ fun InfoRow(label: String, value: String) {
             fontWeight = FontWeight.SemiBold
         )
     }
+@Composable
+fun CharacterForm(
+    vm: WizardViewModel,
+    draft: com.fnfmodmaker.model.CharacterDraft,
+    onPickSheet: () -> Unit,
+    onPickIcon: () -> Unit
+) {
+    Text("Personaje: ${draft.charFolder}", style = MaterialTheme.typography.bodyMedium)
+    Spacer(Modifier.height(8.dp))
+    Button(onClick = onPickSheet, enabled = !vm.busy) { Text("Elegir hoja de sprites") }
+    Spacer(Modifier.height(8.dp))
+    Button(onClick = onPickIcon, enabled = !vm.busy) { Text("Elegir icono de vida") }
 }
+

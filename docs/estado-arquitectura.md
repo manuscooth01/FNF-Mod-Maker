@@ -41,6 +41,17 @@ verificados ni importación ficticia como si fueran funcionalidades terminadas.
 Se introdujo `project/ProjectStore.kt`: documentos internos versión 1, directorios de recursos,
 reemplazo temporal con copia previa, migración no destructiva del borrador existente y manejo de
 varios proyectos en Inicio. Hay pruebas unitarias para recuperación, validación de IDs/versión y
-copiado de recursos. Los ZIP de mods siguen sin importarse y no hay copia de proyecto portable.
+copiado de recursos. Los ZIP de mods siguen sin importarse. La fase posterior añade copia portable de proyectos propios.
 La cuadrícula incorpora rehacer de sesión y snap de 1/4; el historial sigue sin persistir entre
 sesiones y no equivale al Chart Studio completo del plan.
+
+
+## Project Studio 2.0
+
+La copia `.fnfproject` es un paquete privado versionado, no un mod instalable. Empaqueta datos y
+recursos con SHA-256, valida entradas y límites, prepara en una carpeta oculta y publica mediante
+rename con un UUID nuevo únicamente después de confirmar. El selector de Android gestiona el archivo
+externo. Un hash detecta corrupción, no certifica que los recursos o scripts sean confiables.
+Las pruebas cubren ida y vuelta, duplicación, rutas peligrosas, entradas duplicadas, tamaño excesivo,
+recursos dañados/ausentes y limpieza de importaciones interrumpidas. Falta verificación del flujo SAF
+y de la restauración entre teléfonos físicos.

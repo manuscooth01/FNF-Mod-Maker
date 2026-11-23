@@ -1441,7 +1441,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 val record = projectStore.load(id)
                 check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear el archivo temporal." }
                 val output = File.createTempFile("export_", ".fnfproject", portableCache)
-                portable.export(portableConfig(record.config), projectStore.assets(id), output) { reportPortableProgress(token, it) }
+                try { portable.export(portableConfig(record.config), projectStore.assets(id), output) { reportPortableProgress(token, it) } }
+                catch (e: Exception) { output.delete(); throw e }
                 val title = record.config.get("modTitle")?.asString.orEmpty()
                 Triple(output, slugify(title).ifBlank { "proyecto" } + ".fnfproject", output.length())
             } } }
@@ -1472,9 +1473,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 preparedExport?.delete(); preparedExport = null; portableExportName = null; portableExportSize = 0
             }
                 .onFailure {
-                    // Some document providers cannot delete a failed output; tell the user to check it.
-                    val deleted = runCatching { app.contentResolver.delete(uri, null, null) > 0 }.getOrDefault(false)
-                    portableMessage = "No se pudo guardar el paquete: ${it.message}. " + if (deleted) "Se eliminó el archivo incompleto." else "Comprueba y elimina el archivo incompleto en el destino."
+                    // Never delete a URI chosen by the user: a provider may have returned an existing document.
+                    portableMessage = "No se pudo guardar el paquete: ${it.message}. Comprueba el destino y elimina cualquier archivo incompleto."
                 }
             portableProgress = null; busy = false
         }

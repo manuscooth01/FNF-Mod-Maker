@@ -154,8 +154,8 @@ internal fun HomeScreen(vm: WizardViewModel) {
             Row(Modifier.horizontalScroll(rememberScrollState())) {
                 Button(onClick = { vm.switchProject() }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Nuevo proyecto") }
                 TextButton(onClick = { vm.switchProject(duplicate = true) }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Duplicar actual") }
-                TextButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Importar proyecto") }
             }
+            OutlinedButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy && vm.currentProjectId != null, modifier = Modifier.fillMaxWidth()) { Text("Importar proyecto .fnfproject") }
             vm.projects.forEach { project ->
                 Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {

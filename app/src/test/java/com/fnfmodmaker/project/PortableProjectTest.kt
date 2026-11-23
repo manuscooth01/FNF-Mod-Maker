@@ -32,10 +32,26 @@ class PortableProjectTest {
         return store to (id to config)
     }
     private fun files(dir: File) = dir.walkTopDown().filter { it.isFile }.associate { it.relativeTo(dir).path to it.readBytes().toList() }
+    private fun normalized(config: JsonObject, dir: File): JsonObject {
+        val result = config.deepCopy()
+        fun visit(value: com.google.gson.JsonElement) {
+            if (value.isJsonArray) value.asJsonArray.forEach(::visit)
+            else if (value.isJsonObject) {
+                val obj = value.asJsonObject
+                if (obj.has("path") && obj.has("displayName")) {
+                    obj.addProperty("path", File(obj.get("path").asString).relativeTo(dir).path)
+                    obj.addProperty("uri", "")
+                } else obj.entrySet().forEach { visit(it.value) }
+            }
+        }
+        visit(result); return result
+    }
 
     @Test fun roundTripAndRepeatedImportsAreIndependent() {
         val (store, pair) = fixture(temp.root); val (id, original) = pair
-        val originalAssets = files(store.assets(id))
+        val sourceDir = store.assets(id)
+        val expectedConfig = normalized(original, sourceDir)
+        val originalAssets = files(sourceDir)
         val archive = File(temp.root, "project.fnfproject")
         val portable = PortableProject(temp.root)
         portable.export(original, store.assets(id), archive)
@@ -45,6 +61,7 @@ class PortableProjectTest {
         assertEquals("Mi mod", prepared.summary.title); assertEquals(1, prepared.summary.songs); assertEquals(2, prepared.summary.charts); assertEquals(8, prepared.summary.assets)
         val imported = store.publishImport(prepared, portable) { assertEquals(2, it.getAsJsonObject("charts").getAsJsonObject("song").size()) }
         val importedConfig = store.load(imported).config
+        assertEquals(expectedConfig, normalized(importedConfig, store.assets(imported)))
         assertEquals(original.get("charts"), importedConfig.get("charts"))
         assertEquals(original.get("psychScripts"), importedConfig.get("psychScripts"))
         assertEquals(original.getAsJsonObject("character").get("animations"), importedConfig.getAsJsonObject("character").get("animations"))

@@ -321,6 +321,9 @@ internal fun CharacterToolScreen(vm: WizardViewModel) {
     val pickIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickCharacterIcon(uri)
     }
+    val pickFrames = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        vm.pickCharacterFrames(uris)
+    }
     val saveZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportCharacter(uri)
     }
@@ -373,7 +376,11 @@ internal fun CharacterToolScreen(vm: WizardViewModel) {
                 vm = vm,
                 draft = draft,
                 onPickSheet = { pickSheet.launch(arrayOf("image/png")) },
-                onPickIcon = { pickIcon.launch(arrayOf("image/*")) }
+                onPickIcon = { pickIcon.launch(arrayOf("image/*")) },
+                onPickFrames = { animation ->
+                    vm.prepareCharacterFramePicker(animation)
+                    pickFrames.launch(arrayOf("image/png"))
+                }
             )
 
             Spacer(Modifier.height(16.dp))

@@ -103,6 +103,9 @@ internal fun WizardScreen(vm: WizardViewModel) {
     val pickCharIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickCharacterIcon(uri)
     }
+    val pickCharacterFrames = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        vm.pickCharacterFrames(uris)
+    }
     val createZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.export(uri)
     }
@@ -192,7 +195,11 @@ internal fun WizardScreen(vm: WizardViewModel) {
                         vm = vm,
                         config = config,
                         onPickSheet = { pickCharSheet.launch(arrayOf("image/png")) },
-                        onPickIcon = { pickCharIcon.launch(arrayOf("image/*")) }
+                        onPickIcon = { pickCharIcon.launch(arrayOf("image/*")) },
+                        onPickFrames = { animation ->
+                            vm.prepareCharacterFramePicker(animation)
+                            pickCharacterFrames.launch(arrayOf("image/png"))
+                        }
                     )
                     3 -> StepAudio(
                         vm = vm,
@@ -504,14 +511,14 @@ private fun StepSongs(vm: WizardViewModel, onAddSong: () -> Unit, onRemoveSong: 
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun StepCharacter(vm: WizardViewModel, config: ModConfig, onPickSheet: () -> Unit, onPickIcon: () -> Unit) {
+private fun StepCharacter(vm: WizardViewModel, config: ModConfig, onPickSheet: () -> Unit, onPickIcon: () -> Unit, onPickFrames: (String) -> Unit) {
     StepHeader("3. Personaje", "Crea tu propio personaje a partir de una hoja de sprites.")
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Usar un personaje propio", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
         Switch(checked = config.character.enabled, onCheckedChange = vm::setCharacterEnabled, enabled = !vm.busy)
     }
     if (config.character.enabled) {
-        CharacterForm(vm, config.character, onPickSheet, onPickIcon)
+        CharacterForm(vm, config.character, onPickSheet, onPickIcon, onPickFrames)
         Spacer(Modifier.height(12.dp))
         ToolStatus(vm.status, vm.error, null, emptyList(), "")
     } else {

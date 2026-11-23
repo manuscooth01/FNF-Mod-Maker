@@ -1,5 +1,7 @@
 package com.fnfmodmaker.ui
 
+import android.graphics.BitmapFactory
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,12 +32,22 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.fnfmodmaker.model.CHARACTER_ANIMATIONS
 import com.fnfmodmaker.model.ALL_DIFFICULTIES
 import com.fnfmodmaker.model.AudioSlot
 import com.fnfmodmaker.model.CharacterDraft
@@ -46,6 +59,9 @@ import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.StageDraft
 import com.fnfmodmaker.model.StageSprite
 import com.fnfmodmaker.model.TargetEngine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 // Shared UI components
 
@@ -356,8 +372,10 @@ fun CharacterForm(
     vm: WizardViewModel,
     draft: CharacterDraft,
     onPickSheet: () -> Unit,
-    onPickIcon: () -> Unit
+    onPickIcon: () -> Unit,
+    onPickFrames: (String) -> Unit
 ) {
+    var selectedAnimation by remember { mutableStateOf("idle") }
     Column(Modifier.fillMaxWidth()) {
         SectionTitle("Identidad")
         Field("Nombre visible", draft.displayName, vm::setCharName,
@@ -378,6 +396,16 @@ fun CharacterForm(
             }
         }
 
+        SectionTitle("Origen de las imágenes")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.FilterChip(
+                selected = !draft.useIndividualFrames, onClick = { vm.setIndividualFrames(false) },
+                enabled = !vm.busy, label = { Text("Cuadrícula") })
+            androidx.compose.material3.FilterChip(
+                selected = draft.useIndividualFrames, onClick = { vm.setIndividualFrames(true) },
+                enabled = !vm.busy, label = { Text("Frames PNG") })
+        }
+        if (!draft.useIndividualFrames) {
         SectionTitle("Hoja de sprites")
         HelpCard("Usa un PNG con frames del mismo tamaño, en cuadrícula y sin huecos. " +
             "Se leen de izquierda a derecha y de arriba abajo: idle, LEFT, DOWN, UP y RIGHT.")
@@ -428,6 +456,67 @@ fun CharacterForm(
         Field("Derecha", draft.rightFrames, vm::setCharRightFrames, keyboardType = KeyboardType.Number,
             enabled = !vm.busy)
 
+        } else {
+            Spacer(Modifier.height(8.dp))
+            HelpCard("Añade PNG independientes a cada animación. Revisa el orden: algunos selectores de archivos no conservan el orden de selección. Máximo 100 frames y una hoja final de 4096 × 4096.")
+        }
+
+        SectionTitle("Editar animación")
+        CHARACTER_ANIMATIONS.chunked(3).forEach { group ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                group.forEach { name ->
+                    androidx.compose.material3.FilterChip(
+                        selected = selectedAnimation == name, onClick = { selectedAnimation = name },
+                        enabled = !vm.busy, label = { Text(name.removePrefix("sing")) })
+                }
+            }
+        }
+        val animation = draft.settingsFor(selectedAnimation)
+        if (draft.useIndividualFrames) {
+            val frames = draft.animationFrames[selectedAnimation].orEmpty()
+            Text("${frames.size} frames · $selectedAnimation", fontWeight = FontWeight.SemiBold)
+            if (frames.isNotEmpty()) {
+                CharacterAnimationPreview(frames, animation.fps.toIntOrNull()?.coerceIn(1, 60) ?: 24)
+                Text("Vista previa en bucle; comprueba los offsets dentro del juego.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { onPickFrames(selectedAnimation) }, enabled = !vm.busy) {
+                Text("Añadir imágenes PNG")
+            }
+            frames.forEachIndexed { index, frame ->
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${index + 1}. ${frame.image.displayName}", modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    TextButton(onClick = { vm.moveCharacterFrame(selectedAnimation, index, -1) },
+                        enabled = !vm.busy && index > 0) { Text("↑") }
+                    TextButton(onClick = { vm.moveCharacterFrame(selectedAnimation, index, 1) },
+                        enabled = !vm.busy && index < frames.lastIndex) { Text("↓") }
+                    TextButton(onClick = { vm.removeCharacterFrame(selectedAnimation, index) },
+                        enabled = !vm.busy) { Text("✕") }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Field("FPS de $selectedAnimation", animation.fps, { value ->
+            vm.updateCharacterAnimation(selectedAnimation) { it.copy(fps = value.filter(Char::isDigit).take(2)) }
+        }, keyboardType = KeyboardType.Number, enabled = !vm.busy)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Field("Offset X", animation.offsetX, { value ->
+                vm.updateCharacterAnimation(selectedAnimation) { it.copy(offsetX = value.take(7)) }
+            }, modifier = Modifier.weight(1f), enabled = !vm.busy)
+            Field("Offset Y", animation.offsetY, { value ->
+                vm.updateCharacterAnimation(selectedAnimation) { it.copy(offsetY = value.take(7)) }
+            }, modifier = Modifier.weight(1f), enabled = !vm.busy)
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("Repetir animación en el juego", modifier = Modifier.weight(1f))
+            Switch(checked = animation.loop, onCheckedChange = { value ->
+                vm.updateCharacterAnimation(selectedAnimation) { it.copy(loop = value) }
+            }, enabled = !vm.busy)
+        }
+
         SectionTitle("Apariencia")
         Field("Escala", draft.scale, vm::setCharScale, keyboardType = KeyboardType.Decimal, enabled = !vm.busy)
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -445,6 +534,37 @@ fun CharacterForm(
         } else {
             Spacer(Modifier.height(16.dp))
             MessageCard("Personaje listo para generar.", error = false)
+        }
+    }
+}
+
+/** Decodifica una miniatura para no cargar la imagen original completa en la vista previa. */
+@Composable
+private fun CharacterAnimationPreview(frames: List<com.fnfmodmaker.model.CharacterFrame>, fps: Int) {
+    var index by remember(frames) { mutableStateOf(0) }
+    LaunchedEffect(frames, fps) {
+        while (true) {
+            delay((1000L / fps).coerceAtLeast(16L))
+            index = (index + 1) % frames.size
+        }
+    }
+    val frame = frames[index.coerceIn(frames.indices)]
+    val preview by produceState<ImageBitmap?>(initialValue = null, key1 = frame.image.path) {
+        value = withContext(Dispatchers.IO) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(frame.image.path, bounds)
+            var sample = 1
+            while (bounds.outWidth / sample > 512 || bounds.outHeight / sample > 512) sample *= 2
+            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.decodeFile(frame.image.path, options)?.asImageBitmap()
+        }
+    }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp)) {
+        if (preview != null) {
+            Image(bitmap = preview!!, contentDescription = "Vista previa del frame ${index + 1}",
+                modifier = Modifier.size(180.dp), contentScale = ContentScale.Fit)
+        } else {
+            Text("Cargando vista previa…", modifier = Modifier.padding(16.dp))
         }
     }
 }

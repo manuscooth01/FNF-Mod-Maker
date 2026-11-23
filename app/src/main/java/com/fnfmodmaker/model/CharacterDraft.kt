@@ -32,6 +32,36 @@ internal fun characterProblems(
     }
 }
 
+/** Nombres compatibles con las animaciones básicas de Psych y V-Slice. */
+val CHARACTER_ANIMATIONS = listOf("idle", "singLEFT", "singDOWN", "singUP", "singRIGHT")
+
+data class CharacterFrame(val image: PickedImage, val width: Int, val height: Int)
+
+data class CharacterAnimationSettings(
+    val fps: String = "24",
+    val offsetX: String = "0",
+    val offsetY: String = "0",
+    val loop: Boolean = false
+)
+
+/** Cuadrícula limitada para no crear texturas excesivas en móviles. */
+data class CharacterAtlasLayout(val columns: Int, val cellWidth: Int, val cellHeight: Int, val width: Int, val height: Int)
+
+fun planCharacterAtlas(sizes: List<Pair<Int, Int>>, limit: Int = 4096): CharacterAtlasLayout? {
+    if (sizes.isEmpty() || limit <= 0 || sizes.any { it.first <= 0 || it.second <= 0 }) return null
+    val cellWidth = sizes.maxOf { it.first }
+    val cellHeight = sizes.maxOf { it.second }
+    if (cellWidth > limit || cellHeight > limit) return null
+    val maxColumns = minOf(sizes.size, limit / cellWidth)
+    // Usar la cuadrícula válida con menor superficie; desempatar por forma más cuadrada.
+    return (1..maxColumns).mapNotNull { columns ->
+        val rows = (sizes.size + columns - 1) / columns
+        val width = columns * cellWidth
+        val height = rows.toLong() * cellHeight
+        if (height > limit) null else CharacterAtlasLayout(columns, cellWidth, cellHeight, width, height.toInt())
+    }.minWithOrNull(compareBy<CharacterAtlasLayout> { it.width.toLong() * it.height }.thenBy { kotlin.math.abs(it.width - it.height) })
+}
+
 /** Quién usa el personaje creado. */
 enum class CharacterSide(val label: String) {
     PLAYER("Jugador"),
@@ -110,7 +140,10 @@ data class CharacterDraft(
     val upFrames: String = "1",
     val rightFrames: String = "1",
     // Variaciones del personaje (Erect, Pico, Dead, etc.)
-    val variations: List<CharacterVariation> = emptyList()
+    val variations: List<CharacterVariation> = emptyList(),
+    val useIndividualFrames: Boolean = false,
+    val animationFrames: Map<String, List<CharacterFrame>> = emptyMap(),
+    val animationSettings: Map<String, CharacterAnimationSettings> = emptyMap()
 ) {
     /** Carpeta/ID del personaje (minúsculas y guiones). */
     val charFolder: String
@@ -127,13 +160,18 @@ data class CharacterDraft(
 
     /** Animaciones estándar de FNF en el orden en que se reparten los frames. */
     val animations: List<Pair<String, Int>>
-        get() = listOf(
+        get() = if (useIndividualFrames) {
+            CHARACTER_ANIMATIONS.map { it to animationFrames[it].orEmpty().size }.filter { it.second > 0 }
+        } else listOf(
             "idle" to (idleFrames.toIntOrNull() ?: 0),
             "singLEFT" to (leftFrames.toIntOrNull() ?: 0),
             "singDOWN" to (downFrames.toIntOrNull() ?: 0),
             "singUP" to (upFrames.toIntOrNull() ?: 0),
             "singRIGHT" to (rightFrames.toIntOrNull() ?: 0)
         ).filter { it.second > 0 }
+
+    fun settingsFor(animation: String): CharacterAnimationSettings =
+        animationSettings[animation] ?: CharacterAnimationSettings()
 
     val totalFrames: Int get() = animations.sumOf { it.second }
 
@@ -146,10 +184,28 @@ data class CharacterDraft(
 
     /** Errores concretos que impiden generar el personaje base. */
     val problems: List<String>
-        get() = characterProblems(
-            sheet != null, sheetWidth, sheetHeight, frameWidth, frameHeight, scale,
-            listOf(idleFrames, leftFrames, downFrames, upFrames, rightFrames)
-        )
+        get() = buildList {
+            if (useIndividualFrames) {
+                val scaleValue = scale.toFloatOrNull()
+                if (scaleValue == null || !scaleValue.isFinite() || scaleValue <= 0f) add("Indica una escala mayor que cero.")
+                if (animationFrames["idle"].isNullOrEmpty()) add("Añade al menos un frame para idle.")
+                val frames = CHARACTER_ANIMATIONS.flatMap { animationFrames[it].orEmpty() }
+                if (frames.size > 100) add("El máximo es 100 frames por personaje.")
+                if (frames.isNotEmpty() && planCharacterAtlas(frames.map { it.width to it.height }) == null) {
+                    add("Los frames no caben en una hoja de 4096 × 4096; reduce sus dimensiones o cantidad.")
+                }
+            } else {
+                addAll(characterProblems(sheet != null, sheetWidth, sheetHeight, frameWidth, frameHeight, scale,
+                    listOf(idleFrames, leftFrames, downFrames, upFrames, rightFrames)))
+            }
+            for ((animation, _) in animations) {
+                val settings = settingsFor(animation)
+                if (settings.fps.toIntOrNull() !in 1..60) add("FPS de $animation debe estar entre 1 y 60.")
+                if (settings.offsetX.toIntOrNull() == null || settings.offsetY.toIntOrNull() == null) {
+                    add("Los offsets de $animation deben ser números enteros.")
+                }
+            }
+        }
 
     val isReady: Boolean get() = !enabled || problems.isEmpty()
 

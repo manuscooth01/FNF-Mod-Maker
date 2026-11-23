@@ -43,4 +43,28 @@ class CharacterValidationTest {
         assertTrue(draft.isReady)
         assertFalse(draft.copy(enabled = true).isReady)
     }
+    @Test fun animationSettingsAreValidatedAndDefaultTo24Fps() {
+        val draft = CharacterDraft(enabled = true)
+        assertTrue(draft.settingsFor("idle").fps == "24")
+        val changed = draft.copy(animationSettings = mapOf("idle" to CharacterAnimationSettings(fps = "0", offsetX = "abc")))
+        assertTrue(changed.problems.any { it.contains("FPS") })
+        assertTrue(changed.problems.any { it.contains("offsets") })
+        assertFalse(draft.problems.any { it.contains("FPS") || it.contains("offsets") })
+    }
+
+    @Test fun individualFramesRequireIdle() {
+        val draft = CharacterDraft(enabled = true, useIndividualFrames = true)
+        assertTrue(draft.problems.any { it.contains("idle") })
+        assertFalse(draft.problems.any { it.contains("hoja de sprites PNG") })
+    }
+
+    @Test fun atlasLayoutFitsAndRejectsOversizedFrames() {
+        val layout = planCharacterAtlas(listOf(100 to 200, 200 to 100, 100 to 100), limit = 600)!!
+        assertTrue(layout.width <= 600 && layout.height <= 600)
+        assertTrue(layout.columns * (layout.height / layout.cellHeight) >= 3)
+        assertTrue(layout.cellWidth == 200 && layout.cellHeight == 200)
+        assertTrue(planCharacterAtlas(emptyList()) == null)
+        assertTrue(planCharacterAtlas(listOf(4097 to 2)) == null)
+        assertTrue(planCharacterAtlas(List(5) { 3000 to 3000 }) == null)
+    }
 }

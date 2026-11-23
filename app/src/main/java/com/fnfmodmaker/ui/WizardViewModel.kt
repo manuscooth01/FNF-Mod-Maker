@@ -8,11 +8,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.GsonBuilder
+import com.google.gson.TypeAdapter
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
+import com.google.gson.stream.JsonWriter
 import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.AudioSlot
 import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.ChartEditorState
 import com.fnfmodmaker.model.ChartNote
+import com.fnfmodmaker.model.CHARACTER_ANIMATIONS
+import com.fnfmodmaker.model.CharacterFrame
+import com.fnfmodmaker.model.CharacterAnimationSettings
 import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.ModConfig
@@ -735,6 +743,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // Auto-save
     private var autoSaveJob: kotlinx.coroutines.Job? = null
+    private var characterAutoSaveJob: kotlinx.coroutines.Job? = null
+    // Uri es abstracto; Gson no puede reconstruirlo sin un adaptador.
+    private val autoSaveGson = GsonBuilder().registerTypeAdapter(Uri::class.java, object : TypeAdapter<Uri>() {
+        override fun write(out: JsonWriter, value: Uri) = out.value(value.toString()).let { Unit }
+        override fun read(input: JsonReader): Uri {
+            return if (input.peek() == JsonToken.STRING) Uri.parse(input.nextString()) else {
+                // Guardados anteriores podían contener un objeto Uri en lugar de texto.
+                input.skipValue()
+                Uri.EMPTY
+            }
+        }
+    }.nullSafe()).create()
     private val autoSaveFile: File
         get() = File(getApplication<Application>().cacheDir, "autosave_modconfig.json")
 
@@ -754,7 +774,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun saveAutoSave() {
         try {
-            val json = com.google.gson.Gson().toJson(config)
+            val json = autoSaveGson.toJson(config)
             autoSaveFile.writeText(json)
         } catch (e: Exception) {
             // Silencioso
@@ -765,7 +785,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         try {
             if (autoSaveFile.exists()) {
                 val json = autoSaveFile.readText()
-                val loaded = com.google.gson.Gson().fromJson(json, ModConfig::class.java)
+                val loaded = autoSaveGson.fromJson(json, ModConfig::class.java)
                 config = loaded
             }
         } catch (e: Exception) {
@@ -960,11 +980,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun updateCharacter(block: (CharacterDraft) -> CharacterDraft) {
         config = config.copy(character = block(config.character))
+        characterAutoSaveJob?.cancel()
+        characterAutoSaveJob = viewModelScope.launch {
+            delay(1000)
+            saveAutoSave()
+        }
     }
 
     internal fun setCharacterEnabled(enabled: Boolean) = updateCharacter { it.copy(enabled = enabled) }
 
-    internal fun setCharId(value: String) = updateCharacter { it.copy(charId = slugify(value)) }
+    internal fun setCharId(value: String) = updateCharacter {
+        it.copy(charId = value.lowercase().filter { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' || c == '_' }.take(64))
+    }
 
     internal fun setCharName(value: String) = updateCharacter { it.copy(displayName = value) }
 
@@ -995,6 +1022,82 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setCharRightFrames(value: String) =
         updateCharacter { it.copy(rightFrames = value.filter { c -> c.isDigit() }.take(2)) }
+
+    internal fun setIndividualFrames(enabled: Boolean) = updateCharacter { it.copy(useIndividualFrames = enabled) }
+
+    internal fun updateCharacterAnimation(name: String, update: (CharacterAnimationSettings) -> CharacterAnimationSettings) {
+        if (busy || name !in CHARACTER_ANIMATIONS) return
+        updateCharacter { it.copy(animationSettings = it.animationSettings + (name to update(it.settingsFor(name)))) }
+    }
+
+    internal fun moveCharacterFrame(name: String, index: Int, direction: Int) {
+        if (busy || name !in CHARACTER_ANIMATIONS) return
+        updateCharacter { draft ->
+            val frames = draft.animationFrames[name].orEmpty().toMutableList()
+            val target = index + direction
+            if (index in frames.indices && target in frames.indices) {
+                java.util.Collections.swap(frames, index, target)
+            }
+            draft.copy(animationFrames = draft.animationFrames + (name to frames))
+        }
+    }
+
+    internal fun removeCharacterFrame(name: String, index: Int) {
+        if (busy || name !in CHARACTER_ANIMATIONS) return
+        updateCharacter { draft ->
+            val frames = draft.animationFrames[name].orEmpty().toMutableList()
+            if (index in frames.indices) frames.removeAt(index)
+            draft.copy(animationFrames = draft.animationFrames + (name to frames))
+        }
+    }
+
+    private var pendingFrameAnimation: String? = null
+    internal fun prepareCharacterFramePicker(name: String) {
+        if (!busy && name in CHARACTER_ANIMATIONS) pendingFrameAnimation = name
+    }
+
+    internal fun pickCharacterFrames(uris: List<Uri>) {
+        val name = pendingFrameAnimation ?: return
+        pendingFrameAnimation = null
+        if (busy || uris.isEmpty()) return
+        val currentCount = config.character.animationFrames.values.sumOf { it.size }
+        if (currentCount + uris.size > 100) {
+            error = "El máximo es 100 frames por personaje."
+            return
+        }
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Copiando frames para $name…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val created = mutableListOf<File>()
+                runCatching {
+                    val inputDir = File(app.cacheDir, "inputs").apply { mkdirs() }
+                    uris.map { uri ->
+                        val displayName = MediaTools.displayName(app, uri)
+                        val target = File.createTempFile("frame_", ".png", inputDir).also { created.add(it) }
+                        MediaTools.copyTo(app, uri, target)
+                        if (!MediaTools.isPng(target)) throw IllegalStateException("$displayName no es un PNG válido.")
+                        val size = MediaTools.imageSize(target)
+                            ?: throw IllegalStateException("No se pudo leer $displayName.")
+                        if (size.first !in 1..4096 || size.second !in 1..4096) {
+                            throw IllegalStateException("$displayName supera el máximo de 4096 px por lado.")
+                        }
+                        CharacterFrame(PickedImage(uri, displayName, target.absolutePath), size.first, size.second)
+                    }
+                }.onFailure { created.forEach { it.delete() } }
+            }
+            result.onSuccess { frames ->
+                updateCharacter { draft ->
+                    val all = draft.animationFrames[name].orEmpty() + frames
+                    draft.copy(animationFrames = draft.animationFrames + (name to all))
+                }
+            }.onFailure { error = it.message ?: "No se pudieron importar los frames." }
+            status = ""
+            busy = false
+        }
+    }
 
     // ---------------- Variaciones de personaje ----------------
 

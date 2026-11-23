@@ -1,7 +1,12 @@
 package com.fnfmodmaker.mod
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import com.fnfmodmaker.media.MediaTools
+import com.fnfmodmaker.model.CHARACTER_ANIMATIONS
 import com.fnfmodmaker.model.CharacterDraft
+import com.fnfmodmaker.model.planCharacterAtlas
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.CharacterVariation
 import com.fnfmodmaker.model.ModConfig
@@ -93,61 +98,50 @@ object CharacterBuilder {
             else -> throw IllegalStateException("Tipo de personaje no soportado")
         }
 
-        if (!isVariation && sheet == null) return
-        if (isVariation && sheet == null) {
-            warnings.add("Variación ${charId} no tiene spritesheet, se omite.")
-            return
-        }
-
-        val sheetFile = File(sheet!!.path)
-        if (!MediaTools.isPng(sheetFile)) {
-            throw IllegalStateException("La hoja de sprites de $charId debe ser un PNG válido.")
-        }
-        if (frameWidth <= 0 || frameHeight <= 0) {
-            throw IllegalStateException("El tamaño de frame de $charId debe ser mayor que cero.")
-        }
-        val size = MediaTools.imageSize(sheetFile)
-            ?: throw IllegalStateException("No se pudo leer la hoja de sprites: $charId")
-        val columns = size.first / frameWidth
-        val rows = size.second / frameHeight
-        if (columns <= 0 || rows <= 0) {
-            throw IllegalStateException("La hoja de sprites ($size) es más pequeña que un frame ($frameWidth x $frameHeight).")
-        }
-
-        if (animations.isEmpty()) {
-            throw IllegalStateException("El personaje $charId no tiene animaciones con frames.")
-        }
-        val total = animations.sumOf { it.second }
-        if (total > columns * rows) {
-            throw IllegalStateException("La hoja $charId solo tiene ${columns * rows} frames y las animaciones necesitan $total.")
-        }
-
-        // ---------------- Imagen y XML ----------------
-        onProgress(if (isVariation) "Copiando spritesheet variación: $charId…" else "Copiando la hoja de sprites…")
         val imageTarget = File(root, "images/characters/$charId.png")
         imageTarget.parentFile?.mkdirs()
-        sheetFile.copyTo(imageTarget, overwrite = true)
-
-        onProgress(if (isVariation) "Cortando frames variación: $charId…" else "Cortando la hoja en frames (XML Sparrow)…")
-        val frames = mutableListOf<Frame>()
-        var cursor = 0
-        for ((animation, count) in animations) {
-            val prefix = "$charId $animation"
-            for (index in 0 until count) {
-                val column = cursor % columns
-                val row = cursor / columns
-                frames.add(
-                    Frame(
-                        name = prefix + index.toString().padStart(4, '0'),
-                        x = column * frameWidth,
-                        y = row * frameHeight,
-                        width = frameWidth,
-                        height = frameHeight
-                    )
-                )
-                cursor++
+        val frames = if (charData is CharacterDraft && charData.useIndividualFrames) {
+            onProgress("Creando hoja de sprites a partir de los frames…")
+            packIndividualFrames(charData, charId, imageTarget)
+        } else {
+            if (sheet == null) {
+                if (isVariation) warnings.add("Variación $charId no tiene spritesheet, se omite.")
+                return
+            }
+            val sheetFile = File(sheet.path)
+            if (!MediaTools.isPng(sheetFile)) {
+                throw IllegalStateException("La hoja de sprites de $charId debe ser un PNG válido.")
+            }
+            if (frameWidth <= 0 || frameHeight <= 0) {
+                throw IllegalStateException("El tamaño de frame de $charId debe ser mayor que cero.")
+            }
+            val size = MediaTools.imageSize(sheetFile)
+                ?: throw IllegalStateException("No se pudo leer la hoja de sprites: $charId")
+            val columns = size.first / frameWidth
+            val rows = size.second / frameHeight
+            if (columns <= 0 || rows <= 0) {
+                throw IllegalStateException("La hoja de sprites ($size) es más pequeña que un frame ($frameWidth x $frameHeight).")
+            }
+            if (animations.isEmpty()) throw IllegalStateException("El personaje $charId no tiene animaciones con frames.")
+            val total = animations.sumOf { it.second.toLong() }
+            if (total > columns.toLong() * rows) {
+                throw IllegalStateException("La hoja $charId solo tiene ${columns.toLong() * rows} frames y las animaciones necesitan $total.")
+            }
+            onProgress("Copiando la hoja de sprites…")
+            sheetFile.copyTo(imageTarget, overwrite = true)
+            var cursor = 0
+            buildList {
+                for ((animation, count) in animations) {
+                    for (index in 0 until count) {
+                        add(Frame("$charId $animation" + index.toString().padStart(4, '0'),
+                            (cursor % columns) * frameWidth, (cursor / columns) * frameHeight,
+                            frameWidth, frameHeight))
+                        cursor++
+                    }
+                }
             }
         }
+        onProgress("Generando XML Sparrow…")
 
         val xml = StringBuilder()
         xml.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
@@ -180,6 +174,42 @@ object CharacterBuilder {
                 vsliceCharacterJson(config, charData, charId, iconId, animations, isVariation),
                 Charsets.UTF_8
             )
+        }
+    }
+
+    private fun packIndividualFrames(draft: CharacterDraft, charId: String, output: File): List<Frame> {
+        val ordered = CHARACTER_ANIMATIONS.flatMap { name ->
+            draft.animationFrames[name].orEmpty().mapIndexed { index, frame -> Triple(name, index, frame) }
+        }
+        require(ordered.size <= 100) { "El máximo es 100 frames por personaje." }
+        val sizes = ordered.map { (_, _, frame) ->
+            val file = File(frame.image.path)
+            if (!MediaTools.isPng(file)) throw IllegalStateException("Frame PNG no encontrado o inválido: ${frame.image.displayName}")
+            MediaTools.imageSize(file) ?: throw IllegalStateException("No se pudo leer ${frame.image.displayName}.")
+        }
+        val layout = planCharacterAtlas(sizes)
+            ?: throw IllegalStateException("Los frames no caben en una hoja de 4096 × 4096.")
+        val bitmap = Bitmap.createBitmap(layout.width, layout.height, Bitmap.Config.ARGB_8888)
+        try {
+            val canvas = Canvas(bitmap)
+            val frames = ordered.mapIndexed { cursor, (animation, index, frame) ->
+                val x = cursor % layout.columns * layout.cellWidth
+                val y = cursor / layout.columns * layout.cellHeight
+                val source = BitmapFactory.decodeFile(frame.image.path)
+                    ?: throw IllegalStateException("No se pudo abrir ${frame.image.displayName}.")
+                try {
+                    canvas.drawBitmap(source, x.toFloat(), y.toFloat(), null)
+                } finally {
+                    source.recycle()
+                }
+                Frame("$charId $animation" + index.toString().padStart(4, '0'), x, y, sizes[cursor].first, sizes[cursor].second)
+            }
+            if (!output.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }) {
+                throw IllegalStateException("No se pudo guardar la hoja de sprites.")
+            }
+            return frames
+        } finally {
+            bitmap.recycle()
         }
     }
 
@@ -223,14 +253,15 @@ object CharacterBuilder {
     ): String {
         val animationArray = JSONArray()
         for ((name, _) in animations) {
+            val settings = (charData as? CharacterDraft)?.settingsFor(name)
             animationArray.put(
                 JSONObject()
                     .put("anim", name)
                     .put("name", "$charId $name")
-                    .put("fps", 24)
-                    .put("loop", false)
+                    .put("fps", settings?.fps?.toIntOrNull() ?: 24)
+                    .put("loop", settings?.loop ?: false)
                     .put("indices", JSONArray())
-                    .put("offsets", JSONArray().put(0).put(0))
+                    .put("offsets", JSONArray().put(settings?.offsetX?.toIntOrNull() ?: 0).put(settings?.offsetY?.toIntOrNull() ?: 0))
             )
         }
         val scaleValue: Float
@@ -285,14 +316,15 @@ object CharacterBuilder {
         }
         val animationArray = JSONArray()
         for ((name, _) in animations) {
+            val settings = (charData as? CharacterDraft)?.settingsFor(name)
             animationArray.put(
                 JSONObject()
                     .put("name", name)
                     .put("prefix", "$charId $name")
-                    .put("frameRate", 24)
-                    .put("looped", false)
+                    .put("frameRate", settings?.fps?.toIntOrNull() ?: 24)
+                    .put("looped", settings?.loop ?: false)
                     .put("frameIndices", JSONArray())
-                    .put("offsets", JSONArray().put(0).put(0))
+                    .put("offsets", JSONArray().put(settings?.offsetX?.toIntOrNull() ?: 0).put(settings?.offsetY?.toIntOrNull() ?: 0))
             )
         }
         return JSONObject()

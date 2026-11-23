@@ -135,9 +135,14 @@ Si quieres tu propio personaje en vez de `bf`/`dad`:
 - **Icono de vida** (opcional): la app lo deja en 300x150 con dos frames (normal/perdiendo). Si tu
   imagen ya trae los dos, los respeta. Si no eliges ninguno, se usa el del personaje base.
 
-El editor también está disponible como herramienta independiente. Muestra las dimensiones,
-la cuadrícula y los motivos que impiden exportar; `idle` debe tener al menos un frame y la
-escala debe ser mayor que cero. La hoja debe ser un PNG real, no solo un archivo renombrado.
+El editor también está disponible como herramienta independiente. Puedes trabajar con una
+cuadrícula o elegir **Frames PNG** para importar varios PNG por animación, reordenarlos y
+previsualizarlos. La app genera el PNG y el XML Sparrow, y guarda FPS, bucle y offsets por
+animación en los JSON de Psych y V-Slice. La vista previa no aplica los offsets: compruébalos
+en el juego. El límite es 100 frames y una hoja final de 4096 × 4096 píxeles; si no caben,
+reduce el tamaño o la cantidad de imágenes. `idle` necesita al menos un frame y la escala debe
+ser mayor que cero. Los archivos deben ser PNG reales, no solo archivos renombrados.
+El editor no importa todavía atlas XML existentes ni animaciones personalizadas adicionales.
 
 La app comprueba que los frames quepan en la hoja antes de dejarte continuar, y luego genera
 `images/characters/<id>.png` + `.xml`, `characters/<id>.json` (Psych),

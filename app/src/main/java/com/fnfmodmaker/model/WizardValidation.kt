@@ -18,6 +18,8 @@ fun characterInputProblems(draft: CharacterDraft, fileExists: (String) -> Boolea
 
 /** Una sola validación para navegación, resumen y exportación. */
 fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(it).isFile }): List<WizardIssue> = buildList {
+    if (config.psychScripts.isNotEmpty() && !config.engine.includesPsych) add(WizardIssue(0, "Los scripts Lua necesitan un destino que incluya Psych Engine."))
+    if (config.psychScripts.any { !isValidPsychScript(it.key, it.value) }) add(WizardIssue(0, "Hay un script Psych inválido; elimínalo antes de exportar."))
     if (config.modTitle.isBlank()) add(WizardIssue(0, "Escribe el nombre del mod."))
     if (config.songs.isEmpty()) add(WizardIssue(1, "Añade al menos una canción."))
     val repeated = config.songs.filter { it.songName.isNotBlank() }
@@ -51,3 +53,7 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
     }
     if (config.icon != null && !fileExists(config.icon.path)) add(WizardIssue(3, "Vuelve a elegir el icono del mod."))
 }
+
+/** Scripts are confined to mods/<mod>/scripts/<name>.lua on export. */
+fun isValidPsychScript(name: String, code: String): Boolean =
+    name.matches(Regex("[a-z0-9_-]{1,48}")) && code.isNotBlank() && code.length <= 16000 && !code.contains('\u0000')

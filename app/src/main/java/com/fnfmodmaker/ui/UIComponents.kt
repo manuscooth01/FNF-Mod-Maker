@@ -189,12 +189,13 @@ fun FilterChip(
 fun ToolTopBar(
     title: String,
     subtitle: String = "",
-    onHome: (() -> Unit)? = null
+    onHome: (() -> Unit)? = null,
+    homeLabel: String = "‹ Inicio"
 ) {
     TopAppBar(
         navigationIcon = {
             if (onHome != null) {
-                TextButton(onClick = onHome) { Text("‹ Inicio") }
+                TextButton(onClick = onHome) { Text(homeLabel) }
             }
         },
         title = {

@@ -82,7 +82,8 @@ data class ChartDraft(
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
         // Estimar beats totales desde la última nota
         val lastNoteTime = notes.maxByOrNull { it.endTimeMs }?.endTimeMs ?: 0L
-        val beats = Math.max(1, ((lastNoteTime / beatMs).toInt() + 3) / 4 * 4)
+        // A note exactly on a section boundary belongs to the next section.
+        val beats = Math.max(1, (lastNoteTime / beatMs).toInt() + 1)
         val sectionCount = Math.max(1, (beats + 3) / 4)
         val sections = JSONArray()
 

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -43,6 +44,7 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
     var settingsOpen by rememberSaveable { mutableStateOf(true) }
     var confirmAction by rememberSaveable { mutableStateOf<String?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
+    var confirmApply by rememberSaveable { mutableStateOf(false) }
     Text("Asistente de IA", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Text("Opcional: usa un proveedor HTTPS compatible con la API de OpenAI. Cada proveedor y modelo admite funciones distintas y puede cobrar por uso.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = { settingsOpen = !settingsOpen }) { Text(if (settingsOpen) "Ocultar configuración ↑" else "Configurar proveedor ↓") }
@@ -84,18 +86,22 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
             modifier = Modifier.fillMaxWidth()) { Text("Analizar imagen elegida") }
         OutlinedButton(onClick = { confirmAction = "generate" }, enabled = !vm.aiBusy && vm.aiPrompt.isNotBlank(),
             modifier = Modifier.fillMaxWidth()) { Text("Generar ilustración") }
+        OutlinedButton(onClick = { confirmAction = "propose" }, enabled = !vm.aiBusy && !vm.busy && vm.aiPrompt.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()) { Text(if (vm.tool == Tool.CHARACTER) "Proponer cambios al personaje" else "Proponer cambios al mod") }
+        Text("Las propuestas no modifican nada hasta que revises y apruebes el lote. Necesitan un modelo que admita herramientas.", style = MaterialTheme.typography.labelSmall)
     }
     confirmAction?.let { action ->
         val description = when (action) {
             "analyze" -> "Se enviarán la consulta, los ajustes del personaje y una copia reducida de la imagen elegida al proveedor configurado."
             "generate" -> "Se enviará tu descripción al proveedor configurado para generar una imagen."
+            "propose" -> if (vm.tool == Tool.CHARACTER) "Se enviarán tu petición y los ajustes y animaciones del personaje. No se enviarán imágenes ni archivos." else "Se enviarán tu petición, datos y ajustes del mod, canciones, muestras de notas y nombres de scripts; no se envían audios, imágenes ni el código de los scripts."
             else -> "Se enviarán la consulta y los ajustes del personaje al proveedor configurado; no se enviará ninguna imagen."
         }
         androidx.compose.material3.AlertDialog(onDismissRequest = { confirmAction = null },
             title = { Text("¿Enviar al proveedor de IA?") },
             text = { Text("$description Puede haber cargos y se aplican sus políticas de privacidad.") },
             confirmButton = { TextButton(onClick = {
-                when (action) { "analyze" -> vm.askCharacterAi(true); "generate" -> vm.generateCharacterAiImage(); else -> vm.askCharacterAi(false) }
+                when (action) { "analyze" -> vm.askCharacterAi(true); "generate" -> vm.generateCharacterAiImage(); "propose" -> vm.proposeAiChanges(); else -> vm.askCharacterAi(false) }
                 confirmAction = null
             }) { Text("Enviar") } },
             dismissButton = { TextButton(onClick = { confirmAction = null }) { Text("Cancelar") } })
@@ -103,6 +109,31 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
     if (vm.aiBusy) Text(vm.aiStatus, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
     vm.aiError?.let { Spacer(Modifier.height(8.dp)); MessageCard(it, error = true) }
     vm.aiResult?.let { SectionTitle("Respuesta"); Text(it, style = MaterialTheme.typography.bodyMedium) }
+    vm.aiProposalNotice?.let { Spacer(Modifier.height(8.dp)); MessageCard(it, error = false) }
+    vm.aiProposal?.let { proposal ->
+        SectionTitle("Revisión del lote · ${proposal.items.size} cambios")
+        Text("Aún no se ha aplicado nada. Revisa cada cambio antes de aprobar; los scripts son código ejecutable en Psych.", style = MaterialTheme.typography.bodySmall)
+        Text("Resumen del modelo: ${proposal.summary}", style = MaterialTheme.typography.bodySmall)
+        proposal.items.forEachIndexed { index, item ->
+            var expanded by androidx.compose.runtime.remember(proposal, index) { mutableStateOf(true) }
+            androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { expanded = !expanded }) { Text("${index + 1}. ${item.title} ${if (expanded) "↑" else "↓"}") }
+                    if (expanded) Text(item.details, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { confirmApply = true }, enabled = !vm.aiBusy && !vm.busy) { Text("Aplicar lote") }
+            OutlinedButton(onClick = vm::discardAiProposal, enabled = !vm.aiBusy) { Text("Descartar") }
+        }
+        if (confirmApply) androidx.compose.material3.AlertDialog(onDismissRequest = { confirmApply = false },
+            title = { Text("¿Aplicar todo el lote?") },
+            text = { Text("Se modificarán los datos indicados en el borrador. Los scripts Lua se ejecutarán en Psych al cargar el mod; revisa el código y prueba el resultado. No se modificarán ZIP ya guardados.") },
+            confirmButton = { TextButton(onClick = { vm.applyAiProposal(); confirmApply = false }) { Text("Aplicar") } },
+            dismissButton = { TextButton(onClick = { confirmApply = false }) { Text("Cancelar") } })
+    }
     vm.aiGeneratedFile?.let { path ->
         SectionTitle("Ilustración generada")
         val image by produceState<ImageBitmap?>(initialValue = null, key1 = path) {

@@ -117,7 +117,10 @@ data class ModConfig(
     val icon: PickedImage? = null,
 
     // Charts editados por canción/dificultad (songFolder -> difficulty -> ChartDraft)
-    val charts: Map<String, Map<String, ChartDraft>> = emptyMap()
+    val charts: Map<String, Map<String, ChartDraft>> = emptyMap(),
+
+    /** Scripts Lua de Psych aprobados por el usuario; nunca se ejecutan en la app. */
+    val psychScripts: Map<String, String> = emptyMap()
 ) {
     val hasAnyVocals: Boolean get() = songs.any { it.hasVocals }
 

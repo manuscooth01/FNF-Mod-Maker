@@ -48,7 +48,7 @@ import org.json.JSONObject
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
-enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT, STAGE }
+enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT, STAGE, ASSISTANT }
 
 class WizardViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -77,12 +77,17 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         private set
     var aiSavedImage by mutableStateOf<String?>(null)
         private set
+    var aiProposal by mutableStateOf<com.fnfmodmaker.ai.ProjectProposal?>(null)
+        private set
+    var aiProposalNotice by mutableStateOf<String?>(null)
+        private set
 
     internal fun clearAiKey() { aiKey = "" }
     internal fun clearAiSession() {
         if (aiBusy) return
         aiKey = ""; aiPrompt = ""; aiResult = null; aiError = null
         aiAnalysisFile = null; aiAnalysisName = null; aiGeneratedFile = null; aiSavedImage = null
+        aiProposal = null; aiProposalNotice = null
         File(getApplication<Application>().cacheDir, "ai").deleteRecursively()
     }
 
@@ -169,6 +174,56 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             aiStatus = ""; aiBusy = false
         }
     }
+
+    internal fun proposeAiChanges() {
+        if (aiBusy || busy) return
+        val question = aiPrompt.trim(); val key = aiKey.trim(); val model = aiChatModel.trim(); val baseUrl = aiBaseUrl
+        if (question.isBlank() || question.length > 4000) { aiError = "Escribe una petición de hasta 4000 caracteres."; return }
+        if (key.isBlank() || key.contains('\n') || key.contains('\r')) { aiError = "Introduce una clave API válida en la app."; return }
+        if (model.isBlank()) { aiError = "Indica un modelo compatible con herramientas."; return }
+        val snapshot = config
+        val characterOnly = tool == Tool.CHARACTER
+        val context = com.fnfmodmaker.ai.projectContext(snapshot, characterOnly)
+        aiBusy = true; aiError = null; aiResult = null; aiProposal = null; aiProposalNotice = null
+        aiStatus = "Preparando propuesta…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val response = com.fnfmodmaker.ai.AiClient.propose(baseUrl, key, model, question, context)
+                response to response.arguments?.let { com.fnfmodmaker.ai.ProjectProposalPlanner.plan(snapshot, it, characterOnly) }
+            } }
+            result.onSuccess { (response, proposal) ->
+                aiResult = response.text
+                if (proposal != null && config != snapshot) aiError = "El proyecto cambió mientras se preparaba la propuesta. Vuelve a solicitarla."
+                else if (proposal != null) aiProposal = proposal
+                else aiProposalNotice = "El modelo respondió sin proponer cambios. Comprueba que admite herramientas y pide un cambio concreto."
+            }.onFailure { aiError = if (it is com.fnfmodmaker.ai.AiException) it.message else "No se pudo preparar la propuesta. Comprueba el proveedor y que el modelo admita herramientas." }
+            aiStatus = ""; aiBusy = false
+        }
+    }
+
+    internal fun applyAiProposal() {
+        val proposal = aiProposal ?: return
+        if (busy || aiBusy) return
+        if (config != proposal.base) {
+            aiProposal = null
+            aiError = "El proyecto cambió desde la propuesta. Solicítala de nuevo antes de aplicar."
+            return
+        }
+        config = proposal.result
+        characterSaved = null
+        aiProposal = null
+        aiError = null
+        aiProposalNotice = "Cambios aplicados al borrador. Revisa y prueba el mod antes de exportar."
+        scheduleAutoSave()
+    }
+
+    internal fun discardAiProposal() { if (!aiBusy) { aiProposal = null; aiProposalNotice = "Propuesta descartada; no se cambió el proyecto." } }
+    internal fun removePsychScript(name: String) {
+        if (busy || name !in config.psychScripts) return
+        config = config.copy(psychScripts = config.psychScripts - name)
+        scheduleAutoSave()
+    }
+    internal fun returnToMod() { if (!busy) { forceAutoSave(); tool = Tool.MOD } }
 
     internal fun generateCharacterAiImage() {
         if (aiBusy) return
@@ -1018,6 +1073,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun reset() {
         releaseMediaPlayer()
         config = ModConfig()
+        aiProposal = null
+        aiProposalNotice = null
         activeSongIndex = 0
         activeChartSongIndex = 0
         activeChartDifficulty = "normal"

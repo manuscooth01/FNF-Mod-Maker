@@ -56,6 +56,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
         Tool.AUDIO -> AudioToolScreen(vm)
         Tool.IMPORT -> ImportScreen(vm)
         Tool.STAGE -> StageToolScreen(vm)
+        Tool.ASSISTANT -> ModAiScreen(vm)
     }
 }
 
@@ -459,6 +460,17 @@ internal fun AudioToolScreen(vm: WizardViewModel) {
                 warnings = emptyList(),
                 savedLabel = "Archivo guardado como"
             )
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+internal fun ModAiScreen(vm: WizardViewModel) {
+    Scaffold(containerColor = MaterialTheme.colorScheme.background,
+        topBar = { ToolTopBar("Asistente del mod", "Propuestas con revisión", vm::returnToMod, "‹ Mod") }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            CharacterAiPanel(vm)
             Spacer(Modifier.height(24.dp))
         }
     }

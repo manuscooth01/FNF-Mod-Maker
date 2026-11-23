@@ -169,6 +169,11 @@ object ModBuilder {
         if (config.engine.includesPsych) {
             onProgress("Escribiendo archivos de Psych Engine…")
             writeText(root, "pack.json", JsonBuilders.psychPack(config))
+            for ((name, code) in config.psychScripts) {
+                require(com.fnfmodmaker.model.isValidPsychScript(name, code)) { "Script Psych inválido: $name" }
+                writeText(root, "scripts/$name.lua", code)
+                warnings.add("El script scripts/$name.lua se ejecuta en Psych Engine; revisa su código antes de instalar el mod.")
+            }
 
             for (entry in songEntries) {
                 val song = entry.song

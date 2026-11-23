@@ -94,6 +94,7 @@ internal fun WizardScreen(vm: WizardViewModel) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             WizardProgress(vm.step, !vm.busy, vm::goTo)
+            TextButton(onClick = { vm.openTool(Tool.ASSISTANT) }, enabled = !vm.busy) { Text("✦ Asistente IA del mod") }
             key(vm.step) {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
                     Spacer(Modifier.height(8.dp))
@@ -329,6 +330,23 @@ private fun WizardExportStep(vm: WizardViewModel) {
     InfoLine("Destino", config.engine.label)
     InfoLine("Canciones", config.songs.size.toString())
     InfoLine("Personaje", if (config.character.enabled) config.character.displayName.ifBlank { "Personalizado" } else "Del juego")
+    if (config.psychScripts.isNotEmpty()) {
+        SectionTitle("Scripts Lua para Psych")
+        Text("Estos scripts se ejecutan en el juego. Revísalos antes de instalar el mod.", style = MaterialTheme.typography.bodySmall)
+        config.psychScripts.forEach { (name, code) ->
+            var expanded by androidx.compose.runtime.saveable.rememberSaveable(name) { androidx.compose.runtime.mutableStateOf(false) }
+            var remove by androidx.compose.runtime.saveable.rememberSaveable(name) { androidx.compose.runtime.mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { expanded = !expanded }) { Text("scripts/$name.lua ${if (expanded) "↑" else "↓"}") }
+                TextButton(onClick = { remove = true }, enabled = !vm.busy) { Text("Quitar") }
+            }
+            if (expanded) Text(code, style = MaterialTheme.typography.bodySmall)
+            if (remove) androidx.compose.material3.AlertDialog(onDismissRequest = { remove = false },
+                title = { Text("¿Quitar $name.lua?") }, text = { Text("Se quitará del borrador, no de ZIP ya guardados.") },
+                confirmButton = { TextButton(onClick = { vm.removePsychScript(name); remove = false }) { Text("Quitar") } },
+                dismissButton = { TextButton(onClick = { remove = false }) { Text("Cancelar") } })
+        }
+    }
     Spacer(Modifier.height(14.dp))
     if (vm.validationIssues.isNotEmpty()) WizardIssueCard(vm.validationIssues, vm::resolveIssue)
     else HelpCard("Todo listo para guardar. Después, descomprime el ZIP en la carpeta mods del juego y pruébalo allí.")

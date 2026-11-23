@@ -58,6 +58,11 @@ object AiClient {
         return AiProtocol.parseText(request(AiProtocol.endpoint(base, "chat/completions"), key, body).toString(Charsets.UTF_8))
     }
 
+    fun propose(base: String, key: String, model: String, question: String, context: String): AiProtocol.ProjectResponse {
+        val body = AiProtocol.projectToolsBody(model, question, context)
+        return AiProtocol.parseProjectResponse(request(AiProtocol.endpoint(base, "chat/completions"), key, body).toString(Charsets.UTF_8))
+    }
+
     fun generate(base: String, key: String, model: String, prompt: String, destination: File) {
         val body = AiProtocol.imageBody(model, prompt)
         val result = AiProtocol.parseImage(request(AiProtocol.endpoint(base, "images/generations"), key, body).toString(Charsets.UTF_8))

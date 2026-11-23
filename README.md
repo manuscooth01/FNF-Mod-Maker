@@ -122,6 +122,19 @@ sobre fondo blanco); la generación envía la descripción. Nunca se envía la i
 al pedir solo consejos. Las respuestas son sugerencias y no modifican el personaje automáticamente.
 La ilustración generada se puede guardar como PNG, pero no es un atlas ni una animación terminada.
 
+En el asistente del mod, **Proponer cambios al mod** pide a un modelo compatible con herramientas
+un lote revisable. Puede proponer ajustes de personaje y animación, datos de canciones existentes,
+añadir canciones sin audio, reemplazar notas de una dificultad o añadir/reemplazar scripts Lua
+globales de Psych (`scripts/<nombre>.lua`). Desde la herramienta de personaje independiente solo
+se admiten propuestas de personaje. Antes de enviar se explica que se comparten metadatos del
+proyecto, muestras de notas y nombres de scripts, pero no audio, imágenes ni el código de scripts.
+La app valida el lote y muestra los cambios antes de aprobarlos juntos; si el borrador cambia, la
+propuesta debe solicitarse otra vez. Los scripts son código ejecutable en Psych: revisa todo su
+contenido antes de aprobar, exportar o instalar el mod. La app no los ejecuta ni comprueba que
+funcionen, y no genera scripts para V-Slice. Los charts propuestos no se sincronizan escuchando
+audio y deben revisarse y probarse en el juego. El modelo y proveedor deben admitir herramientas
+(`tool_calls`); algunos servicios compatibles con texto no las admiten.
+
 ## 2. Cómo se usa
 
 El borrador se guarda automáticamente. En Inicio puedes retomarlo o elegir **Empezar un

@@ -172,7 +172,6 @@ fun StepHeader(title: String, subtitle: String) {
     Spacer(Modifier.height(14.dp))
 }
 
-@Composable
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FilterChip(

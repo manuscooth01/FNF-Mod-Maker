@@ -323,7 +323,7 @@ private fun WizardNotesStep(vm: WizardViewModel) {
         androidx.compose.material3.Switch(song.practiceNotes, vm::setActiveSongPracticeNotes, enabled = !vm.busy)
     }
     Spacer(Modifier.height(12.dp))
-    HelpCard("La grabación en vivo crea notas cortas en la dificultad elegida. Puedes pausar, deshacer y quitar notas; comprueba la sincronización y ajusta las notas sostenidas en el editor del juego.")
+    HelpCard("Toca para notas cortas o mantén la flecha para notas largas. Puedes pausar, cambiar su duración, deshacer y quitar notas. Comprueba la sincronización en el juego.")
 }
 
 @Composable

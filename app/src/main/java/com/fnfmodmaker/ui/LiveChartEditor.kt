@@ -13,12 +13,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -39,6 +42,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
@@ -47,11 +53,11 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.fnfmodmaker.R
 import com.fnfmodmaker.model.ALL_DIFFICULTIES
 import com.fnfmodmaker.model.ChartNote
 import com.fnfmodmaker.model.RecordingSnap
@@ -62,6 +68,8 @@ private fun clock(ms: Long): String {
 }
 private val laneColors = listOf(Color(0xFFC479E8), Color(0xFF54C8F4), Color(0xFF62D884), Color(0xFFFF7388))
 private val arrows = listOf("←", "↓", "↑", "→")
+private val arrowIcons = listOf(R.drawable.chart_arrow_back, R.drawable.chart_arrow_downward,
+    R.drawable.chart_arrow_upward, R.drawable.chart_arrow_forward)
 private val arrowNames = listOf("izquierda", "abajo", "arriba", "derecha")
 
 @Composable
@@ -192,7 +200,7 @@ private fun LiveTransport(vm: WizardViewModel) {
         dismissButton = { TextButton(onClick = { confirmPractice = false }) { Text("Cancelar") } })
     val chart = vm.liveChart
     Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
-    LiveTimeline(chart?.notes.orEmpty(), vm.livePositionMs)
+    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs)
     Text("La línea indica el momento actual; arriba: jugador, abajo: rival. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = vm::undoLiveNote, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveUndoCount > 0) { Text("Deshacer último toque") }
@@ -209,17 +217,34 @@ private fun LiveTransport(vm: WizardViewModel) {
 private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     var pending by remember { mutableStateOf<ChartNote?>(null) }
-    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar últimas notas ↑" else "Ver últimas notas ↓") }
+    var editing by remember { mutableStateOf<ChartNote?>(null) }
+    var lengthText by remember { mutableStateOf("") }
+    var editError by remember { mutableStateOf<String?>(null) }
+    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar notas cercanas ↑" else "Editar notas cercanas ↓") }
     if (expanded) {
-        Text("Se muestran hasta las últimas 30 notas por tiempo.", style = MaterialTheme.typography.labelSmall)
-        notes.takeLast(30).asReversed().forEach { note ->
+        Text("Se muestran hasta 30 notas cercanas al punto de reproducción. Pausa y mueve el punto para ver otras.", style = MaterialTheme.typography.labelSmall)
+        notes.sortedBy { kotlin.math.abs(it.timeMs - vm.livePositionMs) }.take(30).sortedBy { it.timeMs }.forEach { note ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("${clock(note.timeMs)}.${(note.timeMs % 1000).toString().padStart(3, '0')} · ${if (note.lane < 4) "Jugador" else "Rival"} ${arrows[note.lane.coerceIn(0, 7) % 4]}${if (note.lengthMs > 0) " · sostenida ${note.lengthMs} ms" else ""}",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { pending = note }, enabled = !vm.livePlaying && !vm.liveLoading) { Text("Quitar") }
+                TextButton(onClick = { editing = note; lengthText = note.lengthMs.toString(); editError = null }, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable) { Text("Duración") }
+                TextButton(onClick = { pending = note }, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable) { Text("Quitar") }
             }
         }
     }
+    editing?.let { note -> AlertDialog(onDismissRequest = { editing = null }, title = { Text("Duración de la nota") },
+        text = { Column {
+            Text("0 ms es una nota corta. Una duración mayor crea un sostenido; no puede pasar del final de la canción ni cubrir otra nota del mismo carril.")
+            OutlinedTextField(value = lengthText, onValueChange = { lengthText = it.filter(Char::isDigit).take(9); editError = null },
+                label = { Text("Duración en milisegundos") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+            editError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        } },
+        confirmButton = { TextButton(onClick = {
+            val length = lengthText.toLongOrNull()
+            if (length != null && vm.editLiveNoteLength(note, length)) editing = null
+            else editError = "Duración inválida o se superpone a otra nota o al final de la canción."
+        }) { Text("Guardar") } },
+        dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancelar") } }) }
     pending?.let { note -> AlertDialog(onDismissRequest = { pending = null }, title = { Text("¿Quitar esta nota?") },
         text = { Text("${clock(note.timeMs)} · ${if (note.lane < 4) "Jugador" else "Rival"} ${arrows[note.lane.coerceIn(0, 7) % 4]}") },
         confirmButton = { TextButton(onClick = { vm.deleteLiveNote(note); pending = null }) { Text("Quitar") } },
@@ -235,10 +260,11 @@ private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long) {
         val windowMs = 6000f
         for (note in notes) {
             val x = size.width / 2f + (note.timeMs - positionMs) / windowMs * size.width
-            if (x in 0f..size.width && note.lane in 0..7) {
+            val endX = x + note.lengthMs / windowMs * size.width
+            if (x <= size.width && endX >= 0f && note.lane in 0..7) {
                 val y = (note.lane + .5f) * laneHeight
-                if (note.lengthMs > 0) drawLine(laneColors[note.lane % 4], Offset(x, y), Offset((x + note.lengthMs / windowMs * size.width).coerceAtMost(size.width), y), laneHeight * .4f)
-                drawCircle(laneColors[note.lane % 4], radius = laneHeight * .34f, center = Offset(x, y))
+                if (note.lengthMs > 0) drawLine(laneColors[note.lane % 4], Offset(x.coerceAtLeast(0f), y), Offset(endX.coerceAtMost(size.width), y), laneHeight * .4f)
+                if (x >= 0f) drawCircle(laneColors[note.lane % 4], radius = laneHeight * .34f, center = Offset(x, y))
             }
         }
         drawLine(Color.White, Offset(size.width / 2f, 0f), Offset(size.width / 2f, size.height), 2f)
@@ -250,14 +276,18 @@ private fun ArrowPad(vm: WizardViewModel) {
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Text(if (vm.liveRecording) "Toca al ritmo · ${if (vm.liveOpponent) "Rival" else "Jugador"}" else "Pulsa Grabar para activar las flechas", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            arrows.forEachIndexed { index, symbol ->
+            arrows.forEachIndexed { index, _ ->
                 val enabled = vm.liveRecording && vm.livePlaying
                 var pressed by remember(enabled) { mutableStateOf(false) }
                 Surface(color = if (pressed) laneColors[index] else laneColors[index].copy(alpha = if (enabled) .35f else .12f),
                     shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f).height(80.dp)
                         .pointerInput(enabled, index) {
                             detectTapGestures(onPress = {
-                                if (enabled) { pressed = true; vm.recordLiveArrow(index); try { tryAwaitRelease() } finally { pressed = false } }
+                                if (enabled) {
+                                    pressed = true
+                                    val id = vm.beginLiveArrow(index)
+                                    try { tryAwaitRelease() } finally { if (id != null) vm.endLiveArrow(index, id); pressed = false }
+                                }
                             })
                         }.semantics {
                             role = Role.Button
@@ -265,10 +295,12 @@ private fun ArrowPad(vm: WizardViewModel) {
                             if (!enabled) disabled()
                             onClick { if (enabled) { vm.recordLiveArrow(index); true } else false }
                         }) {
-                    Box(contentAlignment = Alignment.Center) { Text(symbol, fontSize = 38.sp, color = if (enabled) Color.White else Color.Gray, fontWeight = FontWeight.Bold) }
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(painterResource(arrowIcons[index]), contentDescription = null, modifier = Modifier.size(42.dp), tint = if (enabled) Color.White else Color.Gray)
+                    }
                 }
             }
         }
-        Text("Cada pulsación crea una nota corta. Pausa para deshacer o corregir.", style = MaterialTheme.typography.labelSmall)
+        Text("Toque corto = nota corta. Mantén y suelta para una nota larga (mínimo 120 ms). También puedes editar su duración al pausar.", style = MaterialTheme.typography.labelSmall)
     }
 }

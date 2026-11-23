@@ -47,14 +47,13 @@ herramienta por separado. Hace esto:
 
 Lo que **todavía no** hace (siguiente fase):
 
-- Editor de notas en cuadrícula con notas sostenidas y eventos dentro de la app.
+- Editor de notas en cuadrícula con eventos dentro de la app.
 - Escenarios propios (sprites + JSON).
 - Iconos y animaciones *miss* por personaje (la app usa los de `bf`/`dad`).
 - Importar un mod completo existente para editarlo.
 
-Mientras tanto, el flujo recomendado es: **la app crea el esqueleto y tú charteas en el editor
-que ya trae el juego** (Psych: tecla `7`; V-Slice: menú de debug). Así no peleas con carpetas ni
-JSON, que es justo la parte que nadie te explica.
+Puedes grabar notas en vivo dentro de la app y usar el editor del juego (Psych o V-Slice) para
+las funciones avanzadas que aún faltan, como eventos y edición en cuadrícula.
 
 ---
 
@@ -144,7 +143,11 @@ En canciones y audio usa las pestañas para elegir qué canción editar. En el p
 **Grabación en vivo**, elige canción, dificultad y lado, pulsa Grabar y toca las flechas mientras
 escuchas la instrumental. Las notas se añaden al chart de esa dificultad; puedes pausar, escuchar,
 buscar otro momento, deshacer la última pulsación y quitar notas. Se escuchará solo la instrumental,
-no las voces. Los toques crean notas cortas: para editar sostenidos y eventos usa el editor del juego.
+no las voces. Toca para notas cortas o mantén la flecha al menos 120 ms y suéltala para grabar una
+nota sostenida. Puedes mantener varias flechas a la vez. Al pausar, usa **Editar notas cercanas**
+para cambiar la duración en milisegundos (0 = corta) o quitar una nota. El ajuste al ritmo puede
+redondear la duración hasta cero; prueba otra resolución o edítala. La duración se limita a la
+siguiente nota del mismo carril o al final de la canción. Para eventos usa el editor del juego.
 El ajuste al ritmo es opcional y usa el BPM; la corrección de toque permite compensar latencia.
 Un chart propio reemplaza las notas de práctica automáticas solo en esa dificultad. La corrección
 de toque es independiente del offset de la canción; prueba la sincronización en el motor de destino.
@@ -419,3 +422,5 @@ los archivos se leen y se guardan con el selector de Android (SAF).
 - FFmpegKit: [arthenica/ffmpeg-kit](https://github.com/arthenica/ffmpeg-kit) (LGPL-3.0), reconstruido
   por [maitrungduc1410](https://github.com/maitrungduc1410/ffmpeg-kit).
 - Friday Night Funkin' es propiedad de Funkin' Crew Inc. Esta herramienta no incluye assets del juego.
+
+Referencias y comparación de herramientas: [docs/referencias-herramientas.md](docs/referencias-herramientas.md).

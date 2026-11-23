@@ -351,6 +351,20 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private var liveFocusHeld = false
     private data class LiveUndo(val note: ChartNote, val createdChart: Boolean)
     private val liveUndo = mutableListOf<LiveUndo>()
+    private data class LiveHold(val id: Long, val direction: Int, val note: ChartNote, val pressedAt: Long)
+    private val liveHolds = mutableMapOf<Int, LiveHold>()
+    private var nextLiveHoldId = 0L
+    val livePreviewNotes: List<ChartNote> get() {
+        val chart = liveChart ?: return emptyList()
+        val song = liveSong ?: return chart.notes
+        if (liveHolds.isEmpty()) return chart.notes
+        return chart.notes.map { note ->
+            val hold = liveHolds.values.firstOrNull { it.note == note } ?: return@map note
+            note.copy(lengthMs = com.fnfmodmaker.model.recordedHoldLength(note, hold.pressedAt, livePositionMs,
+                liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, chart.notes))
+        }
+    }
+
     var liveUndoCount by mutableStateOf(0)
         private set
     private val liveAudioManager get() = getApplication<Application>().getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
@@ -441,6 +455,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             }
             player.setOnCompletionListener { mp ->
                 if (livePlayer === mp) {
+                    finishAllLiveHolds(liveDurationMs)
                     livePolling?.cancel(); livePlaying = false; liveRecording = false; liveLoading = false
                     livePositionMs = liveDurationMs; abandonLiveFocus(); forceAutoSave()
                     liveNotice = "Terminó la instrumental. Las notas grabadas están en el borrador."
@@ -486,35 +501,89 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (liveLoading) { closeLiveChart(); return }
         val player = livePlayer
         if (livePlaying && player != null) {
-            runCatching { livePositionMs = player.currentPosition.toLong(); player.pause() }
+            livePositionMs = runCatching { player.currentPosition.toLong() }.getOrDefault(livePositionMs)
+            finishAllLiveHolds(livePositionMs)
+            runCatching { player.pause() }
         }
         livePolling?.cancel(); livePlaying = false; liveRecording = false; abandonLiveFocus()
         forceAutoSave()
     }
     internal fun closeLiveChart() {
         livePolling?.cancel(); livePolling = null
-        val player = livePlayer; livePlayer = null; livePrepared = false
+        val player = livePlayer
+        val finalPosition = if (livePlaying) runCatching { player?.currentPosition?.toLong() }.getOrNull() ?: livePositionMs else livePositionMs
+        finishAllLiveHolds(finalPosition)
+        livePlayer = null; livePrepared = false
         runCatching { player?.release() }
         liveLoading = false; livePlaying = false; liveRecording = false
         abandonLiveFocus()
         forceAutoSave()
     }
-    internal fun recordLiveArrow(direction: Int) {
-        if (!liveRecording || !livePlaying || direction !in 0..3 || !liveChartAvailable) return
-        val song = liveSong ?: return
-        val position = runCatching { livePlayer?.currentPosition?.toLong() }.getOrNull() ?: return
+    /** Starts on pointer down, not on release. Multiple directions can be held at once. */
+    internal fun beginLiveArrow(direction: Int): Long? {
+        if (!liveRecording || !livePlaying || direction !in 0..3 || !liveChartAvailable || direction in liveHolds) return null
+        val song = liveSong ?: return null
+        val position = runCatching { livePlayer?.currentPosition?.toLong() }.getOrNull() ?: return null
         val time = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs)
         val note = ChartNote(timeMs = time, lane = direction + if (liveOpponent) 4 else 0)
         val existing = config.getChart(song.songFolder, liveDifficulty)
         val draft = existing ?: ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
             scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
             player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych)
-        if (draft.notes.size >= 10000) { liveNotice = "Límite de 10 000 notas en esta dificultad."; return }
+        if (draft.notes.size >= 10000) { liveNotice = "Límite de 10 000 notas en esta dificultad."; return null }
         val notes = com.fnfmodmaker.model.appendRecordedNote(draft.notes, note)
-        if (notes == null) { liveNotice = "Ya existe una nota en ese carril y tiempo; no se ha sobrescrito."; return }
+        if (notes == null) { liveNotice = "Ya hay una nota o sostenido en ese carril y tiempo; no se ha sobrescrito."; return null }
         config = config.withChart(song.songFolder, liveDifficulty, draft.copy(notes = notes))
         liveUndo.add(LiveUndo(note, existing == null)); liveUndoCount = liveUndo.size
+        val id = ++nextLiveHoldId
+        liveHolds[direction] = LiveHold(id, direction, note, position)
         liveNotice = null; scheduleAutoSave()
+        return id
+    }
+    internal fun endLiveArrow(direction: Int, id: Long) {
+        val position = runCatching { livePlayer?.currentPosition?.toLong() }.getOrNull() ?: livePositionMs
+        finishLiveHold(direction, id, position)
+    }
+    private fun finishAllLiveHolds(position: Long) {
+        liveHolds.values.toList().forEach { finishLiveHold(it.direction, it.id, position) }
+    }
+    private fun finishLiveHold(direction: Int, id: Long, position: Long) {
+        val hold = liveHolds[direction] ?: return
+        if (hold.id != id) return
+        liveHolds.remove(direction)
+        val song = liveSong ?: return
+        val chart = config.getChart(song.songFolder, liveDifficulty) ?: return
+        val index = chart.notes.indexOf(hold.note)
+        if (index < 0) return
+        val length = com.fnfmodmaker.model.recordedHoldLength(hold.note, hold.pressedAt, position,
+            liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, chart.notes)
+        if (length == 0L) return
+        val updated = hold.note.copy(lengthMs = length)
+        val notes = chart.notes.toMutableList().apply { this[index] = updated }
+        config = config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = notes))
+        val undoIndex = liveUndo.indexOfLast { it.note == hold.note }
+        if (undoIndex >= 0) liveUndo[undoIndex] = liveUndo[undoIndex].copy(note = updated)
+        val desired = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs) - hold.note.timeMs
+        if (length < desired) liveNotice = "Sostenido limitado para no cubrir otra nota del mismo carril."
+        scheduleAutoSave()
+    }
+    /** Accessibility click remains a short note; duration can be edited afterwards. */
+    internal fun recordLiveArrow(direction: Int) {
+        val id = beginLiveArrow(direction) ?: return
+        endLiveArrow(direction, id)
+    }
+    internal fun editLiveNoteLength(note: ChartNote, length: Long): Boolean {
+        if (livePlaying || liveLoading || !liveChartAvailable || length < 0) return false
+        val song = liveSong ?: return false
+        val chart = config.getChart(song.songFolder, liveDifficulty) ?: return false
+        val index = chart.notes.indexOf(note)
+        if (index < 0 || com.fnfmodmaker.model.safeHoldLength(note, length, liveDurationMs, chart.notes) != length) return false
+        val replacement = note.copy(lengthMs = length)
+        config = config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = chart.notes.toMutableList().apply { this[index] = replacement }))
+        val undoIndex = liveUndo.indexOfLast { it.note == note }
+        if (undoIndex >= 0) liveUndo[undoIndex] = liveUndo[undoIndex].copy(note = replacement)
+        liveNotice = "Duración actualizada."; scheduleAutoSave()
+        return true
     }
     internal fun undoLiveNote() {
         if (livePlaying || liveLoading || liveUndo.isEmpty()) return

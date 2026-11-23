@@ -50,4 +50,38 @@ class LiveRecordingTest {
         val normalPsych = org.json.JSONObject(com.fnfmodmaker.mod.JsonBuilders.psychChart(restored, song, 5000, "normal"))
         assertEquals(0, normalPsych.getJSONArray("notes").getJSONObject(0).getJSONArray("sectionNotes").length())
     }
+    @Test fun holdsMeasureAudioClockAndKeepShortTapsShort() {
+        val note = ChartNote(1000, 0)
+        assertEquals(0L, recordedHoldLength(note, 1000, 1119, 0, 120, RecordingSnap.FREE, 5000, listOf(note)))
+        assertEquals(500L, recordedHoldLength(note, 1000, 1500, 0, 120, RecordingSnap.FREE, 5000, listOf(note)))
+        // Both start and end are corrected and snapped to the same beat grid.
+        val snapped = ChartNote(recordedNoteTime(1010, -10, 120, RecordingSnap.HALF_BEAT, 5000), 1)
+        assertEquals(500L, recordedHoldLength(snapped, 1010, 1510, -10, 120, RecordingSnap.HALF_BEAT, 5000, listOf(snapped)))
+        assertEquals(0L, recordedHoldLength(snapped, 1010, 1130, -10, 120, RecordingSnap.HALF_BEAT, 5000, listOf(snapped)))
+    }
+
+    @Test fun sustainsDoNotOverlapOtherNotesAndRespectSongEnd() {
+        val note = ChartNote(1000, 0)
+        val next = ChartNote(1500, 0)
+        val chord = ChartNote(1100, 1)
+        val notes = listOf(note, next, chord)
+        assertEquals(500L, recordedHoldLength(note, 1000, 2500, 0, 120, RecordingSnap.FREE, 5000, notes))
+        assertEquals(200L, safeHoldLength(note, 5000, 1200, notes))
+        assertNull(appendRecordedNote(listOf(ChartNote(1000, 0, 500)), ChartNote(1200, 0)))
+        assertNotNull(appendRecordedNote(listOf(ChartNote(1000, 0, 500)), ChartNote(1500, 0)))
+        assertNotNull(appendRecordedNote(listOf(ChartNote(1000, 0, 500)), ChartNote(1200, 1)))
+    }
+
+    @Test fun heldNotesPersistAndExportAsDurationsNotExtraNotes() {
+        val note = ChartNote(300, 7)
+        val hold = note.copy(lengthMs = recordedHoldLength(note, 300, 1050, 0, 120, RecordingSnap.FREE, 5000, listOf(note)))
+        val chart = ChartDraft(bpm = 120, notes = listOf(hold))
+        val gson = com.google.gson.Gson()
+        val restored = gson.fromJson(gson.toJson(chart), ChartDraft::class.java)
+        assertEquals(750L, restored.notes.single().lengthMs)
+        val vNote = restored.toVSliceNotes().getJSONObject(0)
+        assertEquals(750, vNote.getInt("l")); assertEquals(7, vNote.getInt("d"))
+        val psych = org.json.JSONObject(restored.toPsychJson()).getJSONArray("notes").getJSONObject(0).getJSONArray("sectionNotes")
+        assertEquals(1, psych.length()); assertEquals(750, psych.getJSONArray(0).getInt(2))
+    }
 }

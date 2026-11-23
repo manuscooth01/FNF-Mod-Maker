@@ -539,7 +539,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (draft.notes.size >= 10000) { liveNotice = "Límite de 10 000 notas en esta dificultad."; return null }
         val notes = com.fnfmodmaker.model.appendRecordedNote(draft.notes, note)
         if (notes == null) { liveNotice = "Ya hay una nota o sostenido en ese carril y tiempo; no se ha sobrescrito."; return null }
-        config = config.withChart(song.songFolder, liveDifficulty, draft.copy(notes = notes))
+        storeLiveChartTransition(existing, draft.copy(notes = notes))
         liveUndo.add(LiveUndo(note, existing == null)); liveUndoCount = liveUndo.size
         val id = ++nextLiveHoldId
         liveHolds[direction] = LiveHold(id, direction, note, position)
@@ -566,7 +566,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (length == 0L) return
         val updated = hold.note.copy(lengthMs = length)
         val notes = chart.notes.toMutableList().apply { this[index] = updated }
-        config = config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = notes))
+        storeLiveChartTransition(chart, chart.copy(notes = notes))
         val undoIndex = liveUndo.indexOfLast { it.note == hold.note }
         if (undoIndex >= 0) liveUndo[undoIndex] = liveUndo[undoIndex].copy(note = updated)
         val desired = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs) - hold.note.timeMs
@@ -585,7 +585,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val index = chart.notes.indexOf(note)
         if (index < 0 || com.fnfmodmaker.model.safeHoldLength(note, length, liveDurationMs, chart.notes) != length) return false
         val replacement = note.copy(lengthMs = length)
-        config = config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = chart.notes.toMutableList().apply { this[index] = replacement }))
+        storeLiveChartTransition(chart, chart.copy(notes = chart.notes.toMutableList().apply { this[index] = replacement }))
         val undoIndex = liveUndo.indexOfLast { it.note == note }
         if (undoIndex >= 0) liveUndo[undoIndex] = liveUndo[undoIndex].copy(note = replacement)
         liveNotice = "Duración actualizada."; scheduleAutoSave()
@@ -598,8 +598,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val action = liveUndo.last()
         val notes = com.fnfmodmaker.model.removeRecordedNote(chart.notes, action.note) ?: return
         liveUndo.removeAt(liveUndo.lastIndex); liveUndoCount = liveUndo.size
-        config = if (action.createdChart && notes.isEmpty()) removeChartFromConfig(config, song.songFolder, liveDifficulty)
-            else config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = notes))
+        storeLiveChartTransition(chart, if (action.createdChart && notes.isEmpty()) null else chart.copy(notes = notes))
         liveNotice = "Se deshizo la última nota grabada en esta sesión."; scheduleAutoSave()
     }
     internal fun deleteLiveNote(note: ChartNote) {
@@ -607,24 +606,29 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val song = liveSong ?: return
         val chart = config.getChart(song.songFolder, liveDifficulty) ?: return
         val notes = com.fnfmodmaker.model.removeRecordedNote(chart.notes, note) ?: return
-        config = config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = notes))
+        storeLiveChartTransition(chart, chart.copy(notes = notes))
         liveUndo.removeAll { it.note == note }; liveUndoCount = liveUndo.size
         liveNotice = "Nota eliminada."; scheduleAutoSave()
     }
-    // Grid edits have their own bounded undo stack; never share stale live-recording undo entries.
-    private val gridHistory = com.fnfmodmaker.model.GridUndoHistory()
-    var gridUndoCount by mutableStateOf(0)
-        private set
-    var gridRedoCount by mutableStateOf(0)
-        private set
+    // Histories live inside the same atomic project snapshot as the charts.
+    val gridUndoCount: Int get() = currentGridHistory().undo.size
+    val gridRedoCount: Int get() = currentGridHistory().redo.size
     private var gridSessionKey: Pair<String, String>? = null
-    internal fun beginGridSession() {
-        gridHistory.clear(); gridUndoCount = 0; gridRedoCount = 0
-        gridSessionKey = liveSong?.songFolder?.let { it to liveDifficulty }
+    private fun currentGridHistory(): com.fnfmodmaker.model.ChartPersistentHistory =
+        config.chartHistories[liveSong?.songFolder]?.get(liveDifficulty) ?: com.fnfmodmaker.model.ChartPersistentHistory()
+    private fun withHistory(value: ModConfig, folder: String, difficulty: String, history: com.fnfmodmaker.model.ChartPersistentHistory): ModConfig =
+        value.copy(chartHistories = value.chartHistories + (folder to (value.chartHistories[folder].orEmpty() + (difficulty to history))))
+    private fun storeLiveChartTransition(before: ChartDraft?, after: ChartDraft?) {
+        val song = liveSong ?: return
+        val history = com.fnfmodmaker.model.recordChartHistory(currentGridHistory(), before, after)
+        val updated = if (after == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
+            else config.withChart(song.songFolder, liveDifficulty, after)
+        config = withHistory(updated, song.songFolder, liveDifficulty, history)
     }
+    internal fun beginGridSession() { gridSessionKey = liveSong?.songFolder?.let { it to liveDifficulty } }
     internal fun endGridSession() {
         if (livePlaying || liveLoading) pauseLivePlayback()
-        gridHistory.clear(); gridUndoCount = 0; gridRedoCount = 0; gridSessionKey = null; forceAutoSave()
+        gridSessionKey = null; forceAutoSave()
     }
     private fun gridSessionMatches(): Boolean = gridSessionKey != null && gridSessionKey == liveSong?.songFolder?.let { it to liveDifficulty }
     internal fun applyGridNote(original: ChartNote?, replacement: ChartNote?): Boolean =
@@ -642,10 +646,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val notes = com.fnfmodmaker.model.replaceGridNotes(draft.notes, originals, replacements, liveDurationMs)
         if (notes == null) { liveNotice = "Cambio cancelado: selección obsoleta, límite de notas, colisión o fuera de la canción."; return false }
         if (notes == draft.notes) return false
-        gridHistory.push(existing); gridUndoCount = gridHistory.size; gridRedoCount = gridHistory.redoSize
+        val updated = draft.copy(notes = notes)
         liveUndo.clear(); liveUndoCount = 0
-        config = config.withChart(song.songFolder, liveDifficulty, draft.copy(notes = notes))
-        liveNotice = "Cambio guardado en el borrador."; scheduleAutoSave()
+        storeLiveChartTransition(existing, updated)
+        liveNotice = "Cambio en el borrador; guardando proyecto…"; scheduleAutoSave(); forceAutoSave()
         return true
     }
     internal fun undoGridEdit() = restoreGridHistory(redo = false)
@@ -654,17 +658,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (!gridSessionMatches() || busy || liveRecording || liveLoading || !liveChartAvailable) return
         val song = liveSong ?: return
         val current = config.getChart(song.songFolder, liveDifficulty)
-        val entry = (if (redo) gridHistory.redo(current) else gridHistory.undo(current)) ?: return
-        gridUndoCount = gridHistory.size; gridRedoCount = gridHistory.redoSize
-        config = if (entry.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
-            else config.withChart(song.songFolder, liveDifficulty, entry.chart)
-        liveNotice = if (redo) "Se rehízo el último cambio de la cuadrícula." else "Se deshizo el último cambio de la cuadrícula."
-        scheduleAutoSave()
+        val result = com.fnfmodmaker.model.restoreChartHistory(currentGridHistory(), current, redo)
+        if (result == null) { liveNotice = "No se pudo restaurar: el chart cambió fuera de este historial."; return }
+        val updated = if (result.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
+            else config.withChart(song.songFolder, liveDifficulty, result.chart)
+        config = withHistory(updated, song.songFolder, liveDifficulty, result.history)
+        liveNotice = if (redo) "Se rehízo el cambio." else "Se deshizo el cambio."
+        scheduleAutoSave(); forceAutoSave()
     }
     internal fun deleteLiveCustomChart() {
         if (livePlaying || liveLoading) return
         val song = liveSong ?: return
-        config = removeChartFromConfig(config, song.songFolder, liveDifficulty)
+        storeLiveChartTransition(config.getChart(song.songFolder, liveDifficulty), null)
         liveUndo.clear(); liveUndoCount = 0
         liveNotice = "Se eliminó el chart personalizado de esta dificultad."; scheduleAutoSave()
     }
@@ -693,7 +698,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             else -> activeSongIndex
         }
         activeChartSongIndex = activeChartSongIndex.coerceIn(0, updated.lastIndex)
-        config = config.copy(songs = updated, charts = if (updated.any { it.songFolder == removedFolder }) config.charts else config.charts - removedFolder)
+        config = config.copy(songs = updated, charts = if (updated.any { it.songFolder == removedFolder }) config.charts else config.charts - removedFolder,
+            chartHistories = if (updated.any { it.songFolder == removedFolder }) config.chartHistories else config.chartHistories - removedFolder)
         scheduleAutoSave()
     }
 
@@ -1605,6 +1611,36 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 chart.asJsonObject.get("notes")?.let { notes ->
                     require(notes.isJsonArray) { "Notas inválidas." }
                     notes.asJsonArray.forEach { n -> require(n.isJsonObject); compare(n.asJsonObject, autoSaveGson.toJsonTree(ChartNote()).asJsonObject) }
+                }
+            }
+        }
+        value.get("chartHistories")?.let { all ->
+            require(all.isJsonObject && all.asJsonObject.size() <= 256) { "Historial inválido." }
+            all.asJsonObject.entrySet().forEach { (_, perSong) ->
+                require(perSong.isJsonObject && perSong.asJsonObject.size() <= 16) { "Historial de canción inválido." }
+                perSong.asJsonObject.entrySet().forEach { (_, item) ->
+                    require(item.isJsonObject) { "Historial de dificultad inválido." }
+                    var noteCount = 0
+                    listOf("undo", "redo").forEach { key ->
+                        val stack = item.asJsonObject.get(key) ?: return@forEach
+                        require(stack.isJsonArray && stack.asJsonArray.size() <= 50) { "Historial demasiado grande." }
+                        stack.asJsonArray.forEach { entry ->
+                            require(entry.isJsonObject) { "Entrada de historial inválida." }
+                            val e = entry.asJsonObject
+                            listOf("beforeHash", "afterHash").forEach { h -> require(e.get(h)?.asString?.matches(Regex("[0-9a-f]{64}")) == true) { "Huella de historial inválida." } }
+                            listOf("added", "removed").forEach { n ->
+                                val notes = e.get(n); require(notes != null && notes.isJsonArray) { "Notas de historial inválidas." }
+                                noteCount += notes.asJsonArray.size()
+                                notes.asJsonArray.forEach { note -> require(note.isJsonObject); compare(note.asJsonObject, autoSaveGson.toJsonTree(ChartNote()).asJsonObject) }
+                            }
+                            listOf("beforeTemplate", "afterTemplate").forEach { t -> e.get(t)?.let { template ->
+                                require(template.isJsonObject) { "Plantilla de historial inválida." }
+                                compare(template.asJsonObject, configJsonChartTemplate())
+                                require(template.asJsonObject.get("notes")?.asJsonArray?.size() == 0) { "Plantilla de historial inválida." }
+                            } }
+                        }
+                    }
+                    require(noteCount <= 40000) { "Historial demasiado grande." }
                 }
             }
         }

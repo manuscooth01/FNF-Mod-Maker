@@ -76,6 +76,28 @@ class PortableProjectTest {
         assertEquals(2, store.list().size)
     }
 
+    @Test fun projectRoundTripAndRecoveryKeepChartAndHistoryTogether() {
+        val (store, pair) = fixture(temp.root); val (id, original) = pair
+        val config = original.deepCopy()
+        val history = com.fnfmodmaker.model.recordChartHistory(com.fnfmodmaker.model.ChartPersistentHistory(), null,
+            com.fnfmodmaker.model.ChartDraft(songFolder = "song", notes = listOf(com.fnfmodmaker.model.ChartNote(125, 2, 500))))
+        config.add("chartHistories", com.google.gson.JsonParser.parseString("{\"song\":{\"normal\":${com.google.gson.Gson().toJson(history)}}}"))
+        store.save(id, config)
+        val portable = PortableProject(temp.root); val archive = File(temp.root, "with-history.fnfproject")
+        portable.export(config, store.assets(id), archive)
+        val imported = store.publishImport(portable.prepare(archive, store.newImportStage()), portable) { }
+        val loaded = store.load(imported).config
+        assertEquals(config.get("charts"), loaded.get("charts"))
+        assertEquals(config.get("chartHistories"), loaded.get("chartHistories"))
+        val file = File(temp.root, "projects/$id/project.json")
+        // A completed save became the backup when the next write was interrupted.
+        store.save(id, config.deepCopy().apply { addProperty("modTitle", "Next") })
+        assertTrue(file.delete()); File(file.parentFile, "project.json.tmp").writeText("incomplete")
+        val recovered = store.load(id).config
+        assertEquals(config.get("charts"), recovered.get("charts"))
+        assertEquals(config.get("chartHistories"), recovered.get("chartHistories"))
+    }
+
     private fun zip(file: File, contents: List<Pair<String, ByteArray>>) {
         ZipOutputStream(file.outputStream()).use { out -> contents.forEach { (name, bytes) -> out.putNextEntry(ZipEntry(name)); out.write(bytes); out.closeEntry() } }
     }

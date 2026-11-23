@@ -118,6 +118,8 @@ data class ModConfig(
 
     // Charts editados por canción/dificultad (songFolder -> difficulty -> ChartDraft)
     val charts: Map<String, Map<String, ChartDraft>> = emptyMap(),
+    // Editable project only; never emitted in engine mod ZIPs.
+    val chartHistories: Map<String, Map<String, ChartPersistentHistory>> = emptyMap(),
 
     /** Scripts Lua de Psych aprobados por el usuario; nunca se ejecutan en la app. */
     val psychScripts: Map<String, String> = emptyMap()

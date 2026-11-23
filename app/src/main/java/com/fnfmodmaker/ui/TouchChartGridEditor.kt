@@ -191,7 +191,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
     if (showButtonEditor && !multiMode) GridButtonEditor(grid, page, notes, selected, onClose = { showButtonEditor = false },
         onSelect = { selected = it }, onChange = { old, new -> if (vm.applyGridNote(old, new)) { selected = new; showButtonEditor = false } else { showButtonEditor = false } })
     if (confirmDelete && (selected != null || group.isNotEmpty())) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text(if (multiMode) "¿Quitar ${group.size} notas?" else "¿Quitar esta nota?") },
-        text = { Text("Puedes deshacer esta acción mientras la cuadrícula esté abierta.") },
+        text = { Text("Puedes deshacer esta acción desde el historial de esta canción y dificultad.") },
         confirmButton = { TextButton(onClick = {
             if (multiMode) { if (vm.applyGridChanges(group.toList(), emptyList())) group = emptySet() }
             else if (vm.applyGridNote(selected, null)) selected = null

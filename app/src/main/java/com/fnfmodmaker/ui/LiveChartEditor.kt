@@ -126,7 +126,7 @@ internal fun LiveChartEditor(vm: WizardViewModel, onClose: () -> Unit) {
         }
     }
     if (confirmGridPractice) AlertDialog(onDismissRequest = { confirmGridPractice = false }, title = { Text("Crear un chart propio") },
-        text = { Text("Al añadir la primera nota, las notas de práctica dejarán de generarse para esta dificultad. Las otras dificultades no cambian. Puedes deshacer mientras la cuadrícula esté abierta o borrar el chart propio para recuperarlas.") },
+        text = { Text("Al añadir la primera nota, las notas de práctica dejarán de generarse para esta dificultad. Las otras dificultades no cambian. Puedes deshacer desde la cuadrícula o borrar el chart propio para recuperarlas.") },
         confirmButton = { TextButton(onClick = { confirmGridPractice = false; showGrid = true }) { Text("Continuar") } },
         dismissButton = { TextButton(onClick = { confirmGridPractice = false }) { Text("Cancelar") } })
     if (showGrid) TouchChartGridEditor(vm, onClose = { showGrid = false })

@@ -25,7 +25,11 @@ import com.fnfmodmaker.model.TouchGrid
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
+// Some phones cannot allocate three codecs at once; retain only compact envelopes.
+private val waveformDecoderPermit = Semaphore(1)
 private sealed interface WaveState {
     data object Loading : WaveState
     data class Ready(val values: FloatArray) : WaveState
@@ -48,7 +52,7 @@ private fun WaveRow(label: String, audio: PickedAudio, durationMs: Long, relativ
     val sourceDuration = audio.durationMs.takeIf { it > 0 } ?: (durationMs + kotlin.math.abs(relativeOffset.toLong()))
     val state by produceState<WaveState>(WaveState.Loading, audio.path, sourceDuration) {
         value = WaveState.Loading
-        try { value = WaveState.Ready(withContext(Dispatchers.IO) { decodeWaveform(audio.path, sourceDuration) }) }
+        try { value = WaveState.Ready(withContext(Dispatchers.IO) { waveformDecoderPermit.withPermit { decodeWaveform(audio.path, sourceDuration) } }) }
         catch (e: CancellationException) { throw e }
         catch (e: Exception) { value = WaveState.Failed(e.message ?: "No se pudo leer la onda.") }
     }

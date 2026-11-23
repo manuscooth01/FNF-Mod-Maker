@@ -55,7 +55,7 @@ Las pruebas cubren ida y vuelta, duplicación, rutas peligrosas, entradas duplic
 recursos dañados/ausentes y limpieza de importaciones interrumpidas. Falta verificación del flujo SAF
 y de la restauración entre teléfonos físicos.
 
-## Avance de Chart Studio
+## Avance de Chart Studio 2.0 (histórico)
 
 La cuadrícula incorpora operaciones atómicas de grupos, tiempo exacto, edición durante escucha
 y onda general de pista mediante decodificación por streaming. El historial sigue siendo de sesión.
@@ -63,3 +63,17 @@ Los charts activos con eventos, secciones personalizadas, colas independientes o
 se bloquean en la validación y el serializador: los datos siguen en el proyecto editable. La onda
 y los gestos requieren prueba en Android; no se han validado mods exportados en los motores.
 Cambios de tempo, adaptadores reales de eventos, tipos de nota y voces sincronizadas siguen pendientes.
+
+## Avance de Chart Studio 2.1
+
+El proyecto guarda historial por canción y dificultad con deltas acotados en el mismo JSON que
+el chart; una huella impide aplicar una acción a datos cambiados externamente. Hay respaldo y
+recuperación del proyecto, pero un cierre forzado antes de terminar la escritura puede perder el
+último cambio pendiente. La copia `.fnfproject` incluye ambos. El mod `.zip` no incluye historial.
+
+La cuadrícula muestra ondas simultáneas mediante decodificación secuencial, con el mismo eje y
+offsets de previsualización. La escucha usa la instrumental como reloj y alinea pistas de voz con
+MediaPlayer y corrección de deriva; esto NO ofrece sincronización a nivel de muestras. El volumen,
+silencio y offsets son ajustes del editor, no transforman el audio exportado. El cálculo y la
+serialización tienen pruebas unitarias, pero MediaCodec, MediaPlayer, latencia, foco de audio y
+sincronización aún necesitan pruebas instrumentadas o físicas en varios dispositivos Android.

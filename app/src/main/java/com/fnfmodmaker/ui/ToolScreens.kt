@@ -360,6 +360,8 @@ internal fun CharacterToolScreen(vm: WizardViewModel) {
 @Composable
 internal fun AudioToolScreen(vm: WizardViewModel) {
     val audio = vm.toolAudio
+    val preview = rememberAudioPreview()
+    androidx.compose.runtime.LaunchedEffect(audio?.path, vm.busy) { preview.stop() }
 
     val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickToolAudio(uri)
@@ -443,6 +445,9 @@ internal fun AudioToolScreen(vm: WizardViewModel) {
                     }
                 }
             }
+
+            if (audio != null) AudioPreviewControls(preview, audio, !vm.busy)
+            preview.error?.let { MessageCard(it, error = true) }
 
             if (audio != null && audio.durationMs > 0L) {
                 Spacer(Modifier.height(8.dp))

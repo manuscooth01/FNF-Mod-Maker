@@ -443,3 +443,19 @@ solo se exportan para Psych y necesitan revisión y prueba.
 
 Los assets oficiales de FNF no se redistribuyen: puedes seleccionar imágenes propias. Los iconos
 de interfaz descargados, su procedencia y licencia están en `third_party/material-icons/`.
+
+## Vistas previas y referencia de plantilla
+
+El paso Canciones muestra una composición orientativa del escenario con fondo, siluetas y zoom;
+no reproduce las posiciones exactas ni sustituye la prueba dentro del juego. El espacio de personaje
+muestra la animación y las posiciones de referencia; el icono elegido tiene miniatura. En Audio se
+pueden escuchar instrumental y voces **por separado** y buscar dentro de cada pista. La herramienta
+independiente de conversión también permite escuchar el archivo original; no reproduce el OGG
+convertido. En Notas hay una vista general del chart personalizado por dificultad y el grabador
+muestra la línea de tiempo. No son un playtest y no muestran notas de práctica generadas.
+
+La página de [Funkin' Modding Template](https://gamebanana.com/tools/21719), de Fmale3k, lo presenta
+como una plantilla de carpetas para V-Slice 0.8.6–0.8.8 que se extrae en `mods/`; requiere experiencia
+o tutoriales. Se usó como referencia de flujo, no se ha incluido ni analizado su ZIP ni se ha
+verificado que nuestro ZIP sea idéntico o compatible con esas versiones específicas. El contenido
+oficial de FNF sigue sin redistribuirse; los usuarios pueden elegir sus propios recursos.

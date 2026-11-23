@@ -2,15 +2,6 @@ package com.fnfmodmaker.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import android.graphics.BitmapFactory
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.foundation.layout.heightIn
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import com.fnfmodmaker.model.hasUnsupportedFeatures
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,20 +39,7 @@ internal fun SimpleStagePanel(vm: WizardViewModel) {
                 Field("Nombre corto del escenario", stage.stageId, vm::setStageId, hint = "La app usará el ID ${stage.stageFolder}.", enabled = !vm.busy)
                 Button(onClick = { picker.launch(arrayOf("image/png", "image/jpeg")) }, enabled = !vm.busy) { Text("Elegir imagen de fondo") }
                 Text(stage.backgroundImage?.displayName ?: "Aún no has elegido un fondo.", style = MaterialTheme.typography.bodySmall)
-                stage.backgroundImage?.path?.let { path ->
-                    val preview by produceState<ImageBitmap?>(initialValue = null, key1 = path) {
-                        value = withContext(Dispatchers.IO) {
-                            runCatching {
-                                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                                BitmapFactory.decodeFile(path, bounds)
-                                var sample = 1
-                                while (bounds.outWidth / sample > 800 || bounds.outHeight / sample > 600) sample *= 2
-                                BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })?.asImageBitmap()
-                            }.getOrNull()
-                        }
-                    }
-                    preview?.let { Image(it, contentDescription = "Vista previa del fondo elegido, sin personajes", modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp)) }
-                }
+                StageScenePreview(stage.backgroundImage?.path, stage.cameraPosition.zoom)
                 Text("Encuadre inicial: ${stage.cameraPosition.zoom}", fontWeight = FontWeight.SemiBold)
                 Row {
                     listOf("Amplio" to 0.7f, "Normal" to 1f, "Cerca" to 1.3f).forEach { (label, zoom) ->

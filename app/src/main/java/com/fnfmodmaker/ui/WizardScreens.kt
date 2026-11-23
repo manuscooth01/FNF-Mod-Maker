@@ -277,7 +277,8 @@ private fun WizardCharacterStep(vm: WizardViewModel, config: com.fnfmodmaker.mod
 }
 
 @Composable
-private fun AudioPicker(label: String, detail: String?, required: Boolean, busy: Boolean, onPick: () -> Unit, onClear: () -> Unit) {
+private fun AudioPicker(label: String, detail: String?, required: Boolean, busy: Boolean, onPick: () -> Unit,
+    preview: @Composable (() -> Unit)? = null, onClear: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
@@ -287,6 +288,7 @@ private fun AudioPicker(label: String, detail: String?, required: Boolean, busy:
                 OutlinedButton(onClick = onPick, enabled = !busy) { Text(if (detail == null) "Elegir archivo" else "Cambiar") }
                 if (detail != null) TextButton(onClick = onClear, enabled = !busy) { Text("Quitar") }
             }
+            preview?.invoke()
         }
     }
     Spacer(Modifier.height(10.dp))
@@ -298,12 +300,20 @@ private fun WizardAudioStep(vm: WizardViewModel, onPickInstrumental: () -> Unit,
     StepHeader("Añade el audio", "Selecciona cada canción y su instrumental. Las voces son opcionales.")
     SongSelector(vm)
     val song = vm.activeSong
-    AudioPicker("Instrumental", song.instrumental?.let { "${it.displayName} · ${it.prettyDuration}" }, true, vm.busy, onPickInstrumental) { vm.clearSongAudio(AudioSlot.INSTRUMENTAL) }
-    AudioPicker("Voz del jugador", song.vocalsPlayer?.let { "${it.displayName} · ${it.prettyDuration}" }, false, vm.busy, onPickPlayer) { vm.clearSongAudio(AudioSlot.VOICES_PLAYER) }
-    AudioPicker("Voz del rival", song.vocalsOpponent?.let { "${it.displayName} · ${it.prettyDuration}" }, false, vm.busy, onPickOpponent) { vm.clearSongAudio(AudioSlot.VOICES_OPPONENT) }
+    val preview = rememberAudioPreview()
+    androidx.compose.runtime.LaunchedEffect(vm.activeSongIndex, song.instrumental?.path, song.vocalsPlayer?.path, song.vocalsOpponent?.path, vm.busy) { preview.stop() }
+    Text("Escucha cada pista por separado antes de exportar.", style = MaterialTheme.typography.bodySmall)
+    AudioPicker("Instrumental", song.instrumental?.let { "${it.displayName} · ${it.prettyDuration}" }, true, vm.busy, onPickInstrumental,
+        preview = { song.instrumental?.let { AudioPreviewControls(preview, it, !vm.busy) } }) { vm.clearSongAudio(AudioSlot.INSTRUMENTAL) }
+    AudioPicker("Voz del jugador", song.vocalsPlayer?.let { "${it.displayName} · ${it.prettyDuration}" }, false, vm.busy, onPickPlayer,
+        preview = { song.vocalsPlayer?.let { AudioPreviewControls(preview, it, !vm.busy) } }) { vm.clearSongAudio(AudioSlot.VOICES_PLAYER) }
+    AudioPicker("Voz del rival", song.vocalsOpponent?.let { "${it.displayName} · ${it.prettyDuration}" }, false, vm.busy, onPickOpponent,
+        preview = { song.vocalsOpponent?.let { AudioPreviewControls(preview, it, !vm.busy) } }) { vm.clearSongAudio(AudioSlot.VOICES_OPPONENT) }
+    preview.error?.let { MessageCard(it, error = true) }
     HelpCard("Se aceptan audios compatibles con el dispositivo; al exportar se convierten a OGG cuando sea necesario.")
     SectionTitle("Icono del mod")
-    AudioPicker("Imagen", vm.config.icon?.displayName, false, vm.busy, onPickIcon, vm::clearModIcon)
+    AudioPicker("Imagen", vm.config.icon?.displayName, false, vm.busy, onPickIcon, onClear = vm::clearModIcon)
+    ImageAssetPreview(vm.config.icon?.path, "Vista previa del icono del mod")
 }
 
 @Composable
@@ -312,6 +322,8 @@ private fun WizardNotesStep(vm: WizardViewModel) {
     SongSelector(vm)
     val song = vm.activeSong
     var open by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    ChartSummaryPreview(vm)
+    Spacer(Modifier.height(10.dp))
     Button(onClick = { vm.openLiveChart(); open = true }, enabled = !vm.busy) { Text("Abrir grabación en vivo") }
     Text("Elige canción, dificultad y lado en el grabador. Las notas se añaden al chart de esa dificultad.", style = MaterialTheme.typography.bodySmall)
     if (open) LiveChartEditor(vm) { open = false }

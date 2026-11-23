@@ -48,6 +48,7 @@ internal fun CharacterWorkspace(
     var selected by rememberSaveable { mutableStateOf("idle") }
     var adjustment by rememberSaveable { mutableStateOf(CharacterAdjustment.ANIMATION) }
     var zoom by rememberSaveable { mutableStateOf(1f) }
+    var previewFullscreen by rememberSaveable { mutableStateOf(false) }
     if (selected !in draft.animationNames) selected = "idle"
 
     BoxWithConstraints(modifier.fillMaxSize()) {
@@ -65,6 +66,23 @@ internal fun CharacterWorkspace(
                 CharacterPreviewPane(vm, draft, selected, adjustment, { adjustment = it }, zoom, expanded = true)
                 Text("Rival · acompañante · jugador son guías. Solo se edita tu personaje. Arrastra para ajustar ${adjustment.label.lowercase()}; prueba la posición en el juego.",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (previewFullscreen) androidx.compose.ui.window.Dialog(onDismissRequest = { previewFullscreen = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Vista previa del personaje", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                        TextButton(onClick = { previewFullscreen = false }) { Text("Cerrar") }
+                    }
+                    Preview()
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        CharacterAdjustment.entries.forEach { mode ->
+                            FilterChip(adjustment == mode, { adjustment = mode }, enabled = !vm.busy, label = { Text(mode.label) })
+                        }
+                    }
+                }
             }
         }
         @Composable fun Controls(mod: Modifier) {
@@ -92,13 +110,17 @@ internal fun CharacterWorkspace(
         }
         if (wide) {
             Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { Preview() }
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    Preview()
+                    TextButton(onClick = { previewFullscreen = true }) { Text("Ampliar vista previa") }
+                }
                 Controls(Modifier.weight(1f).fillMaxSize())
             }
         } else {
             Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                 if (showPreview) Preview()
-                else Text("Vista previa oculta para dejar espacio a los controles.", style = MaterialTheme.typography.labelSmall)
+                else Text("Vista previa compacta disponible en pantalla completa.", style = MaterialTheme.typography.labelSmall)
+                TextButton(onClick = { previewFullscreen = true }) { Text("Ampliar vista previa") }
                 Controls(Modifier.weight(1f).fillMaxWidth())
             }
         }
@@ -121,6 +143,7 @@ private fun CharacterIdentity(vm: WizardViewModel, draft: CharacterDraft, onPick
     }
     SectionTitle("Icono de vida · opcional")
     Text(draft.icon?.displayName ?: "Se usará el icono del juego base.", style = MaterialTheme.typography.bodySmall)
+    ImageAssetPreview(draft.icon?.path, "Vista previa del icono de vida")
     Text("Recomendado: PNG de 300 × 150 px, con normal y derrota de 150 × 150.", style = MaterialTheme.typography.labelSmall)
     Row {
         OutlinedButton(onClick = onPickIcon, enabled = !vm.busy) { Text(if (draft.icon == null) "Elegir icono" else "Cambiar icono") }

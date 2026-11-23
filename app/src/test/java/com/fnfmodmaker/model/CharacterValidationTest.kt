@@ -77,6 +77,7 @@ class CharacterValidationTest {
         ))
         assertTrue(gridAnimationRegions(300, 100, 100, 100, animations, "singLEFT").isEmpty())
         assertTrue(gridAnimationRegions(300, 100, 0, 100, animations, "idle").isEmpty())
+        assertTrue(gridAnimationRegions(1000, 1000, 10, 10, listOf("idle" to 150), "idle").size == 100)
     }
 
     @Test fun positionValidationAndCameraCoordinateConversion() {

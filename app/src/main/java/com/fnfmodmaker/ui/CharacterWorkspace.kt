@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -128,9 +129,10 @@ private fun CharacterIdentity(vm: WizardViewModel, draft: CharacterDraft, onPick
 
 @Composable
 private fun AnimationSelector(draft: CharacterDraft, selected: String, onSelect: (String) -> Unit) {
+    val counts = remember(draft) { draft.animations.toMap() }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         draft.animationNames.forEach { name ->
-            val count = draft.animations.firstOrNull { it.first == name }?.second ?: 0
+            val count = counts[name] ?: 0
             FilterChip(name == selected, { onSelect(name) }, label = { Text("$name · $count") })
         }
     }

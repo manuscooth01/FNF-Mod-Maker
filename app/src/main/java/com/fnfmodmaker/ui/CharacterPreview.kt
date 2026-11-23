@@ -248,8 +248,8 @@ internal fun CharacterPreviewPane(
                 Text("${index + 1}/${sources.size}", style = MaterialTheme.typography.bodySmall)
             }
         }
-        if (draft.useAtlas && atlasFramesForPrefix(draft.atlasFrames, draft.prefixFor(animationName)).size > 100) {
-            Text("Vista previa limitada a los primeros 100 frames; el XML completo se exportará.", style = MaterialTheme.typography.labelSmall)
+        if ((draft.animations.firstOrNull { it.first == animationName }?.second ?: 0) > 100) {
+            Text("Vista previa limitada a los primeros 100 frames; la animación completa se exportará.", style = MaterialTheme.typography.labelSmall)
         }
         Spacer(Modifier.height(8.dp))
     }

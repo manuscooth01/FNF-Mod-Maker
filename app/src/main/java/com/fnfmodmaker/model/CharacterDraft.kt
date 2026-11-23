@@ -104,8 +104,8 @@ fun gridAnimationRegions(
     if (columns <= 0 || rows <= 0 || animations.any { it.second < 0 }) return emptyList()
     val count = animations.firstOrNull { it.first == selected }?.second ?: return emptyList()
     val start = animations.takeWhile { it.first != selected }.sumOf { it.second.toLong() }
-    if (start + count > columns.toLong() * rows || count > 100) return emptyList()
-    return (0 until count).map { index ->
+    if (start + count > columns.toLong() * rows) return emptyList()
+    return (0 until minOf(count, 100)).map { index ->
         val cursor = start + index
         GridFrameRegion(((cursor % columns) * frameWidth).toInt(), ((cursor / columns) * frameHeight).toInt(), frameWidth, frameHeight)
     }

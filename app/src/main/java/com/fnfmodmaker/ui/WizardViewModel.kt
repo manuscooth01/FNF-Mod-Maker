@@ -487,11 +487,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         previewVoices.filter { it.prepared }.forEach { voice ->
             val mp = voice.player
             val target = runCatching { com.fnfmodmaker.model.previewTrackPosition(masterPosition, mix.instrumental.offsetMs, mix.track(voice.track).offsetMs, mp.duration.toLong()) }.getOrNull()
-            if (target == null) {
-                runCatching { if (mp.isPlaying) mp.pause() }
-            } else if (!voice.seeking) {
-                val shouldSeek = runCatching { force || !mp.isPlaying || kotlin.math.abs(mp.currentPosition.toLong() - target) > 150L }.getOrDefault(false)
-                if (shouldSeek) try {
+            val action = runCatching { com.fnfmodmaker.model.previewSyncAction(livePlaying, target, mp.isPlaying, voice.seeking, mp.currentPosition.toLong(), force) }
+                .getOrDefault(com.fnfmodmaker.model.PreviewSyncAction.Wait)
+            when (action) {
+                com.fnfmodmaker.model.PreviewSyncAction.Pause -> runCatching { mp.pause() }.let { Unit }
+                com.fnfmodmaker.model.PreviewSyncAction.Wait -> Unit
+                is com.fnfmodmaker.model.PreviewSyncAction.Seek -> try {
+                    val seekTarget = action.positionMs
                     if (mp.isPlaying) mp.pause()
                     voice.seeking = true
                     mp.setOnSeekCompleteListener {
@@ -503,7 +505,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                             if (allowed) runCatching { mp.start() }
                         }
                     }
-                    if (android.os.Build.VERSION.SDK_INT >= 26) mp.seekTo(target, MediaPlayer.SEEK_CLOSEST) else @Suppress("DEPRECATION") mp.seekTo(target.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+                    if (android.os.Build.VERSION.SDK_INT >= 26) mp.seekTo(seekTarget, MediaPlayer.SEEK_CLOSEST) else @Suppress("DEPRECATION") mp.seekTo(seekTarget.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
                 } catch (_: Exception) { voice.seeking = false; liveError = "No se pudo sincronizar una pista de voz." }
             }
         }

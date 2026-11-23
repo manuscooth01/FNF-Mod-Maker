@@ -35,4 +35,19 @@ class ChartPersistentHistoryTest {
         val undone = restoreChartHistory(history, chart, false)!!
         assertEquals(0, recordChartHistory(undone.history, undone.chart, newEdit).redo.size)
     }
+    @Test fun projectSerializationKeepsIndependentDifficultyChains() {
+        val normal = ChartDraft(songFolder = "song", difficulty = "normal", notes = listOf(ChartNote(100, 1, 250)))
+        val hard = ChartDraft(songFolder = "song", difficulty = "hard", notes = listOf(ChartNote(200, 7, 300)))
+        val config = ModConfig().withChart("song", "normal", normal).withChart("song", "hard", hard).copy(
+            chartHistories = mapOf("song" to mapOf(
+                "normal" to recordChartHistory(ChartPersistentHistory(), null, normal),
+                "hard" to recordChartHistory(ChartPersistentHistory(), null, hard))))
+        val gson = Gson(); val restored = gson.fromJson(gson.toJson(config), ModConfig::class.java)
+        val normalHistory = restored.chartHistories.getValue("song").getValue("normal")
+        val hardHistory = restored.chartHistories.getValue("song").getValue("hard")
+        assertNull(restoreChartHistory(normalHistory, restored.getChart("song", "normal"), false)!!.chart)
+        assertNull(restoreChartHistory(hardHistory, restored.getChart("song", "hard"), false)!!.chart)
+        assertNull(restoreChartHistory(normalHistory, hard, false))
+        assertEquals(300L, restored.getChart("song", "hard")!!.notes.single().lengthMs)
+    }
 }

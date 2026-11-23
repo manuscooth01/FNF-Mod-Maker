@@ -1019,6 +1019,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------- Personaje propio ----------------
 
     private fun scheduleAutoSave() {
+        savedName = null
+        builtFiles = emptyList()
         pendingAutoSaveJob?.cancel()
         pendingAutoSaveJob = viewModelScope.launch {
             delay(1000)

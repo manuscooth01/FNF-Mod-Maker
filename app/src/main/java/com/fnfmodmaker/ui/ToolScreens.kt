@@ -27,6 +27,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -100,6 +102,15 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 description = "Un recorrido guiado para preparar canciones, personaje y audio, y guardar un ZIP.",
                 badge = "Desde cero",
                 onClick = { vm.openTool(Tool.MOD) }
+            )
+            var confirmNew by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            TextButton(onClick = { confirmNew = true }) { Text("Empezar un proyecto nuevo") }
+            if (confirmNew) androidx.compose.material3.AlertDialog(
+                onDismissRequest = { confirmNew = false },
+                title = { Text("¿Empezar de cero?") },
+                text = { Text("Se reemplazará el borrador actual. Los ZIP guardados no se modificarán.") },
+                confirmButton = { TextButton(onClick = { vm.reset(); vm.openTool(Tool.MOD); confirmNew = false }) { Text("Empezar de cero") } },
+                dismissButton = { TextButton(onClick = { confirmNew = false }) { Text("Cancelar") } }
             )
             Spacer(Modifier.height(12.dp))
             ToolCard(

@@ -22,11 +22,11 @@ La app abre en un **inicio con herramientas**: puedes hacer un mod completo o us
 herramienta por separado. Hace esto:
 
 - **Pantalla de inicio** con tres herramientas independientes:
-  - **Crear un mod completo**: asistente de 5 pasos (mod → canción → personaje → audio → exportar).
+  - **Crear un mod completo**: asistente de 6 pasos (mod → canciones → personaje → audio → notas → exportar).
   - **Crear un personaje**: solo sprites, **sin pedirte el nombre del mod** ni la canción.
   - **Convertir audio a OGG**: un archivo suelto, sin crear nada más.
 - En el asistente puedes **saltar entre pasos** tocando los números de arriba; solo se valida al
-  exportar y te dice exactamente qué falta.
+  continuar en cada paso y al exportar; el resumen te indica qué falta y te lleva al paso correspondiente.
 - Genera la estructura de carpetas y **todos** los JSON que necesitan los dos motores.
 - **Convierte audio a OGG Vorbis dentro del teléfono** con FFmpeg (MP3, WAV, M4A, FLAC…).
 - Si el archivo ya es `.ogg`, lo copia sin recomprimir.
@@ -48,7 +48,6 @@ herramienta por separado. Hace esto:
 Lo que **todavía no** hace (siguiente fase):
 
 - Editor visual de notas (grilla) dentro de la app.
-- Varias canciones por mod / varias semanas.
 - Escenarios propios (sprites + JSON).
 - Iconos y animaciones *miss* por personaje (la app usa los de `bf`/`dad`).
 - Variaciones (Erect, Pico…) e importar un mod existente para editarlo.
@@ -88,6 +87,14 @@ Gradle automáticamente la primera vez.
 ---
 
 ## 2. Cómo se usa
+
+El borrador se guarda automáticamente. En Inicio puedes retomarlo o elegir **Empezar un
+proyecto nuevo** (tras confirmar se reemplaza el borrador, no los ZIP exportados). Los archivos
+seleccionados se copian a la caché de la app; si Android los elimina, vuelve a seleccionarlos.
+En canciones y audio usa las pestañas para elegir qué canción editar. El paso Notas permite
+generar una base de práctica o dejar el chart vacío: para ajustar notas hay que usar el editor
+del juego. Importación de mods y creación de escenarios todavía no están disponibles.
+
 
 ### Inicio
 La primera pantalla te pregunta **qué quieres hacer**. Cada tarjeta abre una herramienta que

@@ -50,7 +50,8 @@ internal fun CharacterWorkspace(
     if (selected !in draft.animationNames) selected = "idle"
 
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val wide = maxWidth >= 650.dp
+        val landscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val wide = maxWidth >= 650.dp || (landscape && maxWidth >= 480.dp)
         val showPreview = wide || maxHeight >= 460.dp
         @Composable fun Preview() {
             Column(Modifier.fillMaxWidth()) {
@@ -161,6 +162,14 @@ private fun CharacterImages(vm: WizardViewModel, draft: CharacterDraft, selected
         Text("${frames.size} frames en $selected · máximo 100 en total", style = MaterialTheme.typography.bodySmall)
         OutlinedButton(onClick = { onPickFrames(selected) }, enabled = !vm.busy) { Text("Añadir PNG a $selected") }
         Text("Comprueba el orden; el selector del dispositivo puede cambiarlo.", style = MaterialTheme.typography.labelSmall)
+        var frameToRemove by rememberSaveable(selected) { mutableStateOf<Int?>(null) }
+        frameToRemove?.let { index ->
+            androidx.compose.material3.AlertDialog(onDismissRequest = { frameToRemove = null },
+                title = { Text("¿Quitar este frame?") },
+                text = { Text("Se quitará de $selected; el archivo original no se modifica.") },
+                confirmButton = { TextButton(onClick = { vm.removeCharacterFrame(selected, index); frameToRemove = null }) { Text("Quitar") } },
+                dismissButton = { TextButton(onClick = { frameToRemove = null }) { Text("Cancelar") } })
+        }
         frames.forEachIndexed { index, frame ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("${index + 1}. ${frame.image.displayName}", Modifier.weight(1f), maxLines = 1, style = MaterialTheme.typography.bodySmall)
@@ -168,7 +177,7 @@ private fun CharacterImages(vm: WizardViewModel, draft: CharacterDraft, selected
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp)) { Text("↑") }
                 TextButton(onClick = { vm.moveCharacterFrame(selected, index, 1) }, enabled = !vm.busy && index < frames.lastIndex,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp)) { Text("↓") }
-                TextButton(onClick = { vm.removeCharacterFrame(selected, index) }, enabled = !vm.busy,
+                TextButton(onClick = { frameToRemove = index }, enabled = !vm.busy,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(4.dp)) { Text("Quitar") }
             }
         }
@@ -204,9 +213,15 @@ private fun CharacterAnimation(vm: WizardViewModel, draft: CharacterDraft, selec
     var newName by rememberSaveable { mutableStateOf("") }
     var nameError by rememberSaveable { mutableStateOf(false) }
     Field("Nueva animación", newName, { newName = it; nameError = false }, hint = "Ejemplo: hey o singLEFTmiss. Letras, números, guion o guion bajo.", enabled = !vm.busy)
+    var confirmRemove by rememberSaveable(selected) { mutableStateOf(false) }
+    if (confirmRemove) androidx.compose.material3.AlertDialog(onDismissRequest = { confirmRemove = false },
+        title = { Text("¿Eliminar $selected?") },
+        text = { Text("Se quitarán sus ajustes y frames del personaje. Los archivos originales no se modifican.") },
+        confirmButton = { TextButton(onClick = { vm.removeCustomAnimation(selected); onSelect("idle"); confirmRemove = false }) { Text("Eliminar") } },
+        dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancelar") } })
     Row {
         OutlinedButton(onClick = { if (vm.addCustomAnimation(newName)) { onSelect(newName); newName = ""; nameError = false } else nameError = true }, enabled = !vm.busy) { Text("Añadir") }
-        if (selected in draft.customAnimations) TextButton(onClick = { vm.removeCustomAnimation(selected); onSelect("idle") }, enabled = !vm.busy) { Text("Eliminar $selected") }
+        if (selected in draft.customAnimations) TextButton(onClick = { confirmRemove = true }, enabled = !vm.busy) { Text("Eliminar $selected") }
     }
     if (nameError) Text("Nombre inválido, repetido o límite de 30 animaciones adicionales.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     SectionTitle("Ajustes de $selected")

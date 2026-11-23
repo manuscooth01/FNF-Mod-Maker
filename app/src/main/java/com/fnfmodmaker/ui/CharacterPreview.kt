@@ -5,6 +5,8 @@ import android.graphics.BitmapRegionDecoder
 import android.graphics.Rect
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -239,7 +241,7 @@ internal fun CharacterPreviewPane(
             sources.isEmpty() -> Text("Añade frames válidos para previsualizar $animationName.", style = MaterialTheme.typography.bodySmall)
             !loaded -> Text("Cargando vista previa…", style = MaterialTheme.typography.bodySmall)
             previews == null -> Text("No se pudo cargar la vista previa; comprueba los archivos.", color = MaterialTheme.colorScheme.error)
-            else -> Row {
+            else -> Row(Modifier.horizontalScroll(rememberScrollState())) {
                 TextButton(onClick = { if (!playing && index == sources.lastIndex) index = 0; playing = !playing }) { Text(if (playing) "Pausar" else "Reproducir") }
                 TextButton(onClick = { playing = false; index = (index - 1 + sources.size) % sources.size }) { Text("‹ Frame") }
                 TextButton(onClick = { playing = false; index = (index + 1) % sources.size }) { Text("Frame ›") }

@@ -27,7 +27,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToLong
 import com.fnfmodmaker.model.ChartEditorState
+import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.ChartDraft.DragState
 import com.fnfmodmaker.model.ChartDraft.DragState.Scroll
 import com.fnfmodmaker.model.ChartDraft.DragState.HoldResize
@@ -35,7 +37,6 @@ import com.fnfmodmaker.model.ChartDraft.DragState.SelectionBox
 import com.fnfmodmaker.model.ChartDraft.DragState.MultiDrag
 import com.fnfmodmaker.model.SelectedNote
 import java.io.File
-
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
 enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT, STAGE }
 

@@ -480,3 +480,18 @@ las notas. La vista se basa en el borrador actual, no en un ZIP exportado, y pue
 final; hay que probarlo en el motor correspondiente. Los archivos originales de FNF no están incluidos.
 Todavía no se pueden importar ZIP de mods externos de forma segura. El autoguardado permite volver
 al borrador actual en la misma instalación, pero no constituye una copia de seguridad portable.
+
+## Proyectos locales (primera fase)
+
+La pantalla de inicio permite continuar, crear, abrir y duplicar proyectos locales. Los archivos
+nuevos seleccionados para el proyecto se copian a `filesDir/projects/<id>/assets`, fuera de la caché;
+el proyecto usa un documento interno versionado y guardado con reemplazo temporal y una copia
+anterior. El borrador antiguo se migra al primer proyecto: si algún archivo de la caché ya no existe,
+se indica y es necesario volver a seleccionarlo. No se borra el autoguardado anterior durante la
+migración. La duplicación hace copias independientes de los recursos disponibles y se rechaza si
+falta alguno. El indicador de guardado y los errores aparecen en el asistente.
+
+Los proyectos permanecen en esta instalación de la app: desinstalarla o borrar sus datos puede
+eliminarlos. Todavía no hay copia portable ni importación de ZIP de mods existentes. Los formatos
+V-Slice y Psych continúan necesitando pruebas reales en sus motores. No hay prueba en dispositivo
+para la migración ni garantía ante una interrupción forzada durante un guardado pendiente.

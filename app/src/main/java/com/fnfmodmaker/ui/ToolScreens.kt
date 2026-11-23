@@ -106,22 +106,27 @@ internal fun HomeScreen(vm: WizardViewModel) {
             )
             Spacer(Modifier.height(16.dp))
 
-            ToolCard(
-                icon = com.fnfmodmaker.R.drawable.tool_extension,
-                title = "Crear un mod completo",
-                description = "Un recorrido guiado para preparar canciones, personaje y audio, y guardar un ZIP.",
-                badge = "Desde cero",
-                onClick = { vm.openTool(Tool.MOD) }
-            )
-            var confirmNew by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-            TextButton(onClick = { confirmNew = true }) { Text("Empezar un proyecto nuevo") }
-            if (confirmNew) androidx.compose.material3.AlertDialog(
-                onDismissRequest = { confirmNew = false },
-                title = { Text("¿Empezar de cero?") },
-                text = { Text("Se reemplazará el borrador actual. Los ZIP guardados no se modificarán.") },
-                confirmButton = { TextButton(onClick = { vm.reset(); vm.openTool(Tool.MOD); confirmNew = false }) { Text("Empezar de cero") } },
-                dismissButton = { TextButton(onClick = { confirmNew = false }) { Text("Cancelar") } }
-            )
+            Text("Proyectos locales", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Cada proyecto tiene sus propias canciones, charts y recursos. Se guardan en este dispositivo.", style = MaterialTheme.typography.bodySmall)
+            if (vm.busy) Text("Preparando proyectos…", style = MaterialTheme.typography.bodySmall)
+            vm.projectMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            Row {
+                Button(onClick = { vm.switchProject() }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Nuevo proyecto") }
+                TextButton(onClick = { vm.switchProject(duplicate = true) }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Duplicar actual") }
+            }
+            vm.projects.forEach { project ->
+                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(project.title, fontWeight = FontWeight.SemiBold)
+                            Text(project.problem ?: if (project.id == vm.currentProjectId) "Proyecto actual" else "Guardado en el dispositivo", style = MaterialTheme.typography.labelSmall)
+                        }
+                        TextButton(onClick = { if (project.id == vm.currentProjectId) vm.openTool(Tool.MOD) else vm.switchProject(project.id) },
+                            enabled = !vm.busy && project.problem == null && vm.currentProjectId != null) { Text(if (project.id == vm.currentProjectId) "Continuar" else "Abrir") }
+                    }
+                }
+            }
+            Text("La importación de ZIP externos aún no está disponible. El autoguardado no es una copia de seguridad portable.", style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(12.dp))
             ToolCard(
                 icon = com.fnfmodmaker.R.drawable.tool_person,

@@ -97,7 +97,10 @@ internal fun WizardScreen(vm: WizardViewModel) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             WizardProgress(vm.step, !vm.busy, vm::goTo)
+            Text(vm.projectSaveStatus, modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall)
+            vm.projectMessage?.let { Text(it, modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Row(Modifier.horizontalScroll(rememberScrollState())) {
+                TextButton(onClick = { vm.forceAutoSave() }, enabled = !vm.busy) { Text("Guardar") }
                 TextButton(onClick = { showModPreview = true }, enabled = !vm.busy) { Text("▶ Vista conjunta y prueba") }
                 TextButton(onClick = { vm.openTool(Tool.ASSISTANT) }, enabled = !vm.busy) { Text("✦ Asistente IA") }
             }

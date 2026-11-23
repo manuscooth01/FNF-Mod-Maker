@@ -41,6 +41,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import com.fnfmodmaker.project.ProjectStore
+import com.fnfmodmaker.project.ProjectSummary
 import com.fnfmodmaker.model.DragState
 import com.fnfmodmaker.model.SelectedNote
 import java.io.File
@@ -1261,7 +1265,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
 
     internal fun openTool(target: Tool) {
-        if (busy) return
+        if (busy || currentProjectId == null) return
         error = null
         status = ""
         if (target == Tool.CHARACTER) {
@@ -1289,73 +1293,138 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var config by mutableStateOf(ModConfig())
         private set
 
-    // Auto-save
+    // Project snapshots are serialized through one mutex; disk work runs off the UI thread.
     private var autoSaveJob: kotlinx.coroutines.Job? = null
     private var pendingAutoSaveJob: kotlinx.coroutines.Job? = null
-    // Uri es abstracto; Gson no puede reconstruirlo sin un adaptador.
+    private val projectMutex = Mutex()
+    private val projectStore = ProjectStore(File(application.filesDir, "projects"), application.applicationInfo.dataDir.let(::File))
+    var currentProjectId by mutableStateOf<String?>(null)
+        private set
+    internal var projects by mutableStateOf<List<ProjectSummary>>(emptyList())
+        private set
+    var projectMessage by mutableStateOf<String?>(null)
+        private set
+    var projectSaveStatus by mutableStateOf("Abriendo proyecto…")
+        private set
+    private var projectRevision = 0L
     private val autoSaveGson = GsonBuilder().registerTypeAdapter(Uri::class.java, object : TypeAdapter<Uri>() {
         override fun write(out: JsonWriter, value: Uri) = out.value(value.toString()).let { Unit }
-        override fun read(input: JsonReader): Uri {
-            return if (input.peek() == JsonToken.STRING) Uri.parse(input.nextString()) else {
-                // Guardados anteriores podían contener un objeto Uri en lugar de texto.
-                input.skipValue()
-                Uri.EMPTY
-            }
+        override fun read(input: JsonReader): Uri = if (input.peek() == JsonToken.STRING) Uri.parse(input.nextString()) else {
+            input.skipValue(); Uri.EMPTY
         }
     }.nullSafe()).create()
-    private val autoSaveFile: File
-        get() = File(getApplication<Application>().filesDir, "autosave_modconfig.json")
-
+    private val autoSaveFile: File get() = File(getApplication<Application>().filesDir, "autosave_modconfig.json")
     private var modIdEdited = false
 
-    init {
-        // AI files are temporary and are never part of the saved project.
-        File(application.cacheDir, "ai").deleteRecursively()
-        loadAutoSave()
-        startAutoSave()
-    }
+    private fun configJson(value: ModConfig) = autoSaveGson.toJsonTree(value).asJsonObject
+    private fun parseConfig(value: com.google.gson.JsonObject): ModConfig =
+        autoSaveGson.fromJson(value, ModConfig::class.java) ?: error("El proyecto está vacío.")
 
-    private fun startAutoSave() {
+    private fun beginProjects() {
+        viewModelScope.launch {
+            val app = getApplication<Application>()
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val active = projectStore.activeId()
+                val existing = projectStore.list()
+                val id = active ?: existing.firstOrNull()?.id
+                if (id != null) {
+                    val record = projectStore.load(id)
+                    projectStore.setActive(id)
+                    Triple(record.id to parseConfig(record.config), projectStore.list(), emptyList<String>())
+                } else {
+                    val oldCache = File(app.cacheDir, "autosave_modconfig.json")
+                    val source = if (autoSaveFile.exists()) autoSaveFile else oldCache
+                    val old = if (source.exists()) com.google.gson.JsonParser.parseString(source.readText()).asJsonObject else configJson(ModConfig())
+                    // Validate before committing the migration; never delete the legacy file.
+                    parseConfig(old)
+                    val newId = projectStore.newId()
+                    val copied = projectStore.copyAssets(old, newId)
+                    projectStore.save(newId, copied.config)
+                    projectStore.setActive(newId)
+                    Triple(newId to parseConfig(projectStore.load(newId).config), projectStore.list(), copied.missing)
+                }
+            } }
+            result.onSuccess { (record, list, missing) ->
+                config = record.second
+                currentProjectId = record.first; projects = list; projectSaveStatus = "Guardado en este dispositivo"
+                modIdEdited = config.modId.isNotBlank() && config.modId != slugify(config.modTitle)
+                projectMessage = if (missing.isEmpty()) null else "No se encontraron ${missing.size} recursos del borrador anterior: ${missing.joinToString()}. Vuelve a elegirlos."
+            }.onFailure { projectSaveStatus = "Proyecto no disponible"; projectMessage = "No se pudo abrir o migrar el proyecto: ${it.message}. Los archivos anteriores se conservan; reinicia la app para reintentar." }
+            busy = false
+        }
         autoSaveJob = viewModelScope.launch {
-            while (true) {
-                delay(30000) // 30 segundos
-                saveAutoSave()
-            }
+            while (true) { delay(30_000); saveAutoSave() }
         }
     }
-
     private fun saveAutoSave() {
-        try {
-            val json = autoSaveGson.toJson(config)
-            autoSaveFile.writeText(json)
-        } catch (e: Exception) {
-            // Silencioso
-        }
-    }
-
-    private fun loadAutoSave() {
-        try {
-            val legacyFile = File(getApplication<Application>().cacheDir, "autosave_modconfig.json")
-            val source = if (autoSaveFile.exists()) autoSaveFile else legacyFile
-            if (source.exists()) {
-                val json = source.readText()
-                val loaded = autoSaveGson.fromJson(json, ModConfig::class.java)
-                config = loaded
-                modIdEdited = loaded.modId.isNotBlank() && loaded.modId != slugify(loaded.modTitle)
+        val id = currentProjectId ?: return
+        val snapshot = config
+        val revision = projectRevision
+        projectSaveStatus = "Guardando…"
+        viewModelScope.launch {
+            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
+                projectStore.save(id, configJson(snapshot)); projectStore.list()
+            } } }
+            result.onSuccess { list ->
+                projects = list
+                if (currentProjectId == id && projectRevision == revision) projectSaveStatus = "Guardado en este dispositivo"
+            }.onFailure {
+                projectSaveStatus = "Error al guardar"
+                projectMessage = "No se pudo guardar el proyecto: ${it.message}. Comprueba el espacio e intenta de nuevo."
             }
-        } catch (e: Exception) {
-            // Silencioso
         }
     }
+    fun forceAutoSave() { pendingAutoSaveJob?.cancel(); saveAutoSave() }
+    private fun projectAssetDirectory(): File = projectStore.assets(currentProjectId ?: error("El proyecto aún no está listo."))
+    private fun newProjectAsset(name: String): File {
+        val ext = name.substringAfterLast('.', "").filter(Char::isLetterOrDigit).take(10)
+        return File.createTempFile("asset_", if (ext.isEmpty()) ".dat" else ".$ext", projectAssetDirectory())
+    }
 
-    fun forceAutoSave() {
-        saveAutoSave()
+    /** Save current work before switching. Failed copies/opening never replace the current draft. */
+    internal fun switchProject(target: String? = null, duplicate: Boolean = false) {
+        if (busy || currentProjectId == null) return
+        val oldId = currentProjectId ?: return
+        val oldConfig = config
+        pendingAutoSaveJob?.cancel()
+        busy = true; projectMessage = null
+        viewModelScope.launch {
+            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
+                projectStore.save(oldId, configJson(oldConfig))
+                val id = if (target != null) target else projectStore.newId()
+                val missing = if (target == null) {
+                    val source = if (duplicate) configJson(oldConfig).also {
+                        val name = oldConfig.modTitle.ifBlank { "Proyecto sin nombre" }
+                        it.addProperty("modTitle", "$name (copia)")
+                    } else configJson(ModConfig())
+                    val copied = projectStore.copyAssets(source, id)
+                    if (duplicate && copied.missing.isNotEmpty()) error("No se puede duplicar: faltan ${copied.missing.joinToString()}. Vuelve a elegirlos.")
+                    projectStore.save(id, copied.config)
+                    copied.missing
+                } else emptyList()
+                val loaded = projectStore.load(id)
+                val validated = parseConfig(loaded.config)
+                projectStore.setActive(id)
+                Triple(loaded.id to validated, projectStore.list(), missing)
+            } } }
+            result.onSuccess { (project, list, missing) ->
+                closeLiveChart(); releaseMediaPlayer()
+                currentProjectId = project.first; config = project.second; projects = list
+                projectRevision++; projectSaveStatus = "Guardado en este dispositivo"
+                activeSongIndex = 0; activeChartSongIndex = 0; activeChartDifficulty = "normal"; activeVariationIndex = null
+                chartEditorState = ChartEditorState(); aiProposal = null; aiProposalNotice = null; step = 0
+                modIdEdited = config.modId.isNotBlank() && config.modId != slugify(config.modTitle)
+                projectMessage = if (missing.isEmpty()) null else "Faltan recursos: ${missing.joinToString()}."
+                tool = Tool.MOD
+            }.onFailure { projectMessage = "No se pudo abrir el proyecto: ${it.message}. El proyecto actual no se ha reemplazado." }
+            busy = false
+        }
     }
 
     var step by mutableStateOf(0)
         private set
 
-    var busy by mutableStateOf(false)
+    var busy by mutableStateOf(true)
         private set
 
     var status by mutableStateOf("")
@@ -1372,6 +1441,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     var builtFiles by mutableStateOf<List<String>>(emptyList())
         private set
+    init {
+        File(application.cacheDir, "ai").deleteRecursively()
+        beginProjects()
+    }
 
     val canAdvance: Boolean get() = step < 5 && currentStepIssues.isEmpty()
 
@@ -1571,6 +1644,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---------------- Personaje propio ----------------
 
     private fun scheduleAutoSave() {
+        projectRevision++
+        projectSaveStatus = "Cambios pendientes"
         savedName = null
         builtFiles = emptyList()
         pendingAutoSaveJob?.cancel()
@@ -1703,7 +1778,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             val result = withContext(Dispatchers.IO) {
                 val created = mutableListOf<File>()
                 runCatching {
-                    val inputDir = File(app.cacheDir, "inputs").apply { mkdirs() }
+                    val inputDir = projectAssetDirectory()
                     uris.map { uri ->
                         val displayName = MediaTools.displayName(app, uri)
                         val target = File.createTempFile("frame_", ".png", inputDir).also { created.add(it) }
@@ -1740,6 +1815,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         )
         val updated = config.character.variations + newVar
         config = config.copy(character = config.character.copy(variations = updated))
+        scheduleAutoSave()
     }
 
     fun removeCharacterVariation(index: Int) {
@@ -1751,6 +1827,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             updated[0] = updated[0].copy(isDefault = true)
         }
         config = config.copy(character = config.character.copy(variations = updated))
+        scheduleAutoSave()
     }
 
     /** Abre el editor de una variación específica. */
@@ -1774,6 +1851,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val updated = config.character.variations.toMutableList()
         updated[index] = block(updated[index])
         config = config.copy(character = config.character.copy(variations = updated))
+        scheduleAutoSave()
     }
 
     /** Establece la variación por defecto. */
@@ -1783,6 +1861,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             v.copy(isDefault = i == index)
         }
         config = config.copy(character = config.character.copy(variations = updated))
+        scheduleAutoSave()
     }
 
     // ---------------- Variación: pickers ----------------
@@ -1799,7 +1878,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "spritesheet.png" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     val size = MediaTools.imageSize(target)
                         ?: throw IllegalStateException("No se pudo leer la imagen de la hoja de sprites.")
@@ -1828,7 +1907,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "icono.png" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     com.fnfmodmaker.model.PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
                 }
@@ -1856,7 +1935,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "audio" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     PickedAudio(
                         uri = uri,
@@ -1896,7 +1975,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "icono.png" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
                 }
@@ -1923,7 +2002,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "spritesheet.png" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     if (!MediaTools.isPng(target)) {
                         target.delete()
@@ -1970,7 +2049,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     val xml = bytes.toString(Charsets.UTF_8)
                     val frames = parseSparrowAtlas(xml)
-                    val dir = File(app.cacheDir, "inputs").apply { mkdirs() }
+                    val dir = projectAssetDirectory()
                     val target = File.createTempFile("atlas_", ".xml", dir)
                     target.writeBytes(bytes)
                     PickedImage(uri, MediaTools.displayName(app, uri), target.absolutePath) to frames
@@ -1995,7 +2074,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "icono.png" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
                 }
@@ -2022,7 +2101,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "audio" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     PickedAudio(
                         uri = uri,
@@ -2217,7 +2296,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     // Copiar spritesheet a cache si existe
                     val finalChar = if (character.sheet != null) {
                         val src = File(character.sheet!!.path)
-                        val target = File(getApplication<Application>().cacheDir, "inputs/${System.currentTimeMillis()}_${src.name}")
+                        val target = newProjectAsset(src.name)
                         src.copyTo(target, overwrite = true)
                         character.copy(sheet = com.fnfmodmaker.model.PickedImage(character.sheet!!.uri, character.sheet!!.displayName, target.absolutePath))
                     } else character
@@ -2344,7 +2423,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "background.png" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     com.fnfmodmaker.model.PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
                 }
@@ -2370,7 +2449,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 runCatching {
                     val displayName = MediaTools.displayName(app, uri)
                     val safeName = displayName.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "sprite.png" }
-                    val target = File(app.cacheDir, "inputs/${System.currentTimeMillis()}_$safeName")
+                    val target = newProjectAsset(safeName)
                     MediaTools.copyTo(app, uri, target)
                     com.fnfmodmaker.model.PickedImage(uri = uri, displayName = displayName, path = target.absolutePath)
                 }

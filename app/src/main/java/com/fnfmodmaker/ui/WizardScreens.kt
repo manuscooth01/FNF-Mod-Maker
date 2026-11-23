@@ -229,6 +229,7 @@ private fun WizardSongsStep(vm: WizardViewModel) {
                 label = { Text(when (difficulty) { "easy" -> "Fácil"; "normal" -> "Normal"; else -> "Difícil" }) })
         }
     }
+    SimpleStagePanel(vm)
     var advanced by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Ocultar ajustes avanzados ↑" else "Ajustes avanzados ↓") }
     if (advanced) {

@@ -5,6 +5,7 @@ import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.ModConfig
 import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.StageDraft
+import com.fnfmodmaker.model.hasUnsupportedFeatures
 import com.fnfmodmaker.model.StageSprite
 import org.json.JSONArray
 import org.json.JSONObject
@@ -34,7 +35,10 @@ object ModBuilder {
     ): BuildResult {
         val warnings = mutableListOf<String>()
         // Si hay personaje propio, el chart de cada canción debe apuntar a él.
-        val config = rawConfig.withCharacter()
+        val characterConfig = rawConfig.withCharacter()
+        val config = if (characterConfig.stageDraft.enabled) characterConfig.copy(songs = characterConfig.songs.map {
+            it.copy(stagePsych = characterConfig.stageDraft.stageFolder, stageVSlice = characterConfig.stageDraft.stageFolder)
+        }) else characterConfig
         val modFolder = config.modFolder
         val root = File(workRoot, modFolder)
         if (root.exists()) root.deleteRecursively()
@@ -351,161 +355,26 @@ object ModBuilder {
  * Genera: fondo, sprites, XML atlas, JSON para V-Slice y Psych.
  */
 object StageBuilder {
-
-    fun build(
-        root: File,
-        config: ModConfig,
-        onProgress: (String) -> Unit,
-        warnings: MutableList<String>
-    ) {
+    fun build(root: File, config: ModConfig, onProgress: (String) -> Unit, warnings: MutableList<String>) {
         val stage = config.stageDraft
-        if (!stage.enabled || stage.backgroundImage == null) return
-
-        onProgress("Procesando stage personalizado…")
-
-        val stageFolder = stage.stageFolder
-        val imagesDir = File(root, "images/stages/$stageFolder")
-        imagesDir.mkdirs()
-
-        // 1. Copiar imagen de fondo
-        val bgFile = File(stage.backgroundImage!!.path)
-        val bgTarget = File(imagesDir, "background.png")
-        if (!MediaTools.preparePng(bgFile, bgTarget, 1920)) { // max 1920px ancho
-            warnings.add("No se pudo procesar el fondo del stage.")
-            return
-        }
-
-        // 2. Procesar sprites del stage
-        val spritesDir = File(imagesDir, "sprites")
-        spritesDir.mkdirs()
-        
-        val atlasFrames = mutableListOf<Frame>()
-        var cursor = 0
-        
-        for (sprite in stage.sprites) {
-            if (sprite.image == null) continue
-            onProgress("Procesando sprite: ${sprite.displayName}…")
-            
-            val spriteFile = File(sprite.image!!.path)
-            val spriteTarget = File(spritesDir, "${sprite.spriteId}.png")
-            if (!MediaTools.preparePng(spriteFile, spriteTarget, 1024)) {
-                warnings.add("No se pudo procesar sprite ${sprite.displayName}")
-                continue
-            }
-
-            // Para atlas simple: un frame por sprite
-            atlasFrames.add(Frame(
-                name = "${stageFolder} ${sprite.spriteId}",
-                x = 0, y = cursor * 256, // simplificado: apilados verticalmente
-                width = 256, height = 256
-            ))
-            cursor++
-        }
-
-        // 3. Generar XML Sparrow para sprites del stage
-        if (atlasFrames.isNotEmpty()) {
-            val xml = StringBuilder()
-            xml.append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
-            xml.append("<TextureAtlas imagePath=\"sprites.png\">\n")
-            // Nota: en producción real se haría un atlas combinado con libgdx texture packer
-            // Aquí simplificado: un sprite por archivo
-            for (frame in atlasFrames) {
-                xml.append("  <SubTexture name=\"${frame.name}\" x=\"${frame.x}\" y=\"${frame.y}\" ")
-                xml.append("width=\"${frame.width}\" height=\"${frame.height}\"/>\n")
-            }
-            xml.append("</TextureAtlas>\n")
-            File(imagesDir, "sprites.xml").writeText(xml.toString(), Charsets.UTF_8)
-            
-            // Crear imagen combinada simple (placeholder)
-            createSpritesAtlas(spritesDir, imagesDir)
-        }
-
-        // 4. Generar JSON de stage para V-Slice
+        if (!stage.enabled) return
+        require(!stage.hasUnsupportedFeatures()) { "Los objetos avanzados del escenario no son compatibles; desactiva el escenario para no perderlos." }
+        require(stage.stageId.isNotBlank() && stage.backgroundImage != null && stage.cameraPosition.zoom.isFinite() && stage.cameraPosition.zoom in 0.4f..2f) { "Completa el escenario, su fondo y el zoom." }
+        onProgress("Preparando escenario sencillo…")
+        val folder = stage.stageFolder
+        val image = File(root, "images/stages/$folder/background.png")
+        image.parentFile?.mkdirs()
+        check(MediaTools.preparePng(File(stage.backgroundImage.path), image, 1920)) { "No se pudo procesar la imagen del escenario." }
         if (config.engine.includesVSlice) {
-            onProgress("Generando stage para V-Slice…")
-            val vsliceStage = generateVSliceStageJson(stage, stageFolder)
-            File(root, "data/stages/$stageFolder.json").writeText(vsliceStage, Charsets.UTF_8)
+            val file = File(root, "data/stages/$folder.json"); file.parentFile?.mkdirs()
+            file.writeText(StageTemplate.vslice(stage), Charsets.UTF_8)
         }
-
-        // 5. Generar JSON de stage para Psych
         if (config.engine.includesPsych) {
-            onProgress("Generando stage para Psych Engine…")
-            val psychStage = generatePsychStageJson(stage, stageFolder)
-            File(root, "stages/$stageFolder.json").writeText(psychStage, Charsets.UTF_8)
+            val file = File(root, "stages/$folder.json"); file.parentFile?.mkdirs()
+            file.writeText(StageTemplate.psych(stage), Charsets.UTF_8)
+            File(root, "stages/$folder.lua").writeText(StageTemplate.psychLua(stage), Charsets.UTF_8)
+            warnings.add("El escenario usa un script Lua generado para Psych; comprueba el resultado en tu versión del motor.")
         }
-    }
-
-    private data class Frame(val name: String, val x: Int, val y: Int, val width: Int, val height: Int)
-
-    private fun createSpritesAtlas(spritesDir: File, outputDir: File) {
-        // Placeholder: en producción usar libgdx TexturePacker
-        // Aquí solo copiamos el primer sprite como atlas.png
-        val firstSprite = spritesDir.listFiles()?.firstOrNull { it.extension == "png" }
-        firstSprite?.copyTo(File(outputDir, "sprites.png"), overwrite = true)
-    }
-
-    private fun generateVSliceStageJson(stage: StageDraft, stageFolder: String): String {
-        val camera = stage.cameraPosition
-        val bounds = camera.bounds
-
-        val stageJson = JSONObject()
-            .put("version", "1.0.0")
-            .put("name", stage.displayName.ifEmpty { stageFolder })
-            .put("background", "stages/$stageFolder/background")
-            .put("cameraPosition", JSONObject().put("x", camera.x).put("y", camera.y))
-            .put("cameraZoom", camera.zoom)
-            .put("followPlayer", camera.followPlayer)
-            .put("bounds", JSONObject()
-                .put("left", bounds.left)
-                .put("right", bounds.right)
-                .put("top", bounds.top)
-                .put("bottom", bounds.bottom)
-            )
-            .put("sprites", JSONObject().put("atlas", "stages/$stageFolder/sprites"))
-            .put("zoneColors", JSONArray().put(stage.zoneColors))
-            .put("baseStage", stage.baseStageVSlice)
-        
-        return stageJson.toString(2)
-    }
-
-    private fun generatePsychStageJson(stage: StageDraft, stageFolder: String): String {
-        val camera = stage.cameraPosition
-
-        val spritesArray = JSONArray()
-        for (sprite in stage.sprites) {
-            spritesArray.put(
-                JSONObject()
-                    .put("name", sprite.spriteId)
-                    .put("image", "stages/$stageFolder/sprites/${sprite.spriteId}")
-                    .put("x", sprite.x)
-                    .put("y", sprite.y)
-                    .put("scale", sprite.scale)
-                    .put("rotation", sprite.rotation)
-                    .put("animated", sprite.animated)
-                    .put("frames", sprite.animationFrames)
-                    .put("fps", sprite.animationFps)
-                    .put("layer", sprite.layer.name.lowercase())
-            )
-        }
-
-        val stageJson = JSONObject()
-            .put("name", stage.displayName.ifEmpty { stageFolder })
-            .put("background", "stages/$stageFolder/background")
-            .put("camera", JSONObject()
-                .put("x", camera.x)
-                .put("y", camera.y)
-                .put("zoom", camera.zoom)
-                .put("followPlayer", camera.followPlayer)
-            )
-            .put("bounds", JSONObject()
-                .put("left", camera.bounds.left)
-                .put("right", camera.bounds.right)
-                .put("top", camera.bounds.top)
-                .put("bottom", camera.bounds.bottom)
-            )
-            .put("sprites", spritesArray)
-            .put("baseStage", stage.baseStagePsych)
-        
-        return stageJson.toString(2)
+        warnings.add("El fondo y las posiciones son una base orientativa; ajusta y prueba el escenario en el juego.")
     }
 }

@@ -97,4 +97,15 @@ class ProjectProposalTest {
         function.addProperty("name", "delete_files")
         assertTrue(runCatching { AiProtocol.parseProjectResponse(com.google.gson.JsonObject().apply { add("choices", com.google.gson.JsonArray().apply { add(choice) }) }.toString()) }.isFailure)
     }
+    @Test fun sceneZoomRequiresEnabledStageAndExplicitApproval() {
+        val args = """{"summary":"Cámara","changes":[{"type":"scene","zoom":1.3}]}"""
+        assertTrue(runCatching { ProjectProposalPlanner.plan(base, args) }.isFailure)
+        val config = base.copy(stageDraft = StageDraft(enabled = true, stageId = "club"))
+        val proposal = ProjectProposalPlanner.plan(config, args)
+        assertEquals(1f, config.stageDraft.cameraPosition.zoom)
+        assertEquals(1.3f, proposal.result.stageDraft.cameraPosition.zoom)
+        assertTrue(proposal.items.single().details.contains("todas las canciones"))
+        assertTrue(runCatching { ProjectProposalPlanner.plan(config, args, true) }.isFailure)
+        assertTrue(projectContext(config, false).contains("fnfmm-club"))
+    }
 }

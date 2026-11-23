@@ -48,7 +48,7 @@ herramienta por separado. Hace esto:
 Lo que **todavía no** hace (siguiente fase):
 
 - Editor de notas en cuadrícula con eventos dentro de la app.
-- Escenarios propios (sprites + JSON).
+- Escenarios avanzados con capas, animaciones y cámara dinámica; cinemáticas y diálogos exportables.
 - Iconos y animaciones *miss* por personaje (la app usa los de `bf`/`dad`).
 - Importar un mod completo existente para editarlo.
 
@@ -152,7 +152,7 @@ El ajuste al ritmo es opcional y usa el BPM; la corrección de toque permite com
 Un chart propio reemplaza las notas de práctica automáticas solo en esa dificultad. La corrección
 de toque es independiente del offset de la canción; prueba la sincronización en el motor de destino.
 Los charts con eventos o secciones existentes no se pueden grabar aquí para evitar perder datos.
-Importación de mods y creación de escenarios todavía no están disponibles.
+Importación de mods y escenarios avanzados todavía no están disponibles.
 
 
 ### Inicio
@@ -424,3 +424,22 @@ los archivos se leen y se guardan con el selector de Android (SAF).
 - Friday Night Funkin' es propiedad de Funkin' Crew Inc. Esta herramienta no incluye assets del juego.
 
 Referencias y comparación de herramientas: [docs/referencias-herramientas.md](docs/referencias-herramientas.md).
+
+## Escenario sencillo y ayuda para principiantes
+
+En Canciones, activa **Escenario sencillo**, escribe un nombre y elige una imagen de fondo propia.
+Elige un encuadre inicial: el escenario estático se aplica a todas las canciones al exportar.
+V-Slice recibe un JSON de escenario y Psych recibe JSON y un script Lua de fondo. El personaje,
+las posiciones y el encuadre son orientativos: prueba el ZIP en los motores que uses. Cambios de
+cámara durante la canción, capas animadas, diálogos y cinemáticas no se generan automáticamente.
+
+Desde Inicio o el mod puedes abrir el asistente: hay consultas de ejemplo sobre escenarios, cámaras,
+cinemáticas y código. Requiere tu proveedor HTTPS y clave propios; revisa el coste y privacidad
+antes de enviar. Los consejos no aplican cambios. Las propuestas usan modelos compatibles con
+herramientas y siempre se revisan y aprueban por lote; el zoom del escenario sencillo se puede
+proponer si está activado. La IA no escucha el audio, no ejecuta ni comprueba el código, y no
+puede crear cinemáticas o escenarios animados completos en esta versión. Los scripts Lua propuestos
+solo se exportan para Psych y necesitan revisión y prueba.
+
+Los assets oficiales de FNF no se redistribuyen: puedes seleccionar imágenes propias. Los iconos
+de interfaz descargados, su procedencia y licencia están en `third_party/material-icons/`.

@@ -70,6 +70,18 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
         Spacer(Modifier.height(8.dp))
         Field("Modelo de imágenes", vm.aiImageModel, { vm.aiImageModel = it }, hint = "Debe admitir images/generations y devolver b64_json o URL HTTPS.", enabled = !vm.aiBusy)
     }
+    if (vm.tool != Tool.CHARACTER) {
+        SectionTitle("Empieza con una idea")
+        Text("Elige un ejemplo para rellenar tu consulta; puedes modificarlo antes de enviar. Ningún botón cambia tu mod por sí solo.", style = MaterialTheme.typography.bodySmall)
+        listOf(
+            "Plan de escenario" to "Soy principiante. Ayúdame a planear un escenario para mi canción, explica el fondo, personajes y cámara paso a paso según los motores elegidos. Dime qué debo preparar y qué debo probar.",
+            "Cámara" to "Soy principiante. Sugiere un encuadre inicial para mi escenario sencillo y explica qué hace el zoom y cómo comprobarlo. Si el escenario está activado, propón un cambio de zoom moderado.",
+            "Cinemática" to "Soy principiante. Diseña un guion corto para una cinemática y explica cómo implementarla en cada motor. Distingue lo que esta app puede exportar y lo que debo hacer manualmente; no inventes que está terminado.",
+            "Ayuda con código" to "Explica paso a paso cómo hacer un efecto sencillo en Psych Engine, revisa riesgos y explica qué se necesita para V-Slice. No inventes recursos ni afirmes haber probado código."
+        ).forEach { (label, prompt) ->
+            OutlinedButton(onClick = { vm.aiPrompt = prompt }, enabled = !vm.aiBusy, modifier = Modifier.fillMaxWidth()) { Text(label) }
+        }
+    }
     SectionTitle("¿En qué te ayudo?")
     Field("Consulta o descripción", vm.aiPrompt, { vm.aiPrompt = it.take(4000) },
         hint = "Ejemplo: ¿cómo puedo mejorar la posición del rival?", singleLine = false, enabled = !vm.aiBusy)
@@ -92,10 +104,10 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
     }
     confirmAction?.let { action ->
         val description = when (action) {
-            "analyze" -> "Se enviarán la consulta, los ajustes del personaje y una copia reducida de la imagen elegida al proveedor configurado."
+            "analyze" -> if (vm.tool == Tool.CHARACTER) "Se enviarán la consulta, los ajustes del personaje y una copia reducida de la imagen elegida." else "Se enviarán la consulta, los datos del proyecto, muestras de notas y nombres de scripts, y una copia reducida de la imagen. No se envían audios ni el código de scripts."
             "generate" -> "Se enviará tu descripción al proveedor configurado para generar una imagen."
             "propose" -> if (vm.tool == Tool.CHARACTER) "Se enviarán tu petición y los ajustes y animaciones del personaje. No se enviarán imágenes ni archivos." else "Se enviarán tu petición, datos y ajustes del mod, canciones, muestras de notas y nombres de scripts; no se envían audios, imágenes ni el código de los scripts."
-            else -> "Se enviarán la consulta y los ajustes del personaje al proveedor configurado; no se enviará ninguna imagen."
+            else -> if (vm.tool == Tool.CHARACTER) "Se enviarán la consulta y los ajustes del personaje; no se enviará ninguna imagen." else "Se enviarán la consulta y los datos del proyecto, canciones, muestras de notas y nombres de scripts; no se envían audios, imágenes ni el código de los scripts."
         }
         androidx.compose.material3.AlertDialog(onDismissRequest = { confirmAction = null },
             title = { Text("¿Enviar al proveedor de IA?") },

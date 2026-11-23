@@ -219,7 +219,7 @@ fun ToolTopBar(
 
 @Composable
 fun ToolCard(
-    glyph: String,
+    icon: Int,
     title: String,
     description: String,
     badge: String?,
@@ -229,10 +229,14 @@ fun ToolCard(
         onClick = onClick,
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(modifier = Modifier.padding(16.dp)) {
-            Text(glyph, style = MaterialTheme.typography.headlineMedium)
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                androidx.compose.material3.Icon(androidx.compose.ui.res.painterResource(icon), contentDescription = null,
+                    modifier = Modifier.padding(12.dp), tint = MaterialTheme.colorScheme.primary)
+            }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

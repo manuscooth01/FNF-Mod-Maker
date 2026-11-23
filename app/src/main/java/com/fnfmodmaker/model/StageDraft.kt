@@ -34,7 +34,7 @@ data class StageDraft(
     val baseStageVSlice: String = "mainStage"
 ) {
     val stageFolder: String
-        get() = stageId.lowercase().replace(" ", "-").replace(Regex("[^a-z0-9-]"), "").ifEmpty { "custom-stage" }
+        get() = "fnfmm-" + stageId.lowercase().replace(" ", "-").replace(Regex("[^a-z0-9-]"), "").take(40).ifEmpty { "escenario" }
     
     val isReady: Boolean
         get() = enabled && stageId.isNotBlank() && backgroundImage != null
@@ -98,3 +98,7 @@ data class CameraBounds(
     val top: Float = -500f,
     val bottom: Float = 500f
 )
+/** Old draft fields that cannot yet be represented by the simple exporter. */
+fun StageDraft.hasUnsupportedFeatures(): Boolean = sprites.isNotEmpty() || zoneColors.isNotEmpty() ||
+    cameraPosition.x != 0f || cameraPosition.y != 0f || !cameraPosition.followPlayer || cameraPosition.bounds != CameraBounds() ||
+    backgroundColor != "#000000" || baseStagePsych != "stage" || baseStageVSlice != "mainStage"

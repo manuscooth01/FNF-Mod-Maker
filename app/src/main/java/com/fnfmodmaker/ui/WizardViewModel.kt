@@ -164,8 +164,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (model.isBlank()) { aiError = "Indica un modelo de texto compatible."; return }
         val image = if (analyzeImage) aiAnalysisFile?.let(::File) else null
         if (analyzeImage && (image == null || !image.isFile)) { aiError = "Elige primero una imagen para analizar."; return }
-        val draft = config.character
-        val context = "Lado: ${draft.side.label}. Escala: ${draft.scale}. Posición: ${draft.positionX}, ${draft.positionY}. Cámara: ${draft.cameraX}, ${draft.cameraY}. Animaciones: ${draft.animationNames.joinToString()}."
+        val context = com.fnfmodmaker.ai.projectContext(config, tool == Tool.CHARACTER)
         val base = aiBaseUrl
         aiBusy = true; aiError = null; aiResult = null; aiProposal = null; aiProposalNotice = null; aiStatus = "Consultando al proveedor…"
         viewModelScope.launch {
@@ -2310,7 +2309,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             result.onSuccess { picked ->
-                config = config.copy(stageDraft = config.stageDraft.copy(backgroundImage = picked))
+                config = config.copy(stageDraft = config.stageDraft.copy(backgroundImage = picked)); scheduleAutoSave()
             }.onFailure {
                 error = it.message ?: "No se pudo leer la imagen."
             }
@@ -2349,7 +2348,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setStageId(value: String) {
-        config = config.copy(stageDraft = config.stageDraft.copy(stageId = slugify(value)))
+        if (busy) return
+        config = config.copy(stageDraft = config.stageDraft.copy(stageId = slugify(value).take(40))); scheduleAutoSave()
+    }
+    internal fun setSimpleStageEnabled(enabled: Boolean) {
+        if (busy) return
+        config = config.copy(stageDraft = config.stageDraft.copy(enabled = enabled)); scheduleAutoSave()
+    }
+    internal fun setSimpleStageZoom(zoom: Float) {
+        if (busy || !zoom.isFinite() || zoom !in 0.4f..2f) return
+        config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(zoom = zoom))); scheduleAutoSave()
     }
 
     fun setStageDisplayName(value: String) {

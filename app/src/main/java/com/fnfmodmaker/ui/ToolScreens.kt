@@ -83,6 +83,15 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(Modifier.height(12.dp))
+            androidx.compose.material3.Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp)) {
+                    Text("TU ESTUDIO DE MODS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Text("Crea a tu ritmo", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+                    Text("Una idea, una canción y un paso a la vez.", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            Spacer(Modifier.height(20.dp))
             Text(
                 "¿Qué quieres hacer?",
                 style = MaterialTheme.typography.headlineSmall,
@@ -98,7 +107,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
             Spacer(Modifier.height(16.dp))
 
             ToolCard(
-                glyph = "🧩",
+                icon = com.fnfmodmaker.R.drawable.tool_extension,
                 title = "Crear un mod completo",
                 description = "Un recorrido guiado para preparar canciones, personaje y audio, y guardar un ZIP.",
                 badge = "Desde cero",
@@ -115,7 +124,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
             )
             Spacer(Modifier.height(12.dp))
             ToolCard(
-                glyph = "🧍",
+                icon = com.fnfmodmaker.R.drawable.tool_person,
                 title = "Crear un personaje",
                 description = "Corta tu hoja de sprites y genera el XML Sparrow, los JSON de " +
                     "Psych y V-Slice y el icono de vida. Sin datos del mod.",
@@ -124,14 +133,18 @@ internal fun HomeScreen(vm: WizardViewModel) {
             )
             Spacer(Modifier.height(12.dp))
             ToolCard(
-                glyph = "🎧",
+                icon = com.fnfmodmaker.R.drawable.tool_music_note,
                 title = "Convertir audio a OGG",
                 description = "Pasa un MP3, WAV, M4A o FLAC al formato que leen los dos motores.",
                 badge = null,
                 onClick = { vm.openTool(Tool.AUDIO) }
             )
             Spacer(Modifier.height(12.dp))
-            Text("Importación de mods y creación de escenarios: aún no disponibles.",
+            ToolCard(icon = com.fnfmodmaker.R.drawable.tool_auto_awesome, title = "Asistente de IA",
+                description = "Pide un plan para tu mod o revisa propuestas antes de aplicarlas.", badge = "Opcional",
+                onClick = { vm.openTool(Tool.ASSISTANT) })
+            Spacer(Modifier.height(12.dp))
+            Text("Escenario sencillo disponible dentro de Canciones. Importación de mods y cinemáticas: aún no disponibles.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(Modifier.height(20.dp))

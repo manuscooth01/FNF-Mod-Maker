@@ -18,6 +18,13 @@ fun characterInputProblems(draft: CharacterDraft, fileExists: (String) -> Boolea
 
 /** Una sola validación para navegación, resumen y exportación. */
 fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(it).isFile }): List<WizardIssue> = buildList {
+    if (config.stageDraft.enabled) {
+        val stage = config.stageDraft
+        if (stage.stageId.isBlank()) add(WizardIssue(1, "Escenario: escribe un nombre para el identificador."))
+        if (stage.backgroundImage == null || !fileExists(stage.backgroundImage.path)) add(WizardIssue(1, "Escenario: elige una imagen de fondo disponible."))
+        if (!stage.cameraPosition.zoom.isFinite() || stage.cameraPosition.zoom !in 0.4f..2f) add(WizardIssue(1, "Escenario: el zoom debe estar entre 0.4 y 2."))
+        if (stage.hasUnsupportedFeatures()) add(WizardIssue(1, "Escenario: los objetos avanzados todavía no se exportan. Desactiva el escenario para conservarlos."))
+    }
     if (config.psychScripts.isNotEmpty() && !config.engine.includesPsych) add(WizardIssue(0, "Los scripts Lua necesitan un destino que incluya Psych Engine."))
     if (config.psychScripts.any { !isValidPsychScript(it.key, it.value) }) add(WizardIssue(0, "Hay un script Psych inválido; elimínalo antes de exportar."))
     if (config.modTitle.isBlank()) add(WizardIssue(0, "Escribe el nombre del mod."))

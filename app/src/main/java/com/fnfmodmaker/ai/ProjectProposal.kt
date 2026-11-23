@@ -171,6 +171,15 @@ object ProjectProposalPlanner {
                     val oldNotes = previous?.let { "\nNOTAS ANTERIORES:\n${describeNotes(it.notes)}" } ?: ""
                     items.add(ProposalItem("Reemplazar chart ${song.songName} · $diff", "Canción ${index + 1}. Antes: $previousText. Después: ${notes.size} notas. Carriles 0–3 jugador, 4–7 rival.$oldNotes\nNOTAS PROPUESTAS:\n${describeNotes(notes)}"))
                 }
+                "scene" -> {
+                    keys(change, setOf("type", "zoom"))
+                    val zoom = number(change, "zoom", 0.4f, 2f) ?: fail("falta zoom")
+                    val before = current.stageDraft
+                    if (!before.enabled) fail("activa primero el escenario sencillo y elige su fondo")
+                    val updated = before.copy(cameraPosition = before.cameraPosition.copy(zoom = zoom))
+                    current = current.copy(stageDraft = updated)
+                    items.add(ProposalItem("Escenario · encuadre inicial", "Zoom anterior: ${before.cameraPosition.zoom}. Nuevo zoom: $zoom. Se exporta para todas las canciones en los motores seleccionados. La posición es orientativa y debe probarse en el juego."))
+                }
                 "script" -> {
                     keys(change, setOf("type", "name", "content"))
                     if (!current.engine.includesPsych) fail("los scripts solo se exportan para Psych Engine; cambia el destino primero")
@@ -210,6 +219,9 @@ fun projectContext(config: ModConfig, characterOnly: Boolean): String {
         )
     )
     if (!characterOnly) {
+        result["stage"] = mapOf("enabled" to config.stageDraft.enabled, "id" to config.stageDraft.stageFolder,
+            "hasBackground" to (config.stageDraft.backgroundImage != null), "zoom" to config.stageDraft.cameraPosition.zoom,
+            "scope" to "escenario estático para todas las canciones si está activado")
         result["modTitle"] = config.modTitle.take(200)
         result["songs"] = config.songs.take(20).mapIndexed { index, song ->
             mapOf("index" to index, "name" to song.songName.take(100), "artist" to song.artist.take(100),

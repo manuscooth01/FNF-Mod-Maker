@@ -71,7 +71,8 @@ data class SongConfig(
     val offsetMs: String = "0",
     val instrumental: PickedAudio? = null,
     val vocalsPlayer: PickedAudio? = null,
-    val vocalsOpponent: PickedAudio? = null
+    val vocalsOpponent: PickedAudio? = null,
+    val chartAudioMix: ChartAudioMix = ChartAudioMix()
 ) {
     val songFolder: String get() = psychSongPath(songName)
     val bpmValue: Int get() = bpm.toIntOrNull() ?: 0

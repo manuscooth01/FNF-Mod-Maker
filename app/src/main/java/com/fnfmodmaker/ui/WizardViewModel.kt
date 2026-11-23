@@ -15,6 +15,8 @@ import com.google.gson.stream.JsonToken
 import com.google.gson.stream.JsonWriter
 import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.AudioSlot
+import com.fnfmodmaker.model.track
+import com.fnfmodmaker.model.withTrack
 import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.ChartEditorState
 import com.fnfmodmaker.model.ChartNote
@@ -352,6 +354,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var liveNotice by mutableStateOf<String?>(null)
         private set
     private var livePlayer: MediaPlayer? = null
+    private data class PreviewVoice(val track: com.fnfmodmaker.model.PreviewTrack, val player: MediaPlayer, var prepared: Boolean = false, var seeking: Boolean = false)
+    private val previewVoices = mutableListOf<PreviewVoice>()
     private var livePolling: kotlinx.coroutines.Job? = null
     private var livePrepared = false
     private var liveFocusHeld = false
@@ -419,7 +423,90 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun selectLiveSnap(snap: com.fnfmodmaker.model.RecordingSnap) { if (!livePlaying && !liveLoading) liveSnap = snap }
     internal fun setLiveCorrection(value: Int) { if (!livePlaying && !liveLoading) liveCorrectionMs = value.coerceIn(-500, 500) }
     internal fun setLivePosition(value: Long) {
-        if (!livePlaying && !liveLoading) livePositionMs = value.coerceIn(0L, liveDurationMs.coerceAtLeast(0L))
+        if (liveLoading || liveRecording) return
+        val target = value.coerceIn(0L, liveDurationMs.coerceAtLeast(0L))
+        val master = livePlayer
+        if (livePlaying && master != null) {
+            livePolling?.cancel()
+            livePlaying = false
+            runCatching { master.pause() }
+            previewVoices.forEach { runCatching { if (it.prepared && it.player.isPlaying) it.player.pause() } }
+            livePositionMs = target
+            seekAndStartLive(master, false)
+        } else livePositionMs = target
+    }
+
+    internal fun updatePreviewMix(track: com.fnfmodmaker.model.PreviewTrack, change: (com.fnfmodmaker.model.TrackMix) -> com.fnfmodmaker.model.TrackMix) {
+        val song = liveSong ?: return
+        if (busy || liveLoading) return
+        val old = song.chartAudioMix.track(track)
+        val next = change(old).let { it.copy(volume = it.volume.coerceIn(0f, 1f), offsetMs = it.offsetMs.coerceIn(-5000, 5000)) }
+        // Offset changes are applied on the next playback/seek, not during recording.
+        if (next.offsetMs != old.offsetMs && (livePlaying || liveRecording)) return
+        val songs = config.songs.toMutableList()
+        songs[liveSongIndex] = song.copy(chartAudioMix = song.chartAudioMix.withTrack(track, next))
+        config = config.copy(songs = songs); applyPreviewVolumes(); scheduleAutoSave()
+    }
+    private fun applyPreviewVolumes() {
+        val mix = liveSong?.chartAudioMix ?: return
+        fun volume(setting: com.fnfmodmaker.model.TrackMix) = if (setting.muted) 0f else setting.volume.coerceIn(0f, 1f)
+        runCatching { livePlayer?.setVolume(volume(mix.instrumental), volume(mix.instrumental)) }
+        previewVoices.forEach { voice -> runCatching { val v = volume(mix.track(voice.track)); voice.player.setVolume(v, v) } }
+    }
+    private fun releasePreviewVoices() {
+        val old = previewVoices.toList(); previewVoices.clear()
+        old.forEach { runCatching { it.player.release() } }
+    }
+    private fun preparePreviewVoices(master: MediaPlayer, record: Boolean) {
+        releasePreviewVoices()
+        val song = liveSong ?: return
+        val tracks = listOfNotNull(song.vocalsPlayer?.let { com.fnfmodmaker.model.PreviewTrack.PLAYER to it }, song.vocalsOpponent?.let { com.fnfmodmaker.model.PreviewTrack.OPPONENT to it })
+        if (tracks.isEmpty()) { seekAndStartLive(master, record); return }
+        try {
+            tracks.forEach { (kind, audio) ->
+                require(File(audio.path).isFile) { "Falta el archivo de voz." }
+                val mp = MediaPlayer(); val voice = PreviewVoice(kind, mp); previewVoices.add(voice)
+                mp.setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+                mp.setDataSource(audio.path)
+                mp.setOnPreparedListener {
+                    if (livePlayer !== master || voice !in previewVoices) return@setOnPreparedListener
+                    voice.prepared = true
+                    if (previewVoices.size == tracks.size && previewVoices.all { it.prepared }) { applyPreviewVolumes(); seekAndStartLive(master, record) }
+                }
+                mp.setOnErrorListener { _, _, _ ->
+                    if (livePlayer === master && voice in previewVoices) { closeLiveChart(); liveError = "No se pudo reproducir una pista de voz. Revisa el archivo o quítalo del proyecto." }
+                    true
+                }
+                mp.prepareAsync()
+            }
+        } catch (e: Exception) { closeLiveChart(); liveError = "No se pudo abrir una pista de voz: ${e.message}" }
+    }
+    /** MediaPlayer instances are not sample-clock locked; correct drift against the instrumental. */
+    private fun syncPreviewVoices(masterPosition: Long, force: Boolean = false) {
+        val mix = liveSong?.chartAudioMix ?: return
+        previewVoices.filter { it.prepared }.forEach { voice ->
+            val mp = voice.player
+            val target = runCatching { com.fnfmodmaker.model.previewTrackPosition(masterPosition, mix.instrumental.offsetMs, mix.track(voice.track).offsetMs, mp.duration.toLong()) }.getOrNull()
+            if (target == null) {
+                runCatching { if (mp.isPlaying) mp.pause() }
+            } else if (!voice.seeking) {
+                val shouldSeek = runCatching { force || !mp.isPlaying || kotlin.math.abs(mp.currentPosition.toLong() - target) > 150L }.getOrDefault(false)
+                if (shouldSeek) try {
+                    if (mp.isPlaying) mp.pause()
+                    voice.seeking = true
+                    mp.setOnSeekCompleteListener {
+                        voice.seeking = false
+                        if (livePlaying && voice in previewVoices) {
+                            val position = runCatching { livePlayer?.currentPosition?.toLong() }.getOrNull() ?: livePositionMs
+                            val currentMix = liveSong?.chartAudioMix
+                            val allowed = currentMix != null && com.fnfmodmaker.model.previewTrackPosition(position, currentMix.instrumental.offsetMs, currentMix.track(voice.track).offsetMs, runCatching { mp.duration.toLong() }.getOrDefault(0L)) != null
+                            if (allowed) runCatching { mp.start() }
+                        }
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= 26) mp.seekTo(target, MediaPlayer.SEEK_CLOSEST) else @Suppress("DEPRECATION") mp.seekTo(target.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+                } catch (_: Exception) { voice.seeking = false; liveError = "No se pudo sincronizar una pista de voz." }
+            }
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -457,12 +544,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 if (livePlayer !== mp) return@setOnPreparedListener
                 livePrepared = true
                 liveDurationMs = runCatching { mp.duration.toLong() }.getOrDefault(0L).coerceAtLeast(0L)
-                seekAndStartLive(mp, record)
+                applyPreviewVolumes()
+                preparePreviewVoices(mp, record)
             }
             player.setOnCompletionListener { mp ->
                 if (livePlayer === mp) {
                     finishAllLiveHolds(liveDurationMs)
                     livePolling?.cancel(); livePlaying = false; liveRecording = false; liveLoading = false
+                    previewVoices.forEach { runCatching { if (it.player.isPlaying) it.player.pause() } }
                     livePositionMs = liveDurationMs; abandonLiveFocus(); forceAutoSave()
                     liveNotice = "Terminó la instrumental. Las notas grabadas están en el borrador."
                 }
@@ -487,10 +576,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 player.start()
                 livePositionMs = player.currentPosition.toLong()
                 liveLoading = false; livePlaying = true; liveRecording = record
+                applyPreviewVolumes(); syncPreviewVoices(livePositionMs, force = true)
                 livePolling?.cancel()
                 livePolling = viewModelScope.launch {
                     while (livePlayer === player && livePlaying) {
                         livePositionMs = runCatching { player.currentPosition.toLong() }.getOrDefault(livePositionMs)
+                        syncPreviewVoices(livePositionMs)
                         delay(50)
                     }
                 }
@@ -511,7 +602,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             finishAllLiveHolds(livePositionMs)
             runCatching { player.pause() }
         }
-        livePolling?.cancel(); livePlaying = false; liveRecording = false; abandonLiveFocus()
+        livePolling?.cancel(); livePlaying = false; liveRecording = false
+        previewVoices.forEach { runCatching { if (it.prepared && it.player.isPlaying) it.player.pause() } }
+        abandonLiveFocus()
         forceAutoSave()
     }
     internal fun closeLiveChart() {
@@ -520,6 +613,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val finalPosition = if (livePlaying) runCatching { player?.currentPosition?.toLong() }.getOrNull() ?: livePositionMs else livePositionMs
         finishAllLiveHolds(finalPosition)
         livePlayer = null; livePrepared = false
+        releasePreviewVoices()
         runCatching { player?.release() }
         liveLoading = false; livePlaying = false; liveRecording = false
         abandonLiveFocus()

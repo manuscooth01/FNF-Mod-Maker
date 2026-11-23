@@ -74,6 +74,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
     var timeText by remember { mutableStateOf("") }
     var timeError by remember { mutableStateOf<String?>(null) }
     var showButtonEditor by remember { mutableStateOf(false) }
+    var showAudioControls by remember { mutableStateOf(false) }
     val audioActive = vm.livePlaying || vm.liveLoading
     val locked = vm.liveRecording || vm.liveLoading || vm.busy
     val notes = vm.liveChart?.notes.orEmpty()
@@ -167,14 +168,18 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     if (audioActive) Button(onClick = vm::pauseLivePlayback) { Text(if (vm.liveLoading) "Cancelar" else "Pausar") }
                     else OutlinedButton(onClick = { vm.setLivePosition(grid.pageStart(page)); vm.startLivePlayback(false) }, enabled = vm.liveCanPlay) { Text("▶ Escuchar desde aquí") }
-                    TextButton(onClick = { showButtonEditor = true }, enabled = !locked && !vm.busy) { Text("Edición por botones") }
+                    TextButton(onClick = { vm.setLivePosition((vm.livePositionMs - 5000).coerceAtLeast(0)) }, enabled = !vm.liveLoading && !vm.liveRecording) { Text("−5 s") }
+                    TextButton(onClick = { vm.setLivePosition((vm.livePositionMs + 5000).coerceAtMost(vm.liveDurationMs)) }, enabled = !vm.liveLoading && !vm.liveRecording) { Text("+5 s") }
+                    TextButton(onClick = { showAudioControls = true }) { Text("Mezcla") }
+                    TextButton(onClick = { showButtonEditor = true }, enabled = !locked && !vm.busy && !multiMode) { Text("Edición por botones") }
                     TextButton(onClick = { vm.undoGridEdit(); selected = null; group = emptySet() }, enabled = !locked && vm.gridUndoCount > 0) { Text("Deshacer (${vm.gridUndoCount})") }
                     TextButton(onClick = { vm.redoGridEdit(); selected = null; group = emptySet() }, enabled = !locked && vm.gridRedoCount > 0) { Text("Rehacer (${vm.gridRedoCount})") }
                 }
-                Text("Puedes editar mientras escuchas la instrumental. Las voces no se reproducen aquí; prueba el chart en el juego.", style = MaterialTheme.typography.labelSmall)
+                Text("Puedes editar mientras escuchas. La mezcla es aproximada y debe probarse en el dispositivo y en el juego.", style = MaterialTheme.typography.labelSmall)
             }
         }
     }
+    if (showAudioControls) ChartAudioControls(vm) { showAudioControls = false }
     if (editTime && selected != null) AlertDialog(onDismissRequest = { editTime = false }, title = { Text("Tiempo exacto") },
         text = { Column {
             Text("Introduce el tiempo desde el inicio de la canción en milisegundos, sin ajuste a la cuadrícula.")

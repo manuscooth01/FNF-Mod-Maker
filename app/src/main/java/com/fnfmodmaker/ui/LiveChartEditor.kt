@@ -156,7 +156,7 @@ private fun LiveSetup(vm: WizardViewModel) {
         Text("Este chart contiene eventos o secciones que la app aún no puede exportar. No se puede grabar encima para evitar perderlos.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     else if (song.instrumental == null || !vm.liveCanPlay)
         Text("Elige una instrumental disponible en el paso Audio.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-    else Text("Se reproduce la instrumental; las voces no se reproducen aquí.", style = MaterialTheme.typography.bodySmall)
+    else Text("La instrumental es el reloj maestro; la mezcla de voces debe comprobarse en el dispositivo.", style = MaterialTheme.typography.bodySmall)
     Spacer(Modifier.height(8.dp))
     Text("2 · Lado que vas a grabar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -183,6 +183,8 @@ private fun LiveSetup(vm: WizardViewModel) {
 private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
     var confirmPractice by rememberSaveable { mutableStateOf(false) }
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
+    var showAudioControls by remember { mutableStateOf(false) }
+    if (showAudioControls) ChartAudioControls(vm) { showAudioControls = false }
     Text("3 · Escucha y graba", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
     Text(if (vm.liveLoading) "Preparando audio…" else if (vm.liveRecording) "● GRABANDO · toca las flechas" else if (vm.livePlaying) "▶ Escuchando · no se graban toques" else "Pausado",
         color = if (vm.liveRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -192,9 +194,12 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
     Text("${clock(vm.livePositionMs)} / ${clock(vm.liveDurationMs)}", style = MaterialTheme.typography.bodySmall)
     Slider(value = vm.livePositionMs.coerceIn(0L, vm.liveDurationMs.coerceAtLeast(1L)).toFloat(),
         onValueChange = { vm.setLivePosition(it.toLong()) }, valueRange = 0f..vm.liveDurationMs.coerceAtLeast(1L).toFloat(),
-        enabled = !vm.livePlaying && !vm.liveLoading && vm.liveDurationMs > 0)
-    Text("Pausa para mover el punto de inicio.", style = MaterialTheme.typography.labelSmall)
+        enabled = !vm.liveRecording && !vm.liveLoading && vm.liveDurationMs > 0)
+    Text("Durante la grabación, pausa para cambiar la posición.", style = MaterialTheme.typography.labelSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = { vm.setLivePosition(vm.livePositionMs - 5000) }, enabled = !vm.liveRecording && !vm.liveLoading) { Text("−5 s") }
+        TextButton(onClick = { vm.setLivePosition(vm.livePositionMs + 5000) }, enabled = !vm.liveRecording && !vm.liveLoading) { Text("+5 s") }
+        TextButton(onClick = { showAudioControls = true }) { Text("Mezcla") }
         if (vm.livePlaying || vm.liveLoading) {
             Button(onClick = vm::pauseLivePlayback) { Text(if (vm.liveLoading) "Cancelar" else "Pausar") }
         } else {

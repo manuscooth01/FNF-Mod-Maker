@@ -1,7 +1,5 @@
 package com.fnfmodmaker.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,7 +19,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -91,16 +88,8 @@ fun Field(
             )
         }
     }
-@Composable
-fun SectionTitle(text: String) {
-    Spacer(Modifier.height(18.dp))
-    androidx.compose.material3.Text(
-        text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold
-    )
-    Spacer(Modifier.height(8.dp))
 }
+
 @Composable
 fun HelpCard(text: String) {
     Surface(

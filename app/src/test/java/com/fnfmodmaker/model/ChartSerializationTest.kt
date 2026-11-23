@@ -20,4 +20,18 @@ class ChartSerializationTest {
         assertEquals(7, notes.getJSONObject(0).getInt("d"))
         assertEquals(200, notes.getJSONObject(0).getInt("l"))
     }
+    @Test fun unsupportedDataFailsBothDirectSerializersInsteadOfBeingDropped() {
+        val drafts = listOf(
+            ChartDraft(events = listOf(ChartEvent())),
+            ChartDraft(sections = listOf(ChartSection())),
+            ChartDraft(notes = listOf(ChartNote(10, 0, isSustain = true))),
+            ChartDraft(notes = listOf(ChartNote(10, 8)))
+        )
+        drafts.forEach { draft ->
+            assertTrue(draft.exportProblems().isNotEmpty())
+            assertThrows(IllegalArgumentException::class.java) { draft.toPsychJson() }
+            assertThrows(IllegalArgumentException::class.java) { draft.toVSliceNotes() }
+            assertThrows(IllegalArgumentException::class.java) { draft.toVSliceJson() }
+        }
+    }
 }

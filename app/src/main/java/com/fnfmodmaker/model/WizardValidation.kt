@@ -46,6 +46,10 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
             add(WizardIssue(1, "$label: la velocidad debe ser mayor que cero.", index))
         }
         if (song.difficulties.isEmpty()) add(WizardIssue(1, "$label: elige al menos una dificultad.", index))
+        song.orderedDifficulties.forEach { difficulty ->
+            val problems = config.getChart(song.songFolder, difficulty)?.exportProblems().orEmpty()
+            if (problems.isNotEmpty()) add(WizardIssue(1, "$label ($difficulty): no se puede exportar sin perder ${problems.joinToString()}. Conserva el proyecto editable.", index))
+        }
         if (song.instrumental == null) {
             add(WizardIssue(3, "$label: elige la instrumental.", index))
         } else if (!fileExists(song.instrumental.path)) {

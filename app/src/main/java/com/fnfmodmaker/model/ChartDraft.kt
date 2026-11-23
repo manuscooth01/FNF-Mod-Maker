@@ -77,8 +77,21 @@ data class ChartDraft(
     val gfVersion: String = "gf",
     val stage: String = "stage"
 ) {
+    /** Current exporters have no mapping for these fields; never discard them silently. */
+    fun exportProblems(): List<String> = buildList {
+        if (events.isNotEmpty()) add("eventos")
+        if (sections.isNotEmpty()) add("secciones personalizadas")
+        if (notes.any { it.isSustain }) add("notas de cola independientes")
+        if (notes.any { it.lane !in 0..7 || it.timeMs < 0 || it.lengthMs < 0 || it.timeMs > Long.MAX_VALUE - it.lengthMs }) add("notas inválidas")
+    }
+
+    fun requireExportable() {
+        require(exportProblems().isEmpty()) { "El chart contiene datos que no se pueden exportar sin pérdida: ${exportProblems().joinToString()}. Conserva el proyecto editable." }
+    }
+
     /** Convierte a JSON Psych Engine (formato psych_v1). */
     fun toPsychJson(): String {
+        requireExportable()
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
         // Estimar beats totales desde la última nota
         val lastNoteTime = notes.maxByOrNull { it.endTimeMs }?.endTimeMs ?: 0L
@@ -143,6 +156,7 @@ data class ChartDraft(
 
     /** Convierte a JSON V-Slice (esquema 2.0.0). */
     fun toVSliceJson(): String {
+        requireExportable()
         val scrollSpeed = JSONObject().put(difficulty, scrollSpeed)
         val notesJson = JSONObject()
         val notesArray = JSONArray()
@@ -169,6 +183,7 @@ data class ChartDraft(
 
     /** Convierte solo las notas a JSONArray para V-Slice (una dificultad). */
     fun toVSliceNotes(): JSONArray {
+        requireExportable()
         val notesArray = JSONArray()
         for (note in notes) {
             val data = note.lane

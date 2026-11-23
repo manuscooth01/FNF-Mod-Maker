@@ -33,6 +33,10 @@ object ModBuilder {
         workRoot: File,
         onProgress: (String) -> Unit
     ): BuildResult {
+        // Fail before creating or clearing output directories, even if called outside the wizard.
+        rawConfig.songs.forEach { song -> song.orderedDifficulties.forEach { difficulty ->
+            rawConfig.getChart(song.songFolder, difficulty)?.requireExportable()
+        } }
         val warnings = mutableListOf<String>()
         // Si hay personaje propio, el chart de cada canción debe apuntar a él.
         val characterConfig = rawConfig.withCharacter()

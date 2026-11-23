@@ -27,12 +27,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToLong
-import com.fnfmodmaker.model.DragState
-import com.fnfmodmaker.model.DragState.Scroll
-import com.fnfmodmaker.model.DragState.HoldResize
-import com.fnfmodmaker.model.DragState.SelectionBox
-import com.fnfmodmaker.model.DragState.MultiDrag
+import com.fnfmodmaker.model.ChartEditorState
+import com.fnfmodmaker.model.ChartDraft
+import com.fnfmodmaker.model.ChartDraft.DragState
+import com.fnfmodmaker.model.ChartDraft.DragState.Scroll
+import com.fnfmodmaker.model.ChartDraft.DragState.HoldResize
+import com.fnfmodmaker.model.ChartDraft.DragState.SelectionBox
+import com.fnfmodmaker.model.ChartDraft.DragState.MultiDrag
 import com.fnfmodmaker.model.SelectedNote
 import java.io.File
 

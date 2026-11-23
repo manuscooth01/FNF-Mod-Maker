@@ -50,7 +50,7 @@ internal class LocalAppearanceController(context: Context) {
     private val store = LocalAppearanceStore(context.applicationContext)
     private val preferences = context.applicationContext.getSharedPreferences("local_appearance", Context.MODE_PRIVATE)
     var firstHalf by mutableStateOf(preferences.getBoolean("first_half", false)); private set
-    fun setFirstHalf(value: Boolean) { firstHalf = value; preferences.edit().putBoolean("first_half", value).apply() }
+    fun updateFirstHalf(value: Boolean) { firstHalf = value; preferences.edit().putBoolean("first_half", value).apply() }
     var background by mutableStateOf<ImageBitmap?>(null); private set
     var icon by mutableStateOf<ImageBitmap?>(null); private set
     var busy by mutableStateOf(false); private set
@@ -114,7 +114,7 @@ internal fun LocalAppearancePanel() {
                     OutlinedButton(onClick = { iconPicker.launch(arrayOf("image/png", "image/jpeg", "image/webp")) }, enabled = !state.busy) { Text("Elegir icono") }
                     TextButton(onClick = { scope.launch { state.remove(AppearanceSlot.ICON) } }, enabled = !state.busy) { Text("Quitar") }
                 }
-                if (state.icon != null) TextButton(onClick = { state.setFirstHalf(!state.firstHalf) }) {
+                if (state.icon != null) TextButton(onClick = { state.updateFirstHalf(!state.firstHalf) }) {
                     Text(if (state.firstHalf) "Icono: mitad izquierda (cambiar)" else "Icono: imagen completa (cambiar)")
                 }
                 Text("Para hojas con dos caras iguales puedes mostrar solo la mitad izquierda. Las opciones son locales y no alteran la imagen original.", style = MaterialTheme.typography.labelSmall)

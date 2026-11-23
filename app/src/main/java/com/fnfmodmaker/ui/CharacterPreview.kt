@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.pointerInput
@@ -48,6 +49,11 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.fnfmodmaker.model.CharacterAdjustment
 import com.fnfmodmaker.model.CharacterDraft
+import com.fnfmodmaker.model.CharacterSide
+import com.fnfmodmaker.model.characterGuideAnchor
+import com.fnfmodmaker.model.GUIDE_OPPONENT
+import com.fnfmodmaker.model.GUIDE_PLAYER
+import com.fnfmodmaker.model.GUIDE_COMPANION
 import com.fnfmodmaker.model.atlasFramesForPrefix
 import com.fnfmodmaker.model.gridAnimationRegions
 import com.fnfmodmaker.model.placement
@@ -168,7 +174,7 @@ internal fun CharacterPreviewPane(
         Canvas(
             Modifier.fillMaxWidth().aspectRatio(16f / 9f)
                 .onSizeChanged { canvasWidth = it.width }
-                .semantics { contentDescription = "Vista previa del personaje; arrastra para ajustar ${adjustment.label}" }
+                .semantics { contentDescription = "Escena orientativa con rival, acompañante y jugador. Arrastra para ajustar ${adjustment.label} de tu personaje." }
                 .pointerInput(adjustment, canvasWidth, animationName, vm.busy, zoom) {
                     var startX = 0f
                     var startY = 0f
@@ -208,8 +214,19 @@ internal fun CharacterPreviewPane(
             clipRect {
               scale(scaleX = zoom, scaleY = zoom, pivot = Offset(size.width / 2f, size.height / 2f)) {
             drawReferenceStage(k)
-            val baseX = 450f + position.x
-            val baseY = 120f + position.y
+            val anchor = characterGuideAnchor(draft.side)
+            val baseX = anchor.x + position.x
+            val baseY = anchor.y + position.y
+            drawGuideCharacter(GUIDE_COMPANION.x, GUIDE_COMPANION.y, "ACOMPAÑANTE", Color(0xFFDC83BF), k)
+            if (draft.side != CharacterSide.OPPONENT || currentFrame == null)
+                drawGuideCharacter(if (draft.side == CharacterSide.OPPONENT) baseX else GUIDE_OPPONENT.x,
+                    if (draft.side == CharacterSide.OPPONENT) baseY else GUIDE_OPPONENT.y, "RIVAL", Color(0xFFFF8D92), k)
+            if (draft.side != CharacterSide.PLAYER || currentFrame == null)
+                drawGuideCharacter(if (draft.side == CharacterSide.PLAYER) baseX else GUIDE_PLAYER.x,
+                    if (draft.side == CharacterSide.PLAYER) baseY else GUIDE_PLAYER.y, "JUGADOR", Color(0xFF73CBFF), k)
+            if (currentFrame != null) {
+                drawGuideLabel(anchor.x, if (draft.side == CharacterSide.PLAYER) "TU JUGADOR" else "TU RIVAL", k)
+            }
             if (currentFrame != null) {
                 val width = (currentFrame.width * scaleValue * k).coerceIn(1f, 100000f)
                 val height = (currentFrame.height * scaleValue * k).coerceIn(1f, 100000f)
@@ -280,4 +297,24 @@ private fun DrawScope.drawReferenceStage(k: Float) {
         drawCircle(Color(0xFFB79F5D), 14f * k, Offset(x, y))
         drawCircle(Color(0xFFFFF2B5), 9f * k, Offset(x, y))
     }
+}
+
+/** Silhouettes are only a visual guide, not exported characters or stage data. */
+private fun DrawScope.drawGuideCharacter(x: Float, y: Float, label: String, color: Color, k: Float) {
+    drawCircle(color.copy(alpha = .55f), radius = 40f * k, center = Offset((x + 90f) * k, (y + 72f) * k))
+    drawRoundRect(color.copy(alpha = .38f), topLeft = Offset((x + 38f) * k, (y + 120f) * k),
+        size = Size(104f * k, 160f * k), cornerRadius = androidx.compose.ui.geometry.CornerRadius(35f * k))
+    drawLine(color.copy(alpha = .55f), Offset((x + 55f) * k, (y + 258f) * k), Offset((x + 42f) * k, (y + 330f) * k), 16f * k)
+    drawLine(color.copy(alpha = .55f), Offset((x + 125f) * k, (y + 258f) * k), Offset((x + 138f) * k, (y + 330f) * k), 16f * k)
+    drawGuideLabel(x, label, k)
+}
+
+private fun DrawScope.drawGuideLabel(x: Float, label: String, k: Float) {
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.WHITE
+        textSize = 36f * k
+        textAlign = android.graphics.Paint.Align.CENTER
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+    }
+    drawContext.canvas.nativeCanvas.drawText(label, (x + 90f) * k, 585f * k, paint)
 }

@@ -36,7 +36,7 @@ import com.fnfmodmaker.model.CharacterDraft
 import com.fnfmodmaker.model.CharacterSide
 import com.fnfmodmaker.model.atlasFramesForPrefix
 
-private val characterSections = listOf("Personaje", "Imágenes", "Animación", "Posición", "Revisar")
+private val characterSections = listOf("Personaje", "Imágenes", "Animación", "Posición", "Asistente IA", "Revisar")
 
 /** A shared workspace for the standalone tool and the mod wizard. */
 @Composable
@@ -63,7 +63,7 @@ internal fun CharacterWorkspace(
                     TextButton(onClick = { zoom = (zoom * 1.25f).coerceAtMost(3f) }) { Text("+") }
                 }
                 CharacterPreviewPane(vm, draft, selected, adjustment, { adjustment = it }, zoom, expanded = true)
-                Text("Arrastra para ajustar ${adjustment.label.lowercase()}. La escena es orientativa; prueba el resultado en el juego.",
+                Text("Rival · acompañante · jugador son guías. Solo se edita tu personaje. Arrastra para ajustar ${adjustment.label.lowercase()}; prueba la posición en el juego.",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -83,6 +83,7 @@ internal fun CharacterWorkspace(
                         "Imágenes" -> CharacterImages(vm, draft, selected, { selected = it }, onPickSheet, onPickXml, onPickFrames)
                         "Animación" -> CharacterAnimation(vm, draft, selected, { selected = it })
                         "Posición" -> CharacterPosition(vm, draft, selected, { selected = it }, adjustment, { adjustment = it })
+                        "Asistente IA" -> CharacterAiPanel(vm)
                         else -> CharacterReview(vm, { section = it })
                     }
                     Spacer(Modifier.height(28.dp))

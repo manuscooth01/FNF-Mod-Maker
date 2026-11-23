@@ -55,6 +55,152 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var tool by mutableStateOf(Tool.HOME)
         internal set
 
+    // The credential is deliberately kept only in memory, never in the auto-saved project.
+    var aiBaseUrl by mutableStateOf("https://api.openai.com/v1")
+    var aiKey by mutableStateOf("")
+    var aiChatModel by mutableStateOf("gpt-4.1-mini")
+    var aiImageModel by mutableStateOf("gpt-image-1")
+    var aiPrompt by mutableStateOf("")
+    var aiResult by mutableStateOf<String?>(null)
+        private set
+    var aiError by mutableStateOf<String?>(null)
+        private set
+    var aiStatus by mutableStateOf("")
+        private set
+    var aiBusy by mutableStateOf(false)
+        private set
+    var aiAnalysisFile by mutableStateOf<String?>(null)
+        private set
+    var aiAnalysisName by mutableStateOf<String?>(null)
+        private set
+    var aiGeneratedFile by mutableStateOf<String?>(null)
+        private set
+    var aiSavedImage by mutableStateOf<String?>(null)
+        private set
+
+    internal fun clearAiKey() { aiKey = "" }
+
+    /** Select a local image; resize and strip metadata before any optional upload. */
+    internal fun pickAiAnalysisImage(uri: Uri) {
+        if (aiBusy) return
+        aiBusy = true
+        aiError = null
+        aiStatus = "Preparando imagen…"
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val dir = File(app.cacheDir, "ai").apply { mkdirs() }
+                    val temp = File.createTempFile("selected_", ".img", dir)
+                    var output: File? = null
+                    try {
+                        val input = app.contentResolver.openInputStream(uri) ?: throw com.fnfmodmaker.ai.AiException("No se pudo abrir la imagen.")
+                        input.use { stream -> temp.outputStream().use { dest ->
+                            val buffer = ByteArray(8192); var total = 0L
+                            while (true) {
+                                val n = stream.read(buffer); if (n < 0) break
+                                total += n
+                                if (total > 15L * 1024 * 1024) throw com.fnfmodmaker.ai.AiException("La imagen supera 15 MB.")
+                                dest.write(buffer, 0, n)
+                            }
+                        } }
+                        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeFile(temp.path, bounds)
+                        if (bounds.outWidth !in 1..12000 || bounds.outHeight !in 1..12000) throw com.fnfmodmaker.ai.AiException("La imagen no es válida o es demasiado grande.")
+                        var sample = 1
+                        while (bounds.outWidth / sample > 1024 || bounds.outHeight / sample > 1024) sample *= 2
+                        val bitmap = android.graphics.BitmapFactory.decodeFile(temp.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+                            ?: throw com.fnfmodmaker.ai.AiException("No se pudo leer la imagen.")
+                        try {
+                            val white = android.graphics.Bitmap.createBitmap(bitmap.width, bitmap.height, android.graphics.Bitmap.Config.ARGB_8888)
+                            try {
+                                val canvas = android.graphics.Canvas(white)
+                                canvas.drawColor(android.graphics.Color.WHITE)
+                                canvas.drawBitmap(bitmap, 0f, 0f, null)
+                                output = File.createTempFile("analysis_", ".jpg", dir)
+                                output!!.outputStream().use { if (!white.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it)) throw com.fnfmodmaker.ai.AiException("No se pudo preparar la imagen.") }
+                            } finally { white.recycle() }
+                        } finally { bitmap.recycle() }
+                        output!!.absolutePath to MediaTools.displayName(app, uri)
+                    } catch (e: Exception) {
+                        output?.delete()
+                        throw e
+                    } finally { temp.delete() }
+                }
+            }
+            result.onSuccess { (path, name) ->
+                aiAnalysisFile?.let { File(it).delete() }
+                aiAnalysisFile = path; aiAnalysisName = name
+            }.onFailure { aiError = if (it is com.fnfmodmaker.ai.AiException) it.message else "No se pudo preparar la imagen." }
+            aiStatus = ""; aiBusy = false
+        }
+    }
+
+    internal fun clearAiAnalysisImage() {
+        if (aiBusy) return
+        aiAnalysisFile?.let { File(it).delete() }
+        aiAnalysisFile = null; aiAnalysisName = null
+    }
+
+    /** No request is made until the user explicitly chooses an action. */
+    internal fun askCharacterAi(analyzeImage: Boolean) {
+        if (aiBusy) return
+        val question = aiPrompt.trim()
+        val key = aiKey.trim()
+        val model = aiChatModel.trim()
+        if (question.isBlank() || question.length > 4000) { aiError = "Escribe una consulta de hasta 4000 caracteres."; return }
+        if (key.isBlank() || key.contains('\n') || key.contains('\r')) { aiError = "Introduce una clave API válida en la app."; return }
+        if (model.isBlank()) { aiError = "Indica un modelo de texto compatible."; return }
+        val image = if (analyzeImage) aiAnalysisFile?.let(::File) else null
+        if (analyzeImage && (image == null || !image.isFile)) { aiError = "Elige primero una imagen para analizar."; return }
+        val draft = config.character
+        val context = "Lado: ${draft.side.label}. Escala: ${draft.scale}. Posición: ${draft.positionX}, ${draft.positionY}. Cámara: ${draft.cameraX}, ${draft.cameraY}. Animaciones: ${draft.animationNames.joinToString()}."
+        val base = aiBaseUrl
+        aiBusy = true; aiError = null; aiResult = null; aiStatus = "Consultando al proveedor…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { com.fnfmodmaker.ai.AiClient.chat(base, key, model, question, context, image) } }
+            result.onSuccess { aiResult = it }.onFailure { aiError = if (it is com.fnfmodmaker.ai.AiException) it.message else "No se pudo conectar con el proveedor. Comprueba Internet y la configuración." }
+            aiStatus = ""; aiBusy = false
+        }
+    }
+
+    internal fun generateCharacterAiImage() {
+        if (aiBusy) return
+        val prompt = aiPrompt.trim(); val key = aiKey.trim(); val model = aiImageModel.trim(); val base = aiBaseUrl
+        if (prompt.isBlank() || prompt.length > 4000) { aiError = "Escribe una descripción de hasta 4000 caracteres."; return }
+        if (key.isBlank() || key.contains('\n') || key.contains('\r')) { aiError = "Introduce una clave API válida en la app."; return }
+        if (model.isBlank()) { aiError = "Indica un modelo de imágenes compatible."; return }
+        aiBusy = true; aiError = null; aiSavedImage = null; aiStatus = "Generando imagen…"
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val dir = File(app.cacheDir, "ai").apply { mkdirs() }
+                val output = File.createTempFile("generated_", ".png", dir)
+                try { com.fnfmodmaker.ai.AiClient.generate(base, key, model, prompt, output); output.absolutePath }
+                catch (e: Exception) { output.delete(); throw e }
+            } }
+            result.onSuccess { path -> aiGeneratedFile?.let { File(it).delete() }; aiGeneratedFile = path }
+                .onFailure { aiError = if (it is com.fnfmodmaker.ai.AiException) it.message else "No se pudo conectar o generar la imagen. Comprueba la configuración." }
+            aiStatus = ""; aiBusy = false
+        }
+    }
+
+    internal fun saveAiGeneratedImage(uri: Uri) {
+        if (aiBusy) return
+        val file = aiGeneratedFile?.let(::File) ?: return
+        aiBusy = true; aiError = null; aiStatus = "Guardando imagen…"
+        val app = getApplication<Application>()
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val output = app.contentResolver.openOutputStream(uri) ?: throw IllegalStateException()
+                output.use { file.inputStream().use { input -> input.copyTo(it) } }
+                MediaTools.displayName(app, uri)
+            } }
+            result.onSuccess { aiSavedImage = it }.onFailure { aiError = "No se pudo guardar la imagen." }
+            aiStatus = ""; aiBusy = false
+        }
+    }
+
     /** Índice de la canción que se está editando en el asistente. */
     var activeSongIndex by mutableStateOf(0)
         internal set

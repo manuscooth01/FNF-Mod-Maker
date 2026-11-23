@@ -105,6 +105,22 @@ que una animación personalizada se reproduzca depende del juego y del mod. La e
 referencia y el resultado debe comprobarse en el juego. No se generan recursos adicionales de
 selección ni resultados para un personaje totalmente seleccionable en V-Slice.
 
+### Escenario de referencia y asistente de IA
+
+El editor muestra siluetas orientativas del rival, acompañante y jugador. Solo el personaje que
+estás editando se mueve y se exporta; las posiciones exactas dependen del escenario y del motor.
+
+La pestaña **Asistente IA** es opcional y requiere Internet. Configura una URL **HTTPS** de un
+proveedor de confianza compatible con `chat/completions` y, para generar ilustraciones,
+`images/generations`, más los modelos y tu propia clave API. La clave solo permanece en memoria
+mientras la app está abierta; no se guarda en el proyecto. No todos los servicios o modelos
+compatibles admiten visión o imágenes, y pueden aplicar cargos y sus propias políticas de datos.
+Cada solicitud requiere confirmación: los consejos envían la consulta y los ajustes básicos; el
+análisis envía además la imagen que elijas (reducida a 1024 px y sin metadatos, con transparencia
+sobre fondo blanco); la generación envía la descripción. Nunca se envía la imagen seleccionada
+al pedir solo consejos. Las respuestas son sugerencias y no modifican el personaje automáticamente.
+La ilustración generada se puede guardar como PNG, pero no es un atlas ni una animación terminada.
+
 ## 2. Cómo se usa
 
 El borrador se guarda automáticamente. En Inicio puedes retomarlo o elegir **Empezar un

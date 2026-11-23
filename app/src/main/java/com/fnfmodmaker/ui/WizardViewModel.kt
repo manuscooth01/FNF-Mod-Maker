@@ -320,6 +320,234 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 )
         }
 
+    // ---------------- Grabación táctil de charts ----------------
+    var liveSongIndex by mutableStateOf(0)
+        private set
+    var liveDifficulty by mutableStateOf("normal")
+        private set
+    var liveOpponent by mutableStateOf(false)
+        private set
+    var liveSnap by mutableStateOf(com.fnfmodmaker.model.RecordingSnap.FREE)
+        private set
+    var liveCorrectionMs by mutableStateOf(0)
+        private set
+    var livePositionMs by mutableStateOf(0L)
+        private set
+    var liveDurationMs by mutableStateOf(0L)
+        private set
+    var livePlaying by mutableStateOf(false)
+        private set
+    var liveRecording by mutableStateOf(false)
+        private set
+    var liveLoading by mutableStateOf(false)
+        private set
+    var liveError by mutableStateOf<String?>(null)
+        private set
+    var liveNotice by mutableStateOf<String?>(null)
+        private set
+    private var livePlayer: MediaPlayer? = null
+    private var livePolling: kotlinx.coroutines.Job? = null
+    private var livePrepared = false
+    private var liveFocusHeld = false
+    private data class LiveUndo(val note: ChartNote, val createdChart: Boolean)
+    private val liveUndo = mutableListOf<LiveUndo>()
+    var liveUndoCount by mutableStateOf(0)
+        private set
+    private val liveAudioManager get() = getApplication<Application>().getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+    private val liveFocusListener = android.media.AudioManager.OnAudioFocusChangeListener { change ->
+        if (change == android.media.AudioManager.AUDIOFOCUS_LOSS || change == android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT || change == android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+            pauseLivePlayback()
+            liveNotice = "Reproducción pausada por otra aplicación."
+        }
+    }
+
+    val liveSong: SongConfig? get() = config.songs.getOrNull(liveSongIndex)
+    val liveChart: ChartDraft? get() = liveSong?.let { config.getChart(it.songFolder, liveDifficulty) }
+    val liveChartAvailable: Boolean get() {
+        val song = liveSong ?: return false
+        val chart = liveChart
+        return song.songName.isNotBlank() && config.songs.count { it.songFolder == song.songFolder } == 1 &&
+            liveDifficulty in song.difficulties && (chart == null || (chart.events.isEmpty() && chart.sections.isEmpty()))
+    }
+    val liveCanPlay: Boolean get() = liveChartAvailable && liveSong?.instrumental?.let { File(it.path).isFile } == true
+
+    internal fun openLiveChart() {
+        closeLiveChart()
+        liveSongIndex = activeSongIndex.coerceIn(0, (config.songs.size - 1).coerceAtLeast(0))
+        val song = liveSong
+        liveDifficulty = if (song != null && "normal" in song.difficulties) "normal" else song?.orderedDifficulties?.firstOrNull() ?: "normal"
+        liveDurationMs = song?.instrumental?.durationMs ?: 0L
+        livePositionMs = 0L; liveError = null; liveNotice = null
+        liveUndo.clear(); liveUndoCount = 0
+    }
+    internal fun selectLiveSong(index: Int) {
+        if (liveLoading || livePlaying || index !in config.songs.indices) return
+        closeLiveChart()
+        liveSongIndex = index
+        val song = config.songs[index]
+        liveDifficulty = if ("normal" in song.difficulties) "normal" else song.orderedDifficulties.first()
+        liveDurationMs = song.instrumental?.durationMs ?: 0L; livePositionMs = 0L
+        liveError = null; liveNotice = null; liveUndo.clear(); liveUndoCount = 0
+    }
+    internal fun selectLiveDifficulty(difficulty: String) {
+        if (liveLoading || livePlaying || difficulty !in (liveSong?.difficulties ?: emptySet())) return
+        closeLiveChart(); liveDifficulty = difficulty; livePositionMs = 0L
+        liveDurationMs = liveSong?.instrumental?.durationMs ?: 0L
+        liveError = null; liveNotice = null; liveUndo.clear(); liveUndoCount = 0
+    }
+    internal fun selectLiveSide(opponent: Boolean) { if (!livePlaying && !liveLoading) liveOpponent = opponent }
+    internal fun selectLiveSnap(snap: com.fnfmodmaker.model.RecordingSnap) { if (!livePlaying && !liveLoading) liveSnap = snap }
+    internal fun setLiveCorrection(value: Int) { if (!livePlaying && !liveLoading) liveCorrectionMs = value.coerceIn(-500, 500) }
+    internal fun setLivePosition(value: Long) {
+        if (!livePlaying && !liveLoading) livePositionMs = value.coerceIn(0L, liveDurationMs.coerceAtLeast(0L))
+    }
+
+    @Suppress("DEPRECATION")
+    private fun acquireLiveFocus(): Boolean {
+        if (liveFocusHeld) return true
+        val result = liveAudioManager.requestAudioFocus(liveFocusListener, android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+        liveFocusHeld = result == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        return liveFocusHeld
+    }
+    @Suppress("DEPRECATION")
+    private fun abandonLiveFocus() {
+        if (liveFocusHeld) liveAudioManager.abandonAudioFocus(liveFocusListener)
+        liveFocusHeld = false
+    }
+    internal fun startLivePlayback(record: Boolean) {
+        if (busy || liveLoading || livePlaying) return
+        if (!liveCanPlay) { liveError = "Elige una instrumental disponible y comprueba el nombre y la dificultad de la canción."; return }
+        if (record && liveSnap != com.fnfmodmaker.model.RecordingSnap.FREE && (liveSong?.bpmValue ?: 0) !in 1..400) {
+            liveError = "Indica un BPM válido para usar el ajuste a la cuadrícula."; return
+        }
+        liveError = null; liveNotice = null
+        if (!acquireLiveFocus()) { liveError = "No se pudo obtener el audio; cierra otras aplicaciones de música e inténtalo de nuevo."; return }
+        val existing = livePlayer
+        if (existing != null && livePrepared) {
+            seekAndStartLive(existing, record)
+            return
+        }
+        val player = MediaPlayer()
+        livePlayer = player; livePrepared = false; liveLoading = true
+        try {
+            player.setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            player.setDataSource(liveSong!!.instrumental!!.path)
+            player.setOnPreparedListener { mp ->
+                if (livePlayer !== mp) return@setOnPreparedListener
+                livePrepared = true
+                liveDurationMs = runCatching { mp.duration.toLong() }.getOrDefault(0L).coerceAtLeast(0L)
+                seekAndStartLive(mp, record)
+            }
+            player.setOnCompletionListener { mp ->
+                if (livePlayer === mp) {
+                    livePolling?.cancel(); livePlaying = false; liveRecording = false; liveLoading = false
+                    livePositionMs = liveDurationMs; abandonLiveFocus(); forceAutoSave()
+                    liveNotice = "Terminó la instrumental. Las notas grabadas están en el borrador."
+                }
+            }
+            player.setOnErrorListener { mp, _, _ ->
+                if (livePlayer === mp) { closeLiveChart(); liveError = "No se pudo reproducir la instrumental. Prueba otro archivo." }
+                true
+            }
+            player.prepareAsync()
+        } catch (_: Exception) {
+            closeLiveChart(); liveError = "No se pudo abrir la instrumental. Prueba otro archivo."
+        }
+    }
+    private fun seekAndStartLive(player: MediaPlayer, record: Boolean) {
+        if (livePlayer !== player) return
+        liveLoading = true
+        val target = if (liveDurationMs > 0 && livePositionMs >= liveDurationMs) 0L else livePositionMs.coerceAtLeast(0L)
+        fun start() {
+            if (livePlayer !== player) return
+            try {
+                player.setOnSeekCompleteListener(null)
+                player.start()
+                livePositionMs = player.currentPosition.toLong()
+                liveLoading = false; livePlaying = true; liveRecording = record
+                livePolling?.cancel()
+                livePolling = viewModelScope.launch {
+                    while (livePlayer === player && livePlaying) {
+                        livePositionMs = runCatching { player.currentPosition.toLong() }.getOrDefault(livePositionMs)
+                        delay(50)
+                    }
+                }
+            } catch (_: Exception) { closeLiveChart(); liveError = "No se pudo iniciar la reproducción." }
+        }
+        try {
+            if (kotlin.math.abs(player.currentPosition.toLong() - target) > 10L) {
+                player.setOnSeekCompleteListener { start() }
+                player.seekTo(target.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            } else start()
+        } catch (_: Exception) { closeLiveChart(); liveError = "No se pudo buscar en la instrumental." }
+    }
+    internal fun pauseLivePlayback() {
+        if (liveLoading) { closeLiveChart(); return }
+        val player = livePlayer
+        if (livePlaying && player != null) {
+            runCatching { livePositionMs = player.currentPosition.toLong(); player.pause() }
+        }
+        livePolling?.cancel(); livePlaying = false; liveRecording = false; abandonLiveFocus()
+        forceAutoSave()
+    }
+    internal fun closeLiveChart() {
+        livePolling?.cancel(); livePolling = null
+        val player = livePlayer; livePlayer = null; livePrepared = false
+        runCatching { player?.release() }
+        liveLoading = false; livePlaying = false; liveRecording = false
+        abandonLiveFocus()
+        forceAutoSave()
+    }
+    internal fun recordLiveArrow(direction: Int) {
+        if (!liveRecording || !livePlaying || direction !in 0..3 || !liveChartAvailable) return
+        val song = liveSong ?: return
+        val position = runCatching { livePlayer?.currentPosition?.toLong() }.getOrNull() ?: return
+        val time = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs)
+        val note = ChartNote(timeMs = time, lane = direction + if (liveOpponent) 4 else 0)
+        val existing = config.getChart(song.songFolder, liveDifficulty)
+        val draft = existing ?: ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
+            scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
+            player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych)
+        if (draft.notes.size >= 10000) { liveNotice = "Límite de 10 000 notas en esta dificultad."; return }
+        val notes = com.fnfmodmaker.model.appendRecordedNote(draft.notes, note)
+        if (notes == null) { liveNotice = "Ya existe una nota en ese carril y tiempo; no se ha sobrescrito."; return }
+        config = config.withChart(song.songFolder, liveDifficulty, draft.copy(notes = notes))
+        liveUndo.add(LiveUndo(note, existing == null)); liveUndoCount = liveUndo.size
+        liveNotice = null; scheduleAutoSave()
+    }
+    internal fun undoLiveNote() {
+        if (livePlaying || liveLoading || liveUndo.isEmpty()) return
+        val song = liveSong ?: return
+        val chart = config.getChart(song.songFolder, liveDifficulty) ?: return
+        val action = liveUndo.last()
+        val notes = com.fnfmodmaker.model.removeRecordedNote(chart.notes, action.note) ?: return
+        liveUndo.removeAt(liveUndo.lastIndex); liveUndoCount = liveUndo.size
+        config = if (action.createdChart && notes.isEmpty()) removeChartFromConfig(config, song.songFolder, liveDifficulty)
+            else config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = notes))
+        liveNotice = "Se deshizo la última nota grabada en esta sesión."; scheduleAutoSave()
+    }
+    internal fun deleteLiveNote(note: ChartNote) {
+        if (livePlaying || liveLoading || !liveChartAvailable) return
+        val song = liveSong ?: return
+        val chart = config.getChart(song.songFolder, liveDifficulty) ?: return
+        val notes = com.fnfmodmaker.model.removeRecordedNote(chart.notes, note) ?: return
+        config = config.withChart(song.songFolder, liveDifficulty, chart.copy(notes = notes))
+        liveUndo.removeAll { it.note == note }; liveUndoCount = liveUndo.size
+        liveNotice = "Nota eliminada."; scheduleAutoSave()
+    }
+    internal fun deleteLiveCustomChart() {
+        if (livePlaying || liveLoading) return
+        val song = liveSong ?: return
+        config = removeChartFromConfig(config, song.songFolder, liveDifficulty)
+        liveUndo.clear(); liveUndoCount = 0
+        liveNotice = "Se eliminó el chart personalizado de esta dificultad."; scheduleAutoSave()
+    }
+    private fun removeChartFromConfig(config: ModConfig, folder: String, difficulty: String): ModConfig {
+        val remaining = config.charts[folder].orEmpty() - difficulty
+        return config.copy(charts = if (remaining.isEmpty()) config.charts - folder else config.charts + (folder to remaining))
+    }
+
     // ---------------- Navegación de canciones ----------------
 
     internal fun addSong() {
@@ -1072,6 +1300,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun reset() {
+        closeLiveChart()
         releaseMediaPlayer()
         config = ModConfig()
         aiProposal = null
@@ -2166,4 +2395,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             busy = false
         }
     }
+    override fun onCleared() {
+        closeLiveChart()
+        releaseMediaPlayer()
+        super.onCleared()
+    }
+
 }

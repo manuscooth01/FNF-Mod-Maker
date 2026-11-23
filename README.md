@@ -47,7 +47,7 @@ herramienta por separado. Hace esto:
 
 Lo que **todavía no** hace (siguiente fase):
 
-- Editor visual de notas (grilla) dentro de la app.
+- Editor de notas en cuadrícula con notas sostenidas y eventos dentro de la app.
 - Escenarios propios (sprites + JSON).
 - Iconos y animaciones *miss* por personaje (la app usa los de `bf`/`dad`).
 - Importar un mod completo existente para editarlo.
@@ -140,9 +140,16 @@ audio y deben revisarse y probarse en el juego. El modelo y proveedor deben admi
 El borrador se guarda automáticamente. En Inicio puedes retomarlo o elegir **Empezar un
 proyecto nuevo** (tras confirmar se reemplaza el borrador, no los ZIP exportados). Los archivos
 seleccionados se copian a la caché de la app; si Android los elimina, vuelve a seleccionarlos.
-En canciones y audio usa las pestañas para elegir qué canción editar. El paso Notas permite
-generar una base de práctica o dejar el chart vacío: para ajustar notas hay que usar el editor
-del juego. Importación de mods y creación de escenarios todavía no están disponibles.
+En canciones y audio usa las pestañas para elegir qué canción editar. En el paso Notas abre
+**Grabación en vivo**, elige canción, dificultad y lado, pulsa Grabar y toca las flechas mientras
+escuchas la instrumental. Las notas se añaden al chart de esa dificultad; puedes pausar, escuchar,
+buscar otro momento, deshacer la última pulsación y quitar notas. Se escuchará solo la instrumental,
+no las voces. Los toques crean notas cortas: para editar sostenidos y eventos usa el editor del juego.
+El ajuste al ritmo es opcional y usa el BPM; la corrección de toque permite compensar latencia.
+Un chart propio reemplaza las notas de práctica automáticas solo en esa dificultad. La corrección
+de toque es independiente del offset de la canción; prueba la sincronización en el motor de destino.
+Los charts con eventos o secciones existentes no se pueden grabar aquí para evitar perder datos.
+Importación de mods y creación de escenarios todavía no están disponibles.
 
 
 ### Inicio
@@ -216,7 +223,7 @@ La conversión ocurre en el teléfono. Un tema de 2 minutos suele tardar entre 1
 > hace falta crear un mod.
 
 ### Pasos 5 y 6 — Notas y exportación
-Elige si quieres notas de práctica o un chart vacío. En Exportar pulsa **Guardar ZIP** y elige dónde guardarlo (por ejemplo, `Descargas`). Al terminar verás la lista
+Puedes grabar notas en vivo, o elegir notas de práctica o un chart vacío. En Exportar pulsa **Guardar ZIP** y elige dónde guardarlo (por ejemplo, `Descargas`). Al terminar verás la lista
 exacta de archivos generados.
 
 ---

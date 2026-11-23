@@ -307,18 +307,23 @@ private fun WizardAudioStep(vm: WizardViewModel, onPickInstrumental: () -> Unit,
 
 @Composable
 private fun WizardNotesStep(vm: WizardViewModel) {
-    StepHeader("Notas de la canción", "Elige una canción y decide cómo empezar su chart.")
+    StepHeader("Notas de la canción", "Graba las flechas mientras escuchas la instrumental, o empieza con notas de práctica.")
     SongSelector(vm)
     val song = vm.activeSong
+    var open by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    Button(onClick = { vm.openLiveChart(); open = true }, enabled = !vm.busy) { Text("Abrir grabación en vivo") }
+    Text("Elige canción, dificultad y lado en el grabador. Las notas se añaden al chart de esa dificultad.", style = MaterialTheme.typography.bodySmall)
+    if (open) LiveChartEditor(vm) { open = false }
+    Spacer(Modifier.height(12.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Generar notas de práctica", fontWeight = FontWeight.SemiBold)
-            Text("Una secuencia simple basada en el BPM.", style = MaterialTheme.typography.bodySmall)
+            Text("Solo se usan en dificultades sin chart personalizado.", style = MaterialTheme.typography.bodySmall)
         }
         androidx.compose.material3.Switch(song.practiceNotes, vm::setActiveSongPracticeNotes, enabled = !vm.busy)
     }
     Spacer(Modifier.height(12.dp))
-    HelpCard("Las notas generadas son una base, no un chart terminado. Para crear o ajustar notas, abre el mod en el editor del juego. Si desactivas esta opción, se exportará un chart vacío.")
+    HelpCard("La grabación en vivo crea notas cortas en la dificultad elegida. Puedes pausar, deshacer y quitar notas; comprueba la sincronización y ajusta las notas sostenidas en el editor del juego.")
 }
 
 @Composable

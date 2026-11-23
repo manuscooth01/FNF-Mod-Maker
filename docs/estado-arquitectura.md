@@ -5,15 +5,13 @@ hasta `eea7d8b`. El árbol observado coincide con ese commit. La última ejecuci
 fue [45262204697](https://github.com/manuscooth01/FNF-Mod-Maker/actions/runs/45262204697),
 con pruebas y APK exitosos. No se ejecutaron pruebas en dispositivo.
 
-## Inventario real
+## Inventario inicial (antes de Project Studio y Chart Studio)
 
 - `ModConfig` reúne canciones, un personaje, un escenario sencillo, charts por dificultad y scripts.
   `WizardViewModel` lo comparte entre el asistente, personaje, IA y herramientas; tiene demasiadas
   responsabilidades y aún no hay repositorios/adaptadores de motor separados.
-- El asistente edita canción/audio/personaje, abre grabación y cuadrícula de ocho carriles. Esta
-  permite añadir, mover, borrar y redimensionar notas, con undo de sesión. No hay redo persistente,
-  cambios de BPM ni exportación de eventos/secciones. Dispone de selección múltiple y una vista
-  general de onda por streaming; reproducción de voces y verificación en dispositivos pendientes.
+- El asistente editaba canción/audio/personaje y abría grabación y una cuadrícula de ocho carriles.
+  Las novedades posteriores de edición múltiple y onda se describen al final de este documento.
 - El constructor usa duración real de holds y charts por dificultad; hay pruebas de serialización.
   No se ha validado la compatibilidad ejecutando ambas versiones concretas de los motores.
 - Personaje: PNG individuales, cuadrícula y atlas Sparrow, animaciones y offsets; variaciones aún

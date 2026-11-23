@@ -224,7 +224,7 @@ private fun WizardSongsStep(vm: WizardViewModel) {
                 label = { Text(when (difficulty) { "easy" -> "Fácil"; "normal" -> "Normal"; else -> "Difícil" }) })
         }
     }
-    var advanced by androidx.compose.runtime.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    var advanced by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Ocultar ajustes avanzados ↑" else "Ajustes avanzados ↓") }
     if (advanced) {
         Field("Velocidad de notas", song.speed, vm::setActiveSongSpeed, enabled = !vm.busy)

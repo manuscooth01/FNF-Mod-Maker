@@ -196,7 +196,16 @@ data class CharacterDraft(
     val positionX: String = "0",
     val positionY: String = "0",
     val cameraX: String = "0",
-    val cameraY: String = "0"
+    val cameraY: String = "0",
+    val useAtlas: Boolean = false,
+    val atlasSheet: PickedImage? = null,
+    val atlasSheetWidth: Int = 0,
+    val atlasSheetHeight: Int = 0,
+    val atlasXml: PickedImage? = null,
+    val atlasFrames: List<SparrowFrame> = emptyList(),
+    val atlasPrefixes: Map<String, String> = emptyMap(),
+    val customAnimations: List<String> = emptyList(),
+    val customFrameCounts: Map<String, String> = emptyMap()
 ) {
     /** Carpeta/ID del personaje (minúsculas y guiones). */
     val charFolder: String
@@ -211,17 +220,24 @@ data class CharacterDraft(
     val frameHeightValue: Int get() = frameHeight.toIntOrNull() ?: 0
     val scaleValue: Float get() = scale.toFloatOrNull() ?: 1f
 
-    /** Animaciones estándar de FNF en el orden en que se reparten los frames. */
+    val animationNames: List<String>
+        get() = CHARACTER_ANIMATIONS + customAnimations.filter { it !in CHARACTER_ANIMATIONS }.distinct()
+
+    fun prefixFor(animation: String): String = atlasPrefixes[animation] ?: ""
+
+    /** El orden de la cuadrícula es idle, direcciones y después animaciones personalizadas. */
     val animations: List<Pair<String, Int>>
-        get() = if (useIndividualFrames) {
-            CHARACTER_ANIMATIONS.map { it to animationFrames[it].orEmpty().size }.filter { it.second > 0 }
-        } else listOf(
-            "idle" to (idleFrames.toIntOrNull() ?: 0),
-            "singLEFT" to (leftFrames.toIntOrNull() ?: 0),
-            "singDOWN" to (downFrames.toIntOrNull() ?: 0),
-            "singUP" to (upFrames.toIntOrNull() ?: 0),
-            "singRIGHT" to (rightFrames.toIntOrNull() ?: 0)
-        ).filter { it.second > 0 }
+        get() = when {
+            useAtlas -> animationNames.map { it to atlasFramesForPrefix(atlasFrames, prefixFor(it)).size }
+            useIndividualFrames -> animationNames.map { it to animationFrames[it].orEmpty().size }
+            else -> listOf(
+                "idle" to (idleFrames.toIntOrNull() ?: 0),
+                "singLEFT" to (leftFrames.toIntOrNull() ?: 0),
+                "singDOWN" to (downFrames.toIntOrNull() ?: 0),
+                "singUP" to (upFrames.toIntOrNull() ?: 0),
+                "singRIGHT" to (rightFrames.toIntOrNull() ?: 0)
+            ) + customAnimations.map { it to (customFrameCounts[it]?.toIntOrNull() ?: 0) }
+        }.filter { it.second > 0 }
 
     fun settingsFor(animation: String): CharacterAnimationSettings =
         animationSettings[animation] ?: CharacterAnimationSettings()
@@ -238,18 +254,30 @@ data class CharacterDraft(
     /** Errores concretos que impiden generar el personaje base. */
     val problems: List<String>
         get() = buildList {
-            if (useIndividualFrames) {
+            if (useAtlas) {
+                val scaleValue = scale.toFloatOrNull()
+                if (scaleValue == null || !scaleValue.isFinite() || scaleValue <= 0f) add("Indica una escala mayor que cero.")
+                if (atlasSheet == null) add("Elige el PNG del atlas.")
+                if (atlasXml == null || atlasFrames.isEmpty()) add("Elige un XML Sparrow válido.")
+                if (atlasSheet != null && atlasFrames.isNotEmpty() && !atlasFramesFit(atlasFrames, atlasSheetWidth, atlasSheetHeight))
+                    add("El XML contiene frames fuera de los límites del PNG.")
+                if (atlasFramesForPrefix(atlasFrames, prefixFor("idle")).isEmpty())
+                    add("Asigna a idle un prefijo que coincida con algún frame del XML.")
+                for (name in animationNames.filter { prefixFor(it).isNotBlank() }) {
+                    if (atlasFramesForPrefix(atlasFrames, prefixFor(name)).isEmpty()) add("El prefijo de $name no coincide con ningún frame del XML.")
+                }
+            } else if (useIndividualFrames) {
                 val scaleValue = scale.toFloatOrNull()
                 if (scaleValue == null || !scaleValue.isFinite() || scaleValue <= 0f) add("Indica una escala mayor que cero.")
                 if (animationFrames["idle"].isNullOrEmpty()) add("Añade al menos un frame para idle.")
-                val frames = CHARACTER_ANIMATIONS.flatMap { animationFrames[it].orEmpty() }
+                val frames = animationNames.flatMap { animationFrames[it].orEmpty() }
                 if (frames.size > 100) add("El máximo es 100 frames por personaje.")
                 if (frames.isNotEmpty() && planCharacterAtlas(frames.map { it.width to it.height }) == null) {
                     add("Los frames no caben en una hoja de 4096 × 4096; reduce sus dimensiones o cantidad.")
                 }
             } else {
                 addAll(characterProblems(sheet != null, sheetWidth, sheetHeight, frameWidth, frameHeight, scale,
-                    listOf(idleFrames, leftFrames, downFrames, upFrames, rightFrames)))
+                    listOf(idleFrames, leftFrames, downFrames, upFrames, rightFrames) + customAnimations.map { customFrameCounts[it] ?: "0" }))
             }
             if (listOf(positionX, positionY, cameraX, cameraY).any { it.toIntOrNull() == null }) {
                 add("Las posiciones del personaje y de la cámara deben ser números enteros.")

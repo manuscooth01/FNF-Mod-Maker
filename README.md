@@ -50,7 +50,7 @@ Lo que **todavía no** hace (siguiente fase):
 - Editor visual de notas (grilla) dentro de la app.
 - Escenarios propios (sprites + JSON).
 - Iconos y animaciones *miss* por personaje (la app usa los de `bf`/`dad`).
-- Variaciones (Erect, Pico…) e importar un mod existente para editarlo.
+- Importar un mod completo existente para editarlo.
 
 Mientras tanto, el flujo recomendado es: **la app crea el esqueleto y tú charteas en el editor
 que ya trae el juego** (Psych: tecla `7`; V-Slice: menú de debug). Así no peleas con carpetas ni
@@ -85,6 +85,25 @@ El APK queda en `app/build/outputs/apk/debug/`. Para ello Android Studio generar
 Gradle automáticamente la primera vez.
 
 ---
+
+## Editor de personajes
+
+El mismo espacio de trabajo se abre tanto desde **Crear un personaje** como desde el paso
+Personaje del mod. En pantallas anchas muestra vista previa y controles lado a lado; en pantallas
+estrechas usa una vista previa encima y pestañas para Personaje, Imágenes, Animación, Posición y
+Revisar. Si queda muy poco espacio, la vista previa se oculta para dejar sitio a los controles.
+
+En Imágenes elige **Frames PNG**, **Cuadrícula** o **Atlas PNG + XML**. Para un atlas selecciona
+el PNG y un XML Sparrow UTF-8; en Animación asigna a cada nombre el prefijo que aparece en los
+SubTexture del XML (idle es obligatorio). Se conservan los metadatos de recorte del XML. La vista
+previa muestra como máximo los primeros 100 frames de cada animación; el atlas completo se exporta.
+Los atlas con frames rotados y los formatos que no sean Sparrow no son compatibles.
+
+Se pueden añadir animaciones personalizadas, indicar sus frames o prefijos y ajustar FPS, bucle,
+offsets, posición y cámara. Se escriben las definiciones para Psych y/o V-Slice según el destino;
+que una animación personalizada se reproduzca depende del juego y del mod. La escena es una
+referencia y el resultado debe comprobarse en el juego. No se generan recursos adicionales de
+selección ni resultados para un personaje totalmente seleccionable en V-Slice.
 
 ## 2. Cómo se usa
 
@@ -325,7 +344,7 @@ app/src/main/java/com/fnfmodmaker/
    ├─ Theme.kt                  colores tipo FNF
    ├─ WizardViewModel.kt        estado, herramienta activa, validación y exportación
    ├─ ToolScreens.kt            inicio + herramientas sueltas (personaje, audio)
-   └─ WizardScreens.kt          el asistente del mod (5 pasos)
+   └─ WizardScreens.kt          el asistente del mod (6 pasos)
 ```
 
 Dependencias: Jetpack Compose (Material 3) y `ffmpeg-kit-audio` (recompilación comunitaria,

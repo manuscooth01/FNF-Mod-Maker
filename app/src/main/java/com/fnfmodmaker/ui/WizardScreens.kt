@@ -52,6 +52,9 @@ internal fun WizardScreen(vm: WizardViewModel) {
     val charSheet = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickCharacterSheet(uri)
     }
+    val charXml = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.pickCharacterAtlasXml(uri)
+    }
     val charIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.pickCharacterIcon(uri)
     }
@@ -112,6 +115,7 @@ internal fun WizardScreen(vm: WizardViewModel) {
                         2 -> WizardCharacterStep(vm, config,
                             onPickSheet = { charSheet.launch(arrayOf("image/png")) },
                             onPickIcon = { charIcon.launch(arrayOf("image/*")) },
+                            onPickXml = { charXml.launch(arrayOf("application/xml", "text/xml", "text/plain", "application/octet-stream")) },
                             onPickFrames = { name -> vm.prepareCharacterFramePicker(name); charFrames.launch(arrayOf("image/png")) })
                         3 -> WizardAudioStep(vm,
                             onPickInstrumental = { instrumental.launch(arrayOf("audio/*", "application/ogg")) },
@@ -245,14 +249,29 @@ private fun WizardSongsStep(vm: WizardViewModel) {
 
 @Composable
 private fun WizardCharacterStep(vm: WizardViewModel, config: com.fnfmodmaker.model.ModConfig,
-    onPickSheet: () -> Unit, onPickIcon: () -> Unit, onPickFrames: (String) -> Unit) {
+    onPickSheet: () -> Unit, onPickXml: () -> Unit, onPickIcon: () -> Unit, onPickFrames: (String) -> Unit) {
     StepHeader("Personaje propio", "Este paso es opcional. También puedes usar los personajes del juego.")
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Añadir personaje", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
         androidx.compose.material3.Switch(config.character.enabled, vm::setCharacterEnabled, enabled = !vm.busy)
     }
-    if (config.character.enabled) CharacterForm(vm, config.character, onPickSheet, onPickIcon, onPickFrames)
-    else HelpCard("El mod usará los personajes indicados en los ajustes de cada canción.")
+    if (config.character.enabled) {
+        var open by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+        Text("${config.character.displayName.ifBlank { "Personaje sin nombre" }} · ${config.character.animations.size} animaciones", style = MaterialTheme.typography.bodyMedium)
+        Button(onClick = { open = true }, enabled = !vm.busy) { Text("Abrir espacio de personaje") }
+        if (open) androidx.compose.ui.window.Dialog(onDismissRequest = { if (!vm.busy) { vm.forceAutoSave(); open = false } },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Personaje", Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { vm.forceAutoSave(); open = false }, enabled = !vm.busy) { Text("Volver al mod") }
+                    }
+                    CharacterWorkspace(vm, config.character, onPickSheet, onPickXml, onPickIcon, onPickFrames, Modifier.weight(1f))
+                }
+            }
+        }
+    } else HelpCard("El mod usará los personajes indicados en los ajustes de cada canción.")
 }
 
 @Composable

@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.fnfmodmaker.model.CharacterAdjustment
 import com.fnfmodmaker.model.CharacterDraft
+import com.fnfmodmaker.model.atlasFramesForPrefix
 import com.fnfmodmaker.model.gridAnimationRegions
 import com.fnfmodmaker.model.placement
 import kotlinx.coroutines.Dispatchers
@@ -55,11 +56,19 @@ import kotlin.math.roundToInt
 
 private data class PreviewSource(
     val path: String, val left: Int, val top: Int, val width: Int, val height: Int,
-    val isGrid: Boolean
+    val isGrid: Boolean, val frameX: Int = 0, val frameY: Int = 0,
+    val frameWidth: Int = width, val frameHeight: Int = height
 )
-private data class PreviewFrame(val image: ImageBitmap, val width: Int, val height: Int)
+private data class PreviewFrame(val image: ImageBitmap, val width: Int, val height: Int,
+    val frameX: Int, val frameY: Int, val frameWidth: Int, val frameHeight: Int)
 
 private fun previewSources(draft: CharacterDraft, animation: String): List<PreviewSource> {
+    if (draft.useAtlas) {
+        val path = draft.atlasSheet?.path ?: return emptyList()
+        return atlasFramesForPrefix(draft.atlasFrames, draft.prefixFor(animation)).take(100).map {
+            PreviewSource(path, it.x, it.y, it.width, it.height, true, it.frameX, it.frameY, it.frameWidth, it.frameHeight)
+        }
+    }
     if (draft.useIndividualFrames) {
         return draft.animationFrames[animation].orEmpty().map {
             PreviewSource(it.image.path, 0, 0, it.width, it.height, false)
@@ -90,28 +99,12 @@ private fun decodePreviewFrames(sources: List<PreviewSource>): List<PreviewFrame
                     source.top + source.height), options)
             } else BitmapFactory.decodeFile(source.path, options)
             PreviewFrame((bitmap ?: throw IllegalStateException("No se pudo leer un frame.")).asImageBitmap(),
-                source.width, source.height)
+                source.width, source.height, source.frameX, source.frameY, source.frameWidth, source.frameHeight)
         }
     } catch (_: Exception) {
         null
     } finally {
         decoders.values.forEach { it.recycle() }
-    }
-}
-
-/** Escenario orientativo; las coordenadas reales dependen del escenario y del motor. */
-@Composable
-internal fun CharacterPreview(vm: WizardViewModel, draft: CharacterDraft, animationName: String, onAnimationSelected: (String) -> Unit) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    if (expanded) {
-        CharacterEditorDialog(vm, draft, animationName, onAnimationSelected) {
-            vm.forceAutoSave()
-            expanded = false
-        }
-    } else {
-        var adjustment by remember { mutableStateOf(CharacterAdjustment.POSITION) }
-        CharacterPreviewPane(vm, draft, animationName, adjustment, { adjustment = it }, 1f,
-            expanded = false, onExpand = { expanded = true })
     }
 }
 
@@ -121,7 +114,7 @@ internal fun CharacterPreviewPane(
     adjustment: CharacterAdjustment, onAdjustmentChanged: (CharacterAdjustment) -> Unit,
     zoom: Float, expanded: Boolean, onExpand: () -> Unit = {}
 ) {
-    val sources = remember(draft.useIndividualFrames, draft.sheet?.path, draft.sheetWidth, draft.sheetHeight,
+    val sources = remember(draft.useAtlas, draft.atlasSheet?.path, draft.atlasFrames, draft.atlasPrefixes, draft.useIndividualFrames, draft.sheet?.path, draft.sheetWidth, draft.sheetHeight,
         draft.frameWidth, draft.frameHeight, draft.animations, draft.animationFrames, animationName) {
         previewSources(draft, animationName)
     }
@@ -131,19 +124,21 @@ internal fun CharacterPreviewPane(
         value = withContext(Dispatchers.IO) { decodePreviewFrames(sources) }
         loaded = true
     }
-    var playing by remember { mutableStateOf(true) }
+    var playing by remember(sources) { mutableStateOf(true) }
     var index by remember(sources) { mutableIntStateOf(0) }
     val fps = draft.settingsFor(animationName).fps.toIntOrNull()?.coerceIn(1, 60) ?: 24
-    LaunchedEffect(sources, fps, playing) {
+    val loop = draft.settingsFor(animationName).loop
+    LaunchedEffect(sources, fps, playing, loop) {
         if (playing && sources.size > 1) {
             while (true) {
                 delay((1000L / fps).coerceAtLeast(16L))
+                if (index == sources.lastIndex && !loop) { playing = false; break }
                 index = (index + 1) % sources.size
             }
         }
     }
     val currentFrame = if (loaded) previews?.getOrNull(index) else null
-    val reference = remember(draft.useIndividualFrames, draft.sheet?.path, draft.sheetWidth, draft.sheetHeight,
+    val reference = remember(draft.useAtlas, draft.atlasSheet?.path, draft.atlasFrames, draft.atlasPrefixes, draft.useIndividualFrames, draft.sheet?.path, draft.sheetWidth, draft.sheetHeight,
         draft.frameWidth, draft.frameHeight, draft.animations, draft.animationFrames) {
         previewSources(draft, "idle").firstOrNull()
     }
@@ -216,11 +211,12 @@ internal fun CharacterPreviewPane(
             if (currentFrame != null) {
                 val width = (currentFrame.width * scaleValue * k).coerceIn(1f, 100000f)
                 val height = (currentFrame.height * scaleValue * k).coerceIn(1f, 100000f)
-                val x = (baseX - animationX * scaleValue) * k
-                val y = (baseY - animationY * scaleValue) * k
+                val logicalX = (baseX - animationX * scaleValue) * k
+                val x = logicalX - currentFrame.frameX * scaleValue * k
+                val y = (baseY - animationY * scaleValue - currentFrame.frameY * scaleValue) * k
                 clipRect {
                     if (draft.flipX) {
-                        scale(scaleX = -1f, scaleY = 1f, pivot = Offset(x + width / 2f, y + height / 2f)) {
+                        scale(scaleX = -1f, scaleY = 1f, pivot = Offset(logicalX + currentFrame.frameWidth * scaleValue * k / 2f, y + height / 2f)) {
                             drawImage(currentFrame.image, dstOffset = IntOffset(x.roundToInt(), y.roundToInt()),
                                 dstSize = IntSize(width.roundToInt(), height.roundToInt()))
                         }
@@ -244,11 +240,14 @@ internal fun CharacterPreviewPane(
             !loaded -> Text("Cargando vista previa…", style = MaterialTheme.typography.bodySmall)
             previews == null -> Text("No se pudo cargar la vista previa; comprueba los archivos.", color = MaterialTheme.colorScheme.error)
             else -> Row {
-                TextButton(onClick = { playing = !playing }) { Text(if (playing) "Pausar" else "Reproducir") }
+                TextButton(onClick = { if (!playing && index == sources.lastIndex) index = 0; playing = !playing }) { Text(if (playing) "Pausar" else "Reproducir") }
                 TextButton(onClick = { playing = false; index = (index - 1 + sources.size) % sources.size }) { Text("‹ Frame") }
                 TextButton(onClick = { playing = false; index = (index + 1) % sources.size }) { Text("Frame ›") }
                 Text("${index + 1}/${sources.size}", style = MaterialTheme.typography.bodySmall)
             }
+        }
+        if (draft.useAtlas && atlasFramesForPrefix(draft.atlasFrames, draft.prefixFor(animationName)).size > 100) {
+            Text("Vista previa limitada a los primeros 100 frames; el XML completo se exportará.", style = MaterialTheme.typography.labelSmall)
         }
         Spacer(Modifier.height(8.dp))
     }

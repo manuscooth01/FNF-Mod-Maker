@@ -32,6 +32,8 @@ import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.TargetEngine
 import com.fnfmodmaker.model.WizardIssue
 import com.fnfmodmaker.model.validateWizard
+import com.fnfmodmaker.model.characterInputProblems
+import com.fnfmodmaker.model.parseSparrowAtlas
 import com.fnfmodmaker.model.slugify
 import com.fnfmodmaker.mod.ModBuilder
 import com.fnfmodmaker.mod.ModImporter
@@ -64,8 +66,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     val currentStepIssues: List<WizardIssue> get() = validationIssues.filter { it.step == step }
 
     /** Personaje suelto: mismo formulario, pero sin depender del resto del mod. */
-    val characterOnlyReady: Boolean
-        get() = config.character.copy(enabled = true).isReady
+    val characterIssues: List<String> get() = characterInputProblems(config.character)
+    val characterOnlyReady: Boolean get() = characterIssues.isEmpty()
 
     val characterZipName: String
         get() = "${config.character.charFolder}-personaje.zip"
@@ -1030,6 +1032,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun updateCharacter(block: (CharacterDraft) -> CharacterDraft) {
         config = config.copy(character = block(config.character))
+        characterSaved = null
         scheduleAutoSave()
     }
 
@@ -1063,33 +1066,52 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun setCharFlipX(enabled: Boolean) = updateCharacter { it.copy(flipX = enabled) }
 
     internal fun setCharIdleFrames(value: String) =
-        updateCharacter { it.copy(idleFrames = value.filter { c -> c.isDigit() }.take(2)) }
+        updateCharacter { it.copy(idleFrames = value.filter { c -> c.isDigit() }.take(3)) }
 
     fun setCharLeftFrames(value: String) =
-        updateCharacter { it.copy(leftFrames = value.filter { c -> c.isDigit() }.take(2)) }
+        updateCharacter { it.copy(leftFrames = value.filter { c -> c.isDigit() }.take(3)) }
 
     fun setCharDownFrames(value: String) =
-        updateCharacter { it.copy(downFrames = value.filter { c -> c.isDigit() }.take(2)) }
+        updateCharacter { it.copy(downFrames = value.filter { c -> c.isDigit() }.take(3)) }
 
     fun setCharUpFrames(value: String) =
-        updateCharacter { it.copy(upFrames = value.filter { c -> c.isDigit() }.take(2)) }
+        updateCharacter { it.copy(upFrames = value.filter { c -> c.isDigit() }.take(3)) }
 
     fun setCharRightFrames(value: String) =
-        updateCharacter { it.copy(rightFrames = value.filter { c -> c.isDigit() }.take(2)) }
+        updateCharacter { it.copy(rightFrames = value.filter { c -> c.isDigit() }.take(3)) }
 
     internal fun nudgeCharacter(target: CharacterAdjustment, animation: String, dx: Int, dy: Int) {
-        if (!busy && animation in CHARACTER_ANIMATIONS) updateCharacter { it.nudged(target, animation, dx, dy) }
+        if (!busy && animation in config.character.animationNames) updateCharacter { it.nudged(target, animation, dx, dy) }
     }
 
-    internal fun setIndividualFrames(enabled: Boolean) = updateCharacter { it.copy(useIndividualFrames = enabled) }
+    internal fun setIndividualFrames(enabled: Boolean) = updateCharacter { it.copy(useIndividualFrames = enabled, useAtlas = false) }
+    internal fun setCharacterAtlas() = updateCharacter { it.copy(useAtlas = true) }
+    internal fun clearCharacterIcon() = updateCharacter { it.copy(icon = null) }
+    internal fun setAtlasPrefix(name: String, prefix: String) {
+        if (!busy && name in config.character.animationNames) updateCharacter { it.copy(atlasPrefixes = it.atlasPrefixes + (name to prefix.take(200))) }
+    }
+    internal fun addCustomAnimation(name: String): Boolean {
+        if (busy || !name.matches(Regex("[A-Za-z0-9_-]{1,32}")) || name in config.character.animationNames || config.character.customAnimations.size >= 30) return false
+        updateCharacter { it.copy(customAnimations = it.customAnimations + name, customFrameCounts = it.customFrameCounts + (name to "0")) }
+        return true
+    }
+    internal fun removeCustomAnimation(name: String) {
+        if (busy || name !in config.character.customAnimations) return
+        updateCharacter { it.copy(customAnimations = it.customAnimations - name, customFrameCounts = it.customFrameCounts - name,
+            animationFrames = it.animationFrames - name, animationSettings = it.animationSettings - name, atlasPrefixes = it.atlasPrefixes - name) }
+    }
+    internal fun setCustomFrameCount(name: String, count: String) {
+        if (!busy && name in config.character.customAnimations) updateCharacter { it.copy(customFrameCounts = it.customFrameCounts + (name to count.filter(Char::isDigit).take(3))) }
+    }
+
 
     internal fun updateCharacterAnimation(name: String, update: (CharacterAnimationSettings) -> CharacterAnimationSettings) {
-        if (busy || name !in CHARACTER_ANIMATIONS) return
+        if (busy || name !in config.character.animationNames) return
         updateCharacter { it.copy(animationSettings = it.animationSettings + (name to update(it.settingsFor(name)))) }
     }
 
     internal fun moveCharacterFrame(name: String, index: Int, direction: Int) {
-        if (busy || name !in CHARACTER_ANIMATIONS) return
+        if (busy || name !in config.character.animationNames) return
         updateCharacter { draft ->
             val frames = draft.animationFrames[name].orEmpty().toMutableList()
             val target = index + direction
@@ -1101,7 +1123,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun removeCharacterFrame(name: String, index: Int) {
-        if (busy || name !in CHARACTER_ANIMATIONS) return
+        if (busy || name !in config.character.animationNames) return
         updateCharacter { draft ->
             val frames = draft.animationFrames[name].orEmpty().toMutableList()
             if (index in frames.indices) frames.removeAt(index)
@@ -1111,7 +1133,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     private var pendingFrameAnimation: String? = null
     internal fun prepareCharacterFramePicker(name: String) {
-        if (!busy && name in CHARACTER_ANIMATIONS) pendingFrameAnimation = name
+        if (!busy && name in config.character.animationNames) pendingFrameAnimation = name
     }
 
     internal fun pickCharacterFrames(uris: List<Uri>) {
@@ -1364,11 +1386,49 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             }
             result.onSuccess { (picked, size) ->
                 updateCharacter {
-                    it.copy(sheet = picked, sheetWidth = size.first, sheetHeight = size.second)
+                    if (it.useAtlas) it.copy(atlasSheet = picked, atlasSheetWidth = size.first, atlasSheetHeight = size.second)
+                    else it.copy(sheet = picked, sheetWidth = size.first, sheetHeight = size.second)
                 }
             }.onFailure {
                 error = it.message ?: "No se pudo leer la hoja de sprites."
             }
+            status = ""
+            busy = false
+        }
+    }
+
+    internal fun pickCharacterAtlasXml(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Leyendo XML Sparrow…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val input = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el XML.")
+                    val bytes = input.use { stream ->
+                        val output = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val n = stream.read(buffer)
+                            if (n < 0) break
+                            require(output.size() + n <= 4_000_000) { "El XML supera el máximo de 4 MB." }
+                            output.write(buffer, 0, n)
+                        }
+                        output.toByteArray()
+                    }
+                    val xml = bytes.toString(Charsets.UTF_8)
+                    val frames = parseSparrowAtlas(xml)
+                    val dir = File(app.cacheDir, "inputs").apply { mkdirs() }
+                    val target = File.createTempFile("atlas_", ".xml", dir)
+                    target.writeBytes(bytes)
+                    PickedImage(uri, MediaTools.displayName(app, uri), target.absolutePath) to frames
+                }
+            }
+            result.onSuccess { (xml, frames) ->
+                updateCharacter { it.copy(atlasXml = xml, atlasFrames = frames) }
+            }.onFailure { error = it.message ?: "No se pudo leer el XML Sparrow." }
             status = ""
             busy = false
         }

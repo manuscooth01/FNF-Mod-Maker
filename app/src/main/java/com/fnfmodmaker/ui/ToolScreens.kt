@@ -311,85 +311,31 @@ internal fun StageToolScreen(vm: WizardViewModel) {
 @Composable
 internal fun CharacterToolScreen(vm: WizardViewModel) {
     val draft = vm.config.character
-
-    val pickSheet = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.pickCharacterSheet(uri)
-    }
-    val pickIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.pickCharacterIcon(uri)
-    }
-    val pickFrames = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        vm.pickCharacterFrames(uris)
-    }
-    val saveZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
-        if (uri != null) vm.exportCharacter(uri)
-    }
-
+    val pickSheet = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.pickCharacterSheet(uri) }
+    val pickXml = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.pickCharacterAtlasXml(uri) }
+    val pickIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.pickCharacterIcon(uri) }
+    val pickFrames = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> vm.pickCharacterFrames(uris) }
+    val saveZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> if (uri != null) vm.exportCharacter(uri) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            ToolTopBar(
-                title = "Crear un personaje",
-                subtitle = draft.charFolder,
-                onHome = vm::goHome
-            )
-        },
+        topBar = { ToolTopBar("Personaje", draft.displayName.ifBlank { draft.charFolder }, vm::goHome) },
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.surface) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { saveZip.launch(vm.characterZipName) },
-                        modifier = Modifier.weight(1f),
-                        enabled = vm.characterOnlyReady && !vm.busy
-                    ) {
-                        Text(if (vm.busy) "Generando…" else "Guardar ZIP del personaje")
-                    }
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    if (vm.characterIssues.isNotEmpty()) Text("${vm.characterIssues.size} pendientes · consulta Revisar", style = MaterialTheme.typography.labelSmall)
+                    if (vm.characterSaved != null) Text("ZIP guardado: ${vm.characterSaved}", style = MaterialTheme.typography.labelSmall)
+                    Button(onClick = { saveZip.launch(vm.characterZipName) }, modifier = Modifier.fillMaxWidth(),
+                        enabled = vm.characterOnlyReady && !vm.busy) { Text(if (vm.busy) "Procesando…" else "Guardar ZIP del personaje") }
                 }
             }
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Solo se generan los archivos del personaje: no hace falta nombre de mod, " +
-                    "canción ni audio.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(8.dp))
-            CharacterForm(
-                vm = vm,
-                draft = draft,
-                onPickSheet = { pickSheet.launch(arrayOf("image/png")) },
-                onPickIcon = { pickIcon.launch(arrayOf("image/*")) },
-                onPickFrames = { animation ->
-                    vm.prepareCharacterFramePicker(animation)
-                    pickFrames.launch(arrayOf("image/png"))
-                }
-            )
-
-            Spacer(Modifier.height(16.dp))
-            ToolStatus(
-                status = vm.status,
-                error = vm.error,
-                saved = vm.characterSaved,
-                warnings = vm.warnings,
-                savedLabel = "Personaje guardado como"
-            )
-            Spacer(Modifier.height(24.dp))
-        }
+        CharacterWorkspace(vm, draft,
+            onPickSheet = { pickSheet.launch(arrayOf("image/png")) },
+            onPickXml = { pickXml.launch(arrayOf("application/xml", "text/xml", "text/plain", "application/octet-stream")) },
+            onPickIcon = { pickIcon.launch(arrayOf("image/*")) },
+            onPickFrames = { name -> vm.prepareCharacterFramePicker(name); pickFrames.launch(arrayOf("image/png")) },
+            modifier = Modifier.padding(padding))
     }
 }
 

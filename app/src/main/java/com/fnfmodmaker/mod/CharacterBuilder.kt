@@ -6,6 +6,9 @@ import android.graphics.Canvas
 import com.fnfmodmaker.media.MediaTools
 import com.fnfmodmaker.model.CHARACTER_ANIMATIONS
 import com.fnfmodmaker.model.CharacterDraft
+import com.fnfmodmaker.model.parseSparrowAtlas
+import com.fnfmodmaker.model.rewriteSparrowImagePath
+import com.fnfmodmaker.model.atlasFramesFit
 import com.fnfmodmaker.model.planCharacterAtlas
 import com.fnfmodmaker.model.placement
 import com.fnfmodmaker.model.psychCameraX
@@ -102,7 +105,24 @@ object CharacterBuilder {
 
         val imageTarget = File(root, "images/characters/$charId.png")
         imageTarget.parentFile?.mkdirs()
-        val frames = if (charData is CharacterDraft && charData.useIndividualFrames) {
+        val importedAtlas = charData is CharacterDraft && charData.useAtlas
+        val frames = if (importedAtlas && charData is CharacterDraft) {
+            val sheetFile = File(charData.atlasSheet?.path ?: throw IllegalStateException("Falta el PNG del atlas."))
+            val xmlFile = File(charData.atlasXml?.path ?: throw IllegalStateException("Falta el XML del atlas."))
+            require(MediaTools.isPng(sheetFile)) { "El atlas debe ser un PNG válido." }
+            require(xmlFile.length() <= 4_000_000) { "El XML es demasiado grande." }
+            val xmlText = xmlFile.readText(Charsets.UTF_8)
+            val parsed = parseSparrowAtlas(xmlText)
+            val size = MediaTools.imageSize(sheetFile) ?: throw IllegalStateException("No se pudo leer el PNG del atlas.")
+            require(atlasFramesFit(parsed, size.first, size.second)) { "El XML contiene frames fuera del PNG." }
+            require(parsed == charData.atlasFrames) { "El XML cambió; vuelve a seleccionarlo." }
+            onProgress("Copiando el atlas Sparrow…")
+            sheetFile.copyTo(imageTarget, overwrite = true)
+            // Mantener atributos Sparrow (recorte, tamaño original, etc.).
+            val rewritten = rewriteSparrowImagePath(xmlText, "$charId.png")
+            File(root, "images/characters/$charId.xml").writeText(rewritten, Charsets.UTF_8)
+            emptyList()
+        } else if (charData is CharacterDraft && charData.useIndividualFrames) {
             onProgress("Creando hoja de sprites a partir de los frames…")
             packIndividualFrames(charData, charId, imageTarget)
         } else {
@@ -143,6 +163,7 @@ object CharacterBuilder {
                 }
             }
         }
+        if (!importedAtlas) {
         onProgress("Generando XML Sparrow…")
 
         val xml = StringBuilder()
@@ -154,6 +175,7 @@ object CharacterBuilder {
         }
         xml.append("</TextureAtlas>\n")
         File(root, "images/characters/$charId.xml").writeText(xml.toString(), Charsets.UTF_8)
+        }
 
         // ---------------- Icono de vida ----------------
         val iconId = prepareIcon(root, charData, charId, onProgress, warnings, isVariation)
@@ -180,7 +202,7 @@ object CharacterBuilder {
     }
 
     private fun packIndividualFrames(draft: CharacterDraft, charId: String, output: File): List<Frame> {
-        val ordered = CHARACTER_ANIMATIONS.flatMap { name ->
+        val ordered = draft.animationNames.flatMap { name ->
             draft.animationFrames[name].orEmpty().mapIndexed { index, frame -> Triple(name, index, frame) }
         }
         require(ordered.size <= 100) { "El máximo es 100 frames por personaje." }
@@ -259,7 +281,7 @@ object CharacterBuilder {
             animationArray.put(
                 JSONObject()
                     .put("anim", name)
-                    .put("name", "$charId $name")
+                    .put("name", if (charData is CharacterDraft && charData.useAtlas) charData.prefixFor(name) else "$charId $name")
                     .put("fps", settings?.fps?.toIntOrNull() ?: 24)
                     .put("loop", settings?.loop ?: false)
                     .put("indices", JSONArray())
@@ -324,7 +346,7 @@ object CharacterBuilder {
             animationArray.put(
                 JSONObject()
                     .put("name", name)
-                    .put("prefix", "$charId $name")
+                    .put("prefix", if (charData is CharacterDraft && charData.useAtlas) charData.prefixFor(name) else "$charId $name")
                     .put("frameRate", settings?.fps?.toIntOrNull() ?: 24)
                     .put("looped", settings?.loop ?: false)
                     .put("frameIndices", JSONArray())

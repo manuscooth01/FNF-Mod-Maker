@@ -4,6 +4,18 @@ import java.io.File
 
 data class WizardIssue(val step: Int, val message: String, val songIndex: Int? = null)
 
+fun characterInputProblems(draft: CharacterDraft, fileExists: (String) -> Boolean = { File(it).isFile }): List<String> = buildList {
+    addAll(draft.problems)
+    val images = when {
+        draft.useAtlas -> listOfNotNull(draft.atlasSheet)
+        draft.useIndividualFrames -> draft.animationFrames.values.flatten().map { it.image }
+        else -> listOfNotNull(draft.sheet)
+    }
+    if (images.any { !fileExists(it.path) }) add("Vuelve a elegir las imágenes que ya no están disponibles.")
+    if (draft.useAtlas && draft.atlasXml != null && !fileExists(draft.atlasXml.path)) add("Vuelve a elegir el XML del atlas.")
+    if (draft.icon != null && !fileExists(draft.icon.path)) add("Vuelve a elegir el icono de vida.")
+}
+
 /** Una sola validación para navegación, resumen y exportación. */
 fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(it).isFile }): List<WizardIssue> = buildList {
     if (config.modTitle.isBlank()) add(WizardIssue(0, "Escribe el nombre del mod."))
@@ -35,12 +47,7 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
         }
     }
     if (config.character.enabled) {
-        config.character.problems.forEach { add(WizardIssue(2, "Personaje: $it")) }
-        val draft = config.character
-        val images = if (draft.useIndividualFrames) draft.animationFrames.values.flatten().map { it.image }
-            else listOfNotNull(draft.sheet)
-        if (images.any { !fileExists(it.path) }) add(WizardIssue(2, "Personaje: vuelve a elegir las imágenes que ya no están disponibles."))
-        if (draft.icon != null && !fileExists(draft.icon.path)) add(WizardIssue(2, "Personaje: vuelve a elegir el icono de vida."))
+        characterInputProblems(config.character, fileExists).forEach { add(WizardIssue(2, "Personaje: $it")) }
     }
     if (config.icon != null && !fileExists(config.icon.path)) add(WizardIssue(3, "Vuelve a elegir el icono del mod."))
 }

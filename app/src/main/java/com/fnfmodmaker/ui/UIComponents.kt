@@ -91,8 +91,16 @@ fun Field(
             )
         }
     }
+@Composable
+fun SectionTitle(text: String) {
+    Spacer(Modifier.height(18.dp))
+    androidx.compose.material3.Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold
+    )
+    Spacer(Modifier.height(8.dp))
 }
-
 @Composable
 fun HelpCard(text: String) {
     Surface(

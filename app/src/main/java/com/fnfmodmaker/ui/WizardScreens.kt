@@ -82,17 +82,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 
 private val STEP_LABELS = listOf("Mod", "Canciones", "Personaje", "Audio", "Chart", "Listo")
 
-@Composable
-fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
-    when (vm.tool) {
-        Tool.HOME -> HomeScreen(vm)
-        Tool.MOD -> WizardScreen(vm)
-        Tool.CHARACTER -> CharacterToolScreen(vm)
-        Tool.AUDIO -> AudioToolScreen(vm)
-        Tool.IMPORT -> ImportScreen(vm)
-        Tool.STAGE -> StageToolScreen(vm)
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -561,36 +550,6 @@ private fun MessageCard(text: String, error: Boolean) {
     }
 }
 
-@Composable
-internal fun ToolTopBar(
-    title: String,
-    subtitle: String = "",
-    onHome: (() -> Unit)? = null
-) {
-    TopAppBar(
-        navigationIcon = {
-            if (onHome != null) {
-                TextButton(onClick = onHome) { Text("‹ Inicio") }
-            }
-        },
-        title = {
-            Column {
-                Text(title, fontWeight = FontWeight.Bold)
-                if (subtitle.isNotBlank()) {
-                    Text(
-                        subtitle,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            titleContentColor = MaterialTheme.colorScheme.onSurface
-        )
-    )
-}
 
     // ---------------------------------------------------------------------------
     // Paso 1: datos del mod

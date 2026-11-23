@@ -70,7 +70,6 @@ import com.fnfmodmaker.model.TargetEngine
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.material.icons.Icons
 import kotlin.math.min
 import kotlin.text.isDigit
 import kotlin.text.isLetterOrDigit
@@ -229,7 +228,6 @@ private fun VariationEditorModal(
     onPickIcon: () -> Unit
 ) {
     val variation = vm.activeVariation ?: return
-    val index = vm.activeVariationIndex!!
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -265,8 +263,8 @@ private fun VariationEditorModal(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Editar variación: ${variation.displayName}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    androidx.compose.material3.IconButton(onClick = onDismiss) {
-                        androidx.compose.material3.Icon(Icons.Default.Close, contentDescription = "Cerrar")
+                    TextButton(onClick = onDismiss) {
+                        Text("✕", style = MaterialTheme.typography.labelLarge)
                     }
                 }
                 Spacer(Modifier.height(16.dp))

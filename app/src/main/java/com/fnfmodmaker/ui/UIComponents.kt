@@ -346,6 +346,8 @@ fun InfoRow(label: String, value: String) {
             fontWeight = FontWeight.SemiBold
         )
     }
+}
+
 @Composable
 fun CharacterForm(
     vm: WizardViewModel,
@@ -359,4 +361,3 @@ fun CharacterForm(
     Spacer(Modifier.height(8.dp))
     Button(onClick = onPickIcon, enabled = !vm.busy) { Text("Elegir icono de vida") }
 }
-

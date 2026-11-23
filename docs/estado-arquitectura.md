@@ -12,7 +12,8 @@ con pruebas y APK exitosos. No se ejecutaron pruebas en dispositivo.
   responsabilidades y aún no hay repositorios/adaptadores de motor separados.
 - El asistente edita canción/audio/personaje, abre grabación y cuadrícula de ocho carriles. Esta
   permite añadir, mover, borrar y redimensionar notas, con undo de sesión. No hay redo persistente,
-  selección múltiple funcional, waveform, cambios de BPM ni exportación de eventos/secciones.
+  cambios de BPM ni exportación de eventos/secciones. Dispone de selección múltiple y una vista
+  general de onda por streaming; reproducción de voces y verificación en dispositivos pendientes.
 - El constructor usa duración real de holds y charts por dificultad; hay pruebas de serialización.
   No se ha validado la compatibilidad ejecutando ambas versiones concretas de los motores.
 - Personaje: PNG individuales, cuadrícula y atlas Sparrow, animaciones y offsets; variaciones aún
@@ -55,3 +56,12 @@ externo. Un hash detecta corrupción, no certifica que los recursos o scripts se
 Las pruebas cubren ida y vuelta, duplicación, rutas peligrosas, entradas duplicadas, tamaño excesivo,
 recursos dañados/ausentes y limpieza de importaciones interrumpidas. Falta verificación del flujo SAF
 y de la restauración entre teléfonos físicos.
+
+## Avance de Chart Studio
+
+La cuadrícula incorpora operaciones atómicas de grupos, tiempo exacto, edición durante escucha
+y onda general de pista mediante decodificación por streaming. El historial sigue siendo de sesión.
+Los charts activos con eventos, secciones personalizadas, colas independientes o notas inválidas
+se bloquean en la validación y el serializador: los datos siguen en el proyecto editable. La onda
+y los gestos requieren prueba en Android; no se han validado mods exportados en los motores.
+Cambios de tempo, adaptadores reales de eventos, tipos de nota y voces sincronizadas siguen pendientes.

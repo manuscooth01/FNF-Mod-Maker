@@ -99,7 +99,7 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
         OutlinedButton(onClick = { confirmAction = "generate" }, enabled = !vm.aiBusy && vm.aiPrompt.isNotBlank(),
             modifier = Modifier.fillMaxWidth()) { Text("Generar ilustración") }
         OutlinedButton(onClick = { confirmAction = "propose" }, enabled = !vm.aiBusy && !vm.busy && vm.aiPrompt.isNotBlank(),
-            modifier = Modifier.fillMaxWidth()) { Text(if (vm.tool == Tool.CHARACTER) "Proponer cambios al personaje" else "Proponer cambios al mod") }
+            modifier = Modifier.fillMaxWidth()) { Text(if (vm.tool == Tool.CHARACTER) "Editar personaje con IA" else "Editar mi proyecto con IA") }
         Text("Las propuestas no modifican nada hasta que revises y apruebes el lote. Necesitan un modelo que admita herramientas.", style = MaterialTheme.typography.labelSmall)
     }
     confirmAction?.let { action ->
@@ -122,9 +122,10 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
     vm.aiError?.let { Spacer(Modifier.height(8.dp)); MessageCard(it, error = true) }
     vm.aiResult?.let { SectionTitle("Respuesta"); Text(it, style = MaterialTheme.typography.bodyMedium) }
     vm.aiProposalNotice?.let { Spacer(Modifier.height(8.dp)); MessageCard(it, error = false) }
+    if (vm.canUndoAi) OutlinedButton(onClick = vm::undoAiBatch, enabled = !vm.aiBusy && !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Deshacer último lote de IA") }
     vm.aiProposal?.let { proposal ->
         SectionTitle("Revisión del lote · ${proposal.items.size} cambios")
-        Text("Aún no se ha aplicado nada. Revisa cada cambio antes de aprobar; los scripts son código ejecutable en Psych.", style = MaterialTheme.typography.bodySmall)
+        Text("Aún no se ha aplicado nada. Revisa cada valor antes de aprobar. Las asignaciones se aplican a todas las canciones.", style = MaterialTheme.typography.bodySmall)
         Text("Resumen del modelo: ${proposal.summary}", style = MaterialTheme.typography.bodySmall)
         proposal.items.forEachIndexed { index, item ->
             var expanded by androidx.compose.runtime.remember(proposal, index) { mutableStateOf(true) }
@@ -136,13 +137,13 @@ internal fun CharacterAiPanel(vm: WizardViewModel) {
             }
             Spacer(Modifier.height(8.dp))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { confirmApply = true }, enabled = !vm.aiBusy && !vm.busy) { Text("Aplicar lote") }
-            OutlinedButton(onClick = vm::discardAiProposal, enabled = !vm.aiBusy) { Text("Descartar") }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { confirmApply = true }, enabled = !vm.aiBusy && !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Aplicar cambios al proyecto") }
+            OutlinedButton(onClick = vm::discardAiProposal, enabled = !vm.aiBusy, modifier = Modifier.fillMaxWidth()) { Text("Descartar") }
         }
         if (confirmApply) androidx.compose.material3.AlertDialog(onDismissRequest = { confirmApply = false },
             title = { Text("¿Aplicar todo el lote?") },
-            text = { Text("Se modificarán los datos indicados en el borrador. Los scripts Lua se ejecutarán en Psych al cargar el mod; revisa el código y prueba el resultado. No se modificarán ZIP ya guardados.") },
+            text = { Text("Se modificarán y guardarán los datos indicados. No se modifican recursos originales ni ZIP ya guardados.") },
             confirmButton = { TextButton(onClick = { vm.applyAiProposal(); confirmApply = false }) { Text("Aplicar") } },
             dismissButton = { TextButton(onClick = { confirmApply = false }) { Text("Cancelar") } })
     }

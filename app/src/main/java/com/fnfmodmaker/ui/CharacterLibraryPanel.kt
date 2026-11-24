@@ -34,7 +34,7 @@ internal fun CharacterLibraryPanel(vm: WizardViewModel) {
         TextButton(onClick = { vm.createLibraryCharacter(duplicate = true) }, enabled = !vm.busy && config.characterLibrary.size < 64) { Text("Duplicar seleccionado") }
     }
     Text("Asigna por ID estable; una selección puede ocupar varios roles. El personaje sin asignar queda guardado, pero no se exporta.", style = MaterialTheme.typography.bodySmall)
-    if (config.songs.any { it.vSliceOrigin != null }) Text("En mods V-Slice importados, cambiar los IDs originales de la canción bloquea la exportación.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+    if (config.songs.any { it.vSliceOrigin != null }) Text("En V-Slice importado, las asignaciones explícitas cambian solo esos personajes en la metadata del ZIP; el original del proyecto se conserva.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
     val assignment = config.resolvedAssignments()
     CharacterRole.entries.forEach { role ->
         val id = when (role) { CharacterRole.PLAYER -> assignment.player; CharacterRole.OPPONENT -> assignment.opponent; CharacterRole.GIRLFRIEND -> assignment.girlfriend }

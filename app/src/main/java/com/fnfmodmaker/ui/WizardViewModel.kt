@@ -104,6 +104,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var aiProposalNotice by mutableStateOf<String?>(null)
         private set
 
+    private var lastAiApplied: com.fnfmodmaker.ai.ProjectProposal? = null
+    private var lastAiProjectId: String? = null
+    val canUndoAi: Boolean get() = lastAiApplied != null && currentProjectId == lastAiProjectId && config == lastAiApplied?.result
+
     internal fun clearAiKey() { aiKey = "" }
     internal fun clearAiSession() {
         if (aiBusy) return
@@ -209,15 +213,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         aiStatus = "Preparando propuesta…"
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching {
-                val response = com.fnfmodmaker.ai.AiClient.propose(baseUrl, key, model, question, context)
-                response to response.arguments?.let { com.fnfmodmaker.ai.ProjectProposalPlanner.plan(snapshot, it, characterOnly) }
+                com.fnfmodmaker.ai.AiClient.propose(baseUrl, key, model, question, context)
             } }
-            result.onSuccess { (response, proposal) ->
-                aiResult = response.text
-                if (proposal != null && config != snapshot) aiError = "El proyecto cambió mientras se preparaba la propuesta. Vuelve a solicitarla."
-                else if (proposal != null) aiProposal = proposal
-                else aiProposalNotice = "El modelo respondió sin proponer cambios. Comprueba que admite herramientas y pide un cambio concreto."
-            }.onFailure { aiError = if (it is com.fnfmodmaker.ai.AiException) it.message else "No se pudo preparar la propuesta. Comprueba el proveedor y que el modelo admita herramientas." }
+            result.onSuccess { response -> acceptAiProposal(snapshot, response, characterOnly) }
+                .onFailure { aiError = if (it is com.fnfmodmaker.ai.AiException) it.message else "No se pudo preparar la propuesta. Comprueba el proveedor y que el modelo admita herramientas." }
             aiStatus = ""; aiBusy = false
         }
     }
@@ -231,12 +230,31 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             aiError = e.message
             return
         }
+        lastAiApplied = proposal; lastAiProjectId = currentProjectId
         config = updated
         characterSaved = null
         aiProposal = null
         aiError = null
-        aiProposalNotice = "Cambios aplicados al borrador. Revisa y prueba el mod antes de exportar."
-        scheduleAutoSave()
+        aiProposalNotice = "Cambios aplicados al proyecto; guardando automáticamente. Revisa el estado de guardado."
+        scheduleAutoSave(); forceAutoSave()
+    }
+
+    internal fun undoAiBatch() {
+        val batch = lastAiApplied ?: return
+        if (busy || aiBusy) return
+        if (!canUndoAi) { aiError = "El proyecto cambió después del lote; no se puede deshacer sin sobrescribir cambios posteriores."; return }
+        config = batch.base; lastAiApplied = null; lastAiProjectId = null; aiProposal = null; characterSaved = null
+        aiError = null; aiProposalNotice = "Lote de IA deshecho; guardando el proyecto."
+        scheduleAutoSave(); forceAutoSave()
+    }
+
+    /** Shared response path used by the network adapter and deterministic tests. */
+    internal fun acceptAiProposal(snapshot: ModConfig, response: com.fnfmodmaker.ai.AiProtocol.ProjectResponse, characterOnly: Boolean) {
+        aiResult = response.text
+        if (config != snapshot) { aiError = "El proyecto cambió mientras se preparaba la propuesta. Vuelve a solicitarla."; return }
+        if (response.arguments == null) { aiProposalNotice = "El modelo no devolvió llamadas a herramientas. Comprueba que el proveedor y el modelo admiten herramientas; no se aplicó ningún cambio."; return }
+        try { aiProposal = com.fnfmodmaker.ai.ProjectProposalPlanner.plan(snapshot, response.arguments, characterOnly) }
+        catch (e: com.fnfmodmaker.ai.AiException) { aiError = e.message }
     }
 
     internal fun discardAiProposal() { if (!aiBusy) { aiProposal = null; aiProposalNotice = "Propuesta descartada; no se cambió el proyecto." } }
@@ -1820,6 +1838,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private fun applyOpenedProject(id: String, opened: ModConfig, list: List<ProjectSummary>, missing: List<String>) {
         // Playback cleanup is best effort; it must not leave active.txt and the UI out of sync.
         runCatching { closeLiveChart() }; runCatching { releaseMediaPlayer() }
+        lastAiApplied = null; lastAiProjectId = null
         currentProjectId = id; config = opened; projects = list
         projectRevision++; projectSaveStatus = "Guardado en este dispositivo"
         activeSongIndex = 0; activeChartSongIndex = 0; activeChartDifficulty = "normal"; activeVariationIndex = null

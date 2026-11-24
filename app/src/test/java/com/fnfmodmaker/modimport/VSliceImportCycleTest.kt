@@ -234,16 +234,42 @@ class VSliceImportCycleTest {
         assertTrue(File(built.rootDir, "data/characters/new-enemy.json").isFile)
     }
 
-    @Test fun explicitAssignmentCannotRewriteImportedMetadata() {
+    @Test fun explicitAssignmentPatchesOnlyRivalAfterSaveAndReopen() {
         val store = ProjectStore(File(temp.root, "projects-roles"), temp.root)
         val p = prepare(zip(), store)
-        val other = p.config.character.copy(charId = "other", importedVSliceCharacterId = "", importedSourceFormat = "", importedSourceJson = "")
-        val config = p.config.copy(characterLibrary = p.config.characterLibrary + CharacterEntry("other", other),
-            characterAssignments = CharacterAssignments(opponent = "other"))
-        assertEquals("other", config.effectiveExportConfig().firstSong.opponent)
-        assertTrue(validateWizard(config).any { it.message.contains("rival") && it.message.contains("hero") && it.message.contains("other") })
-        val error = assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(config, File(temp.root, "blocked-roles"), temp.root, {}, services()) }
-        assertTrue(error.message!!.contains("rival"))
+        val metza = p.config.character.copy(charId = "metza", displayName = "Metza", importedVSliceCharacterId = "", importedSourceFormat = "", importedSourceJson = "")
+        val config = p.config.copy(characterLibrary = p.config.characterLibrary + CharacterEntry("metza-id", metza),
+            characterAssignments = CharacterAssignments(opponent = "metza-id"))
+        val id = store.publishModImport(p.stage, productionJson(config), productionValidator::validate)
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        assertEquals("hero", reopened.firstSong.opponent)
+        assertEquals("metza", reopened.effectiveExportConfig().firstSong.opponent)
+        assertTrue(validateWizard(reopened).joinToString { it.message }, validateWizard(reopened).isEmpty())
+        val origin = reopened.importedModResources.single { it.originalPath == "data/songs/test/test-metadata.json" }
+        val original = File(origin.asset!!.path).readText()
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "roles-build"), temp.root, {}, services())
+        val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { zip -> while (true) { val e = zip.nextEntry ?: break; files[e.name] = zip.readBytes() } }
+        val exported = JSONObject(files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8))
+        val originalJson = JSONObject(original)
+        assertEquals("metza", exported.getJSONObject("playData").getJSONObject("characters").getString("opponent"))
+        exported.getJSONObject("playData").getJSONObject("characters").put("opponent", "hero")
+        assertTrue(originalJson.similar(exported))
+        assertEquals(original, File(origin.asset!!.path).readText())
+        listOf("data/characters/metza.json", "images/characters/metza.png", "images/characters/metza.xml").forEach { assertTrue(it, it in files) }
+    }
+
+    @Test fun missingAssignmentOrResourcesAreBlocked() {
+        val store = ProjectStore(File(temp.root, "projects-invalid-roles"), temp.root)
+        val p = prepare(zip(), store)
+        val missing = p.config.copy(characterAssignments = CharacterAssignments(opponent = "missing"))
+        assertTrue(validateWizard(missing).any { it.message.contains("no existe") })
+        assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(missing, File(temp.root, "missing"), temp.root, {}, services()) }
+        val draft = p.config.character.copy(charId = "metza", importedVSliceCharacterId = "", importedSourceFormat = "", importedSourceJson = "", atlasSheet = null)
+        val bad = p.config.copy(characterLibrary = listOf(CharacterEntry("metza", draft)), selectedCharacterId = "metza", characterAssignments = CharacterAssignments(opponent = "metza"))
+        assertTrue(validateWizard(bad).any { it.step == 2 })
+        assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(bad, File(temp.root, "bad-assets"), temp.root, {}, services()) }
     }
 
     @Test fun eachChangedMetadataFieldIsReportedAndBlockedByWizardAndBuilder() {

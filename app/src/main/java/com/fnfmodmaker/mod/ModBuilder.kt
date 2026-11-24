@@ -64,14 +64,14 @@ object ModBuilder {
         val libraryProblems = com.fnfmodmaker.model.characterLibraryProblems(rawConfig)
         require(libraryProblems.isEmpty()) { libraryProblems.joinToString(" ") }
         val config = rawConfig.effectiveExportConfig()
-        val metadataProblems = rawConfig.songs.zip(config.songs).flatMap { (raw, effective) -> vSliceExportProblems(raw, effective) } +
+        val metadataProblems = rawConfig.songs.zip(config.songs).flatMap { (raw, effective) -> vSliceExportProblems(raw, effective, rawConfig) } +
             config.charactersToExport().flatMap { vSliceCharacterProblems(config.copy(selectedCharacterId = it.id)) }
         require(metadataProblems.isEmpty()) { metadataProblems.joinToString(" ") }
         val importedCharts = config.songs.filter { it.vSliceOrigin != null }.associate { song ->
             require(song.difficulties.isNotEmpty()) { "${song.songFolder}: elige una dificultad editable." }
             song.songFolder to buildImportedVSliceChart(config, song, appRoot)
         }
-        if (config.character.enabled && config.songs.any { song ->
+        if (rawConfig.characterAssignments == null && config.character.enabled && config.songs.any { song ->
                 song.vSliceOrigin != null && (if (config.character.side == com.fnfmodmaker.model.CharacterSide.PLAYER) song.player else song.opponent) != config.character.charFolder
             }) warnings.add("Las canciones V-Slice importadas conservan sus personajes originales; el personaje generado no se asigna automáticamente a su metadata.")
         val modFolder = config.modFolder
@@ -91,11 +91,18 @@ object ModBuilder {
             }
         }
 
+        val patchedMetadataPaths = mutableSetOf<String>()
         // Each independently assigned identity is built exactly once, even if used by several roles.
         config.charactersToExport().forEach { entry ->
             val characterConfig = config.copy(selectedCharacterId = entry.id)
             services.character(root, characterConfig, onProgress, warnings)
             val draft = entry.draft
+            if (importedVSlice && rawConfig.characterAssignments != null) {
+                val id = draft.charFolder
+                val required = mutableListOf("data/characters/$id.json", "images/characters/$id.png", "images/characters/$id.xml")
+                if (draft.icon != null) required.add("images/icons/icon-$id.png")
+                required.forEach { path -> require(File(root, path).isFile && File(root, path).length() > 0) { "Falta el archivo generado del personaje asignado: $path" } }
+            }
             if (importedVSlice && draft.importedSourceFormat == "V-Slice") {
                 val path = "data/characters/${draft.charFolder}.json"
                 val generated = File(root, path)
@@ -147,7 +154,17 @@ object ModBuilder {
                 val songFolder = song.songFolder
                 if (song.vSliceOrigin == null) writeText(
                     root, "data/songs/$songFolder/$songFolder-metadata.json", JsonBuilders.vsliceMetadata(song, entry.durationMs)
-                )
+                ) else {
+                    val raw = rawConfig.songs.single { it.songFolder == songFolder }
+                    val origin = song.vSliceOrigin
+                    require(origin.folder == songFolder && origin.metadataPath == "data/songs/$songFolder/$songFolder-metadata.json") { "Ruta de metadata V-Slice incompatible; no se exportó." }
+                    val original = originalVSliceText(config, origin.metadataPath, appRoot, false)
+                    val patched = patchImportedVSliceMetadata(original, raw, song, assignedVSliceRoles(rawConfig))
+                    if (patched != original) {
+                        writeText(root, origin.metadataPath, patched)
+                        patchedMetadataPaths.add(origin.metadataPath)
+                    }
+                }
                 writeText(root, "data/songs/$songFolder/$songFolder-chart.json",
                     importedCharts[songFolder] ?: JsonBuilders.vsliceChart(config, song, entry.durationMs))
             }
@@ -242,7 +259,9 @@ object ModBuilder {
         writeText(root, "LEEME.txt", readmeText(config, songEntries))
         if (config.importedModResources.isNotEmpty()) {
             onProgress("Conservando recursos originales…")
-            mergeImportedResources(root, config.importedModResources, appRoot)
+            mergeImportedResources(root, config.importedModResources.map { resource ->
+                if (resource.originalPath in patchedMetadataPaths) resource.copy(converted = true) else resource
+            }, appRoot)
             warnings.add("Los archivos convertidos se regeneraron; sus originales se conservan en el proyecto. Revisa el mod en el motor correspondiente.")
         }
 

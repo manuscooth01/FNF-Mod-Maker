@@ -8,7 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
-internal fun vSliceImportProblems(song: SongConfig): List<String> {
+internal fun vSliceImportProblems(song: SongConfig, allowedRoles: Set<String> = emptySet()): List<String> {
     val o = song.vSliceOrigin ?: return emptyList()
     return buildList {
         fun changed(field: String, original: String, current: String) {
@@ -20,9 +20,9 @@ internal fun vSliceImportProblems(song: SongConfig): List<String> {
         changed("BPM", o.originalBpm, song.bpm)
         changed("velocidad", o.originalSpeed, song.speed)
         changed("offset", o.originalOffset, song.offsetMs)
-        changed("jugador", o.originalPlayer, song.player)
-        changed("rival", o.originalOpponent, song.opponent)
-        changed("GF", o.originalGirlfriend, song.girlfriend)
+        if ("player" !in allowedRoles) changed("jugador", o.originalPlayer, song.player)
+        if ("opponent" !in allowedRoles) changed("rival", o.originalOpponent, song.opponent)
+        if ("girlfriend" !in allowedRoles) changed("GF", o.originalGirlfriend, song.girlfriend)
         changed("escenario", o.originalStage, song.stageVSlice)
         if (song.difficulties != o.editableDifficulties)
             add("${o.folder}: las dificultades originales son de solo lectura; restaura las dificultades editables importadas.")
@@ -32,8 +32,31 @@ internal fun vSliceImportProblems(song: SongConfig): List<String> {
 }
 
 /** Check both user input and the actual builder projection: neither may hide the other. */
-internal fun vSliceExportProblems(raw: SongConfig, effective: SongConfig): List<String> =
-    (vSliceImportProblems(raw) + vSliceImportProblems(effective)).distinct()
+internal fun assignedVSliceRoles(config: ModConfig): Set<String> {
+    val a = config.characterAssignments ?: return emptySet()
+    return listOf("player" to a.player, "opponent" to a.opponent, "girlfriend" to a.girlfriend)
+        .filter { (_, id) -> id.isNotEmpty() && config.characterLibrary.singleOrNull { it.id == id }?.draft?.enabled == true }
+        .map { it.first }.toSet()
+}
+internal fun vSliceExportProblems(raw: SongConfig, effective: SongConfig, config: ModConfig): List<String> =
+    (vSliceImportProblems(raw) + vSliceImportProblems(effective, assignedVSliceRoles(config))).distinct()
+
+/** Only explicitly assigned roles are patched; all other JSON values remain from the original. */
+internal fun patchImportedVSliceMetadata(original: String, raw: SongConfig, effective: SongConfig, allowed: Set<String>): String {
+    val origin = raw.vSliceOrigin ?: error("Falta el origen V-Slice.")
+    val changes = listOf(Triple("player", origin.originalPlayer, effective.player), Triple("opponent", origin.originalOpponent, effective.opponent), Triple("girlfriend", origin.originalGirlfriend, effective.girlfriend))
+        .filter { it.first in allowed && it.second != it.third }
+    if (changes.isEmpty()) return original
+    val json = readVSliceJson(original, "metadata original")
+    val play = json.optJSONObject("playData") ?: error("Falta playData en la metadata original.")
+    val chars = play.optJSONObject("characters") ?: if (!play.has("characters")) JSONObject().also { play.put("characters", it) } else error("characters no es un objeto.")
+    changes.forEach { (role, before, after) ->
+        require(chars.optString(role, "") == before) { "La metadata original de $role no coincide con el proyecto; no se exportó." }
+        require(after.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "ID de personaje inseguro: $after" }
+        chars.put(role, after)
+    }
+    return json.toString(2)
+}
 
 /** An editable imported character must still target the exact original JSON. */
 internal fun vSliceCharacterProblems(config: ModConfig): List<String> {
@@ -59,7 +82,7 @@ internal fun originalVSliceText(config: ModConfig, path: String, appRoot: File, 
 
 internal fun buildImportedVSliceChart(config: ModConfig, song: SongConfig, appRoot: File): String {
     val origin = song.vSliceOrigin ?: error("No hay origen V-Slice.")
-    require(vSliceImportProblems(song).isEmpty()) { vSliceImportProblems(song).joinToString(" ") }
+    require(vSliceImportProblems(song, assignedVSliceRoles(config)).isEmpty()) { vSliceImportProblems(song, assignedVSliceRoles(config)).joinToString(" ") }
     require(config.charts[song.songFolder].orEmpty().keys.all { it in origin.editableDifficulties }) {
         "${song.songFolder}: un chart no editable contiene cambios que no se pueden exportar sin pérdida."
     }

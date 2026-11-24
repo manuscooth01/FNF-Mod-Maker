@@ -126,7 +126,7 @@ internal class VSliceModImporter(
             }
             require(songs.size in 1..20) { "Se admiten de 1 a 20 canciones V-Slice." }
             warnings.add("La metadata original, sus campos adicionales y la velocidad por dificultad se conservan sin edición. Solo se editan notas de las dificultades indicadas y las pistas seleccionadas. El editor redondea tiempos al milisegundo; las notas no modificadas conservan su precisión original.")
-            warnings.add("La exportación se bloqueará si cambias nombre, BPM, velocidad, offset, personajes o escenario de una canción importada; esos campos aún no se pueden actualizar sin pérdida.")
+            warnings.add("Las asignaciones explícitas de la biblioteca actualizan los personajes solo en la metadata del ZIP; nombre, BPM, velocidad, offset y escenario siguen protegidos.")
             warnings.add("Los recursos y scripts no editables se conservan sin ejecución; los scripts pueden ejecutarse en el juego. Colisiones desconocidas bloquean el ZIP.")
             var character = CharacterDraft()
             val candidates = files.filter { Regex("^data/characters/[^/]+\\.json$").matches(it) }

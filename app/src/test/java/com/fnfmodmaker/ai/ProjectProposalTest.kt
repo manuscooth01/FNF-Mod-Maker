@@ -13,8 +13,7 @@ class ProjectProposalTest {
             {"type":"character","positionX":12,"cameraY":-5,"side":"player"},
             {"type":"animation","name":"idle","fps":18,"offsetX":-4,"loop":true},
             {"type":"song","songIndex":0,"bpm":120,"speed":2.5},
-            {"type":"chart","songIndex":0,"difficulty":"normal","notes":[{"timeMs":1600,"lane":0,"lengthMs":300},{"timeMs":0,"lane":4}]},
-            {"type":"script","name":"saludo","content":"function onCreate()\n  debugPrint('hola')\nend"}
+            {"type":"chart","songIndex":0,"difficulty":"normal","notes":[{"timeMs":1600,"lane":0,"lengthMs":300},{"timeMs":0,"lane":4}]}
         ]}"""
         val proposal = ProjectProposalPlanner.plan(base, args)
         assertEquals(base, proposal.base)
@@ -26,10 +25,8 @@ class ProjectProposalTest {
         assertEquals("18", proposal.result.character.settingsFor("idle").fps)
         assertEquals("120", proposal.result.songs[0].bpm)
         assertEquals(listOf(4, 0), proposal.result.getChart("first", "normal")!!.notes.map { it.lane })
-        assertTrue(proposal.result.psychScripts["saludo"]!!.contains("onCreate"))
-        assertEquals(5, proposal.items.size)
-        assertTrue(proposal.items.last().details.contains("debugPrint"))
-        assertTrue(proposal.items.last().details.contains("se ejecutará"))
+        assertTrue(proposal.result.psychScripts.isEmpty())
+        assertEquals(4, proposal.items.size)
     }
 
     @Test fun rejectsInvalidBatchWithoutPartialMutation() {
@@ -58,6 +55,7 @@ class ProjectProposalTest {
 
     @Test fun respectsCharacterScopeEngineAndExistingEvents() {
         val script = """{"summary":"x","changes":[{"type":"script","name":"test","content":"return"}]}"""
+        assertTrue(runCatching { ProjectProposalPlanner.plan(base, script) }.isFailure)
         assertTrue(runCatching { ProjectProposalPlanner.plan(base, script, characterOnly = true) }.isFailure)
         assertTrue(runCatching { ProjectProposalPlanner.plan(base.copy(engine = TargetEngine.VSLICE), script) }.isFailure)
         val chart = ChartDraft(songFolder = "first", events = listOf(ChartEvent()))
@@ -81,6 +79,41 @@ class ProjectProposalTest {
         assertTrue(context.contains("First"))
         assertFalse(context.contains("private code"))
         assertFalse(context.contains("/home/"))
+    }
+
+    @Test fun libraryAssignmentsAndEngineSpecificStageEditsAreRealAndValidated() {
+        val file = kotlin.io.path.createTempFile("fnf-ai", ".png").toFile()
+        try {
+            file.writeText("fixture")
+            val gson = com.google.gson.GsonBuilder().registerTypeAdapter(android.net.Uri::class.java, object : com.google.gson.TypeAdapter<android.net.Uri>() {
+                override fun write(out: com.google.gson.stream.JsonWriter, value: android.net.Uri?) { out.nullValue() }
+                override fun read(input: com.google.gson.stream.JsonReader): android.net.Uri? { input.skipValue(); return null }
+            }.nullSafe()).create()
+            val image = gson.fromJson("""{"displayName":"sheet.png","path":${gson.toJson(file.path)},"uri":null}""", PickedImage::class.java)
+            val hero = CharacterEntry("hero-key", CharacterDraft(enabled = true, charId = "metza", displayName = "Metza", sheet = image, sheetWidth = 2, sheetHeight = 2,
+                frameWidth = "1", frameHeight = "1", idleFrames = "1", leftFrames = "0", downFrames = "0", upFrames = "0", rightFrames = "0"))
+            val config = base.copy(engine = TargetEngine.BOTH, characterLibrary = listOf(CharacterEntry(), hero), stageDraft = StageDraft(enabled = true, stageId = "club"))
+            val args = """{"summary":"roles","changes":[{"type":"assignment","role":"opponent","characterId":"hero-key"},{"type":"animation","characterId":"hero-key","name":"idle","fps":30,"offsetX":-7},{"type":"stage_actor","engine":"vslice","role":"bf","positionX":1100},{"type":"stage_actor","engine":"psych","role":"gf","cameraY":21}]}"""
+            val proposal = ProjectProposalPlanner.plan(config, args)
+            assertEquals("metza", proposal.result.effectiveExportConfig().firstSong.opponent)
+            assertEquals("30", proposal.result.characterLibrary[1].draft.settingsFor("idle").fps)
+            assertEquals("-7", proposal.result.characterLibrary[1].draft.settingsFor("idle").offsetX)
+            assertEquals(1100f, proposal.result.stageDraft.vSliceLayout.bf.x, 0f)
+            assertEquals(21f, proposal.result.stageDraft.psychLayout.gf.cameraY, 0f)
+            assertEquals(config.stageDraft.psychLayout.bf, proposal.result.stageDraft.psychLayout.bf)
+            assertEquals(config.character, proposal.result.character)
+            val context = projectContext(config, false)
+            assertTrue(context.contains("hero-key") && context.contains("metza") && context.contains("vSliceLayout"))
+            assertFalse(context.contains(file.path))
+            val bad = listOf(
+                """{"summary":"x","changes":[{"type":"assignment","role":"opponent","characterId":"missing"}]}""",
+                """{"summary":"x","changes":[{"type":"stage_actor","engine":"psych","role":"bf","scale":2}]}""",
+                """{"summary":"x","changes":[{"type":"character","characterId":"missing","positionX":3}]}"""
+            )
+            bad.forEach { assertTrue(it, runCatching { ProjectProposalPlanner.plan(config, it) }.isFailure) }
+            file.delete()
+            assertTrue(runCatching { ProjectProposalPlanner.plan(config, args) }.isFailure)
+        } finally { file.delete() }
     }
 
     @Test fun toolProtocolAcceptsOnlyTheProposalTool() {

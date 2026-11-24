@@ -161,6 +161,57 @@ class ModZipConfirmationTest {
         assertEquals(rival, vm.config.resolvedAssignments().opponent)
         assertEquals(hero, vm.config.resolvedAssignments().girlfriend)
     }
+    @Test fun tardeReassignsDadToMetzaAndKeepsOriginalMetadataAfterReopenAndZip() {
+        val previous = vm.currentProjectId!!
+        vm.inspectModZip(zip()); await { !vm.busy }; vm.confirmModZipImport(); await { !vm.busy }
+        val imported = vm.currentProjectId!!
+        val originalPath = vm.config.importedModResources.single { it.originalPath == "data/songs/tarde/tarde-metadata.json" }.asset!!.path
+        val original = File(originalPath).readText()
+        vm.setCharacterEnabled(true); vm.setCharId("metza"); vm.setCharName("Metza")
+        vm.setCharFrameWidth("1"); vm.setCharFrameHeight("1"); vm.setCharIdleFrames("1")
+        vm.setCharLeftFrames("0"); vm.setCharDownFrames("0"); vm.setCharUpFrames("0"); vm.setCharRightFrames("0")
+        val png = File(app.cacheDir, "metza.png"); javaClass.getResourceAsStream("/psych-fixture/dad.png")!!.use { png.writeBytes(it.readBytes()) }
+        vm.pickCharacterSheet(Uri.fromFile(png)); await { !vm.busy }; assertNull(vm.error)
+        val assignment = """{"summary":"Cambiar rival","changes":[{"type":"assignment","role":"opponent","characterId":"${vm.config.selectedCharacterId}"}]}"""
+        vm.acceptAiProposal(vm.config, com.fnfmodmaker.ai.AiProtocol.ProjectResponse(null, assignment), false)
+        assertNotNull(vm.aiError, vm.aiProposal); vm.applyAiProposal()
+        assertEquals("metza", vm.config.effectiveExportConfig().firstSong.opponent)
+        vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
+        assertEquals("dad", vm.config.firstSong.opponent)
+        assertEquals("metza", vm.config.effectiveExportConfig().firstSong.opponent)
+        assertTrue(vm.validationIssues.joinToString { it.message }, vm.exportReady)
+        val output = File(app.cacheDir, "tarde-metza.zip")
+        vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val prefix = vm.config.modFolder + "/"
+        val exported = org.json.JSONObject(files.getValue(prefix + "data/songs/tarde/tarde-metadata.json").toString(Charsets.UTF_8))
+        val chars = exported.getJSONObject("playData").getJSONObject("characters")
+        assertEquals("metza", chars.getString("opponent")); chars.put("opponent", "dad")
+        assertTrue(org.json.JSONObject(original).similar(exported)); assertEquals(original, File(originalPath).readText())
+        listOf("data/characters/metza.json", "images/characters/metza.png", "images/characters/metza.xml").forEach { assertTrue(it, files.containsKey(prefix + it)) }
+    }
+
+    @Test fun simulatedAiResponseAppliesSavesReopensAndUndoIsSafe() {
+        val id = vm.currentProjectId!!
+        vm.setSimpleStageEnabled(true); vm.setStageId("my-stage")
+        val base = vm.config
+        val args = """{"summary":"Ajustar escena","changes":[{"type":"stage_actor","engine":"vslice","role":"gf","cameraX":23},{"type":"scene","zoom":1.2},{"type":"animation","characterId":"legacy","name":"idle","fps":18,"offsetX":4}]}"""
+        vm.acceptAiProposal(base, com.fnfmodmaker.ai.AiProtocol.ProjectResponse(null, args), false)
+        assertNotNull(vm.aiError, vm.aiProposal); assertEquals(base, vm.config)
+        vm.applyAiProposal(); assertEquals(23f, vm.config.stageDraft.vSliceLayout.gf.cameraX, 0f)
+        assertEquals("18", vm.config.character.settingsFor("idle").fps); assertTrue(vm.canUndoAi)
+        vm.undoAiBatch(); assertEquals(base, vm.config); assertFalse(vm.canUndoAi)
+        vm.acceptAiProposal(base, com.fnfmodmaker.ai.AiProtocol.ProjectResponse(null, args), false); vm.applyAiProposal()
+        vm.switchProject(); await { !vm.busy }; vm.switchProject(id); await { !vm.busy }
+        assertEquals(23f, vm.config.stageDraft.vSliceLayout.gf.cameraX, 0f)
+        assertEquals(1.2f, vm.config.stageDraft.cameraPosition.zoom, 0f)
+        assertEquals("18", vm.config.character.settingsFor("idle").fps)
+        assertFalse(vm.canUndoAi)
+        vm.acceptAiProposal(vm.config, com.fnfmodmaker.ai.AiProtocol.ProjectResponse("Consejo", null), false)
+        assertTrue(vm.aiProposalNotice!!.contains("herramientas")); assertNull(vm.aiProposal)
+    }
+
     @Test fun publicationFailureShowsErrorRetainsReviewAndCanRetry() {
         val previous = vm.currentProjectId
         val previousConfig = vm.config

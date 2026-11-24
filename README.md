@@ -493,7 +493,7 @@ migración. La duplicación hace copias independientes de los recursos disponibl
 falta alguno. El indicador de guardado y los errores aparecen en el asistente.
 
 Los proyectos permanecen en esta instalación de la app: desinstalarla o borrar sus datos puede
-eliminarlos. Ya se pueden crear copias portables `.fnfproject`; existe una conversión inicial de un subconjunto de ZIP Psych. Los formatos
+eliminarlos. Ya se pueden crear copias portables `.fnfproject`; existe conversión inicial de subconjuntos de ZIP Psych y V-Slice. Los formatos
 V-Slice y Psych continúan necesitando pruebas reales en sus motores. No hay prueba en dispositivo
 para la migración ni garantía ante una interrupción forzada durante un guardado pendiente.
 
@@ -515,8 +515,7 @@ rutas peligrosas, duplicados, recursos faltantes o dañados y versiones no compa
 son 4096 entradas, 256 MiB por recurso y 1 GiB total y de paquete. La importación se prepara en un
 directorio temporal y se publica con un identificador nuevo tras la confirmación. Si falta un recurso
 antiguo de la caché, vuelve a elegirlo antes de exportar. La exportación de mods para el juego es
-una operación distinta: `.fnfproject` no es un mod instalable. La importación editable Psych es
-limitada; consulta la sección V1.2 más abajo.
+una operación distinta: `.fnfproject` no es un mod instalable. La importación editable de mods es limitada; consulta las secciones correspondientes más abajo.
 
 ### Apariencia con imágenes propias (opcional)
 
@@ -616,3 +615,30 @@ chart en esta versión para evitar pérdidas. Otros campos y la organización de
 cambiar al regenerar charts/personaje; el original queda guardado en el proyecto. Voces adicionales y
 personajes o escenarios no convertidos se conservan sin edición. OGG no se valida por completo y es
 necesario probar audio, personaje y el ZIP en Android y en la versión de Psych utilizada.
+
+### Importación editable V-Slice (subconjunto)
+
+El selector de ZIP distingue Psych de V-Slice sin requerir `pack.json`. Para V-Slice se admiten
+metadata `2.2.x` y chart `2.0.x` con tiempos en milisegundos y BPM inicial entero (1–400), archivos
+base `data/songs/<id>/<id>-metadata.json` y `<id>-chart.json`, e instrumental OGG. Las notas normales
+y sostenidos en carriles 0–7 de las dificultades easy, normal o hard compatibles se abren en los
+editores existentes. Los tiempos se muestran redondeados a milisegundos; al exportar, las notas no
+modificadas mantienen los valores originales, incluidos los decimales. Solo se editan las primeras
+pistas de voces identificadas por lado; las adicionales se preservan.
+
+La metadata original se conserva en el ZIP sin edición: por seguridad se bloquea la exportación si
+cambias nombre, artista, BPM, velocidad, offset, personajes, escenario o número de voces de una
+canción importada. Se mantienen los eventos, cambios de BPM, dificultades no editables, variaciones,
+velocidades por dificultad, stages y recursos adicionales; los eventos y cambios de tempo no se
+representan en la cuadrícula. Una dificultad con tipos de nota o parámetros especiales permanece sin
+edición. Si ninguna dificultad de una canción es compatible, se rechaza la importación por ahora.
+
+Se puede convertir un personaje Sparrow `1.0.x` cuando lo usan todas las canciones y el PNG y XML
+son compatibles. Se conservan campos adicionales del JSON y los índices de animación originales;
+comprueba sus animaciones en el juego. Otros personajes se conservan sin edición. Las colisiones no
+convertidas bloquean la exportación y los scripts se almacenan como datos con advertencia previa.
+BOTH, tiempos en ticks, BPM inicial fraccionario y otras versiones de esquema todavía no se admiten.
+El juego y las versiones Android requieren pruebas reales de compatibilidad.
+
+Referencias de formatos verificadas: `SongRegistry.hx` y `SongData.hx` del código oficial de Funkin
+(commit `94ee0f2a9386d80e445be39ee2ed4b4a630cfbac`), y `CharacterData.hx` para esquema de personaje.

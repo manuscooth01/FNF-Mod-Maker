@@ -33,6 +33,7 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
         .groupBy { it.songFolder.lowercase() }.filterValues { it.size > 1 }.keys
     config.songs.forEachIndexed { index, song ->
         val label = "Canción ${index + 1}"
+        com.fnfmodmaker.mod.vSliceImportProblems(song).forEach { add(WizardIssue(1, it, index)) }
         if (song.songName.isBlank()) add(WizardIssue(1, "$label: escribe un nombre.", index))
         if (song.songName.isNotBlank() && song.songFolder.lowercase() in repeated) {
             add(WizardIssue(1, "$label: usa un nombre de carpeta distinto al de las otras canciones.", index))

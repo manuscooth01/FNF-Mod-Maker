@@ -104,7 +104,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
                         Text(review.name, fontWeight = FontWeight.Bold)
                         Text("Motor: ${review.engines.joinToString(" + ")}")
                         Text("Canciones posibles: ${review.songs.size} · ${review.songs.joinToString().ifBlank { "ninguna detectada" }}")
-                        Text("Dificultades detectadas por nombre: ${review.difficulties.joinToString().ifBlank { "no determinadas" }}")
+                        Text("Dificultades editables: ${review.difficulties.joinToString().ifBlank { "no determinadas" }}")
                         Text("Personajes: ${review.characters} · Escenarios: ${review.stages} · Audios: ${review.audio} · Scripts: ${review.scripts}")
                         Spacer(Modifier.height(8.dp))
                         review.warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
@@ -194,7 +194,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
             }
             OutlinedButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy && vm.currentProjectId != null, modifier = Modifier.fillMaxWidth()) { Text("Importar proyecto .fnfproject") }
             OutlinedButton(onClick = { inspectZip.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Importar mod ZIP para editar") }
-            Text("Psych Engine: subset compatible. V-Slice y BOTH aún no se importan.", style = MaterialTheme.typography.labelSmall)
+            Text("Psych y V-Slice: subconjuntos compatibles. Los ZIP con ambos formatos aún no se importan.", style = MaterialTheme.typography.labelSmall)
             if (vm.modZipInspecting) TextButton(onClick = vm::cancelModZipInspection) { Text("Cancelar análisis ZIP") }
             vm.projects.forEach { project ->
                 Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -209,7 +209,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
                     }
                 }
             }
-            Text("Guarda un .fnfproject fuera de la app para conservar una copia. La importación ZIP Psych solo admite un subconjunto de mods.", style = MaterialTheme.typography.labelSmall)
+            Text("Guarda un .fnfproject fuera de la app para conservar una copia. La importación ZIP solo admite subconjuntos de Psych y V-Slice.", style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(12.dp))
             ToolCard(
                 icon = com.fnfmodmaker.R.drawable.tool_person,

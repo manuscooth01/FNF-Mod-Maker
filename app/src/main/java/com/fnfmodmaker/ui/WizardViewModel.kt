@@ -45,6 +45,7 @@ import com.fnfmodmaker.modimport.ModZipReview
 import com.fnfmodmaker.modimport.InventoriedFile
 import com.fnfmodmaker.modimport.PsychModImporter
 import com.fnfmodmaker.modimport.PreparedPsychImport
+import com.fnfmodmaker.modimport.VSliceModImporter
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -1020,7 +1021,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (busy || modZipReview != null || currentProjectId == null) return
         val app = getApplication<Application>()
         busy = true; modZipInspecting = true; portableMessage = null
-        portableProgress = "Validando y preparando proyecto Psych…"
+        portableProgress = "Validando y preparando proyecto del mod…"
         val stage = projectStore.newImportStage()
         modZipJob = viewModelScope.launch {
             var delivered = false
@@ -1030,24 +1031,30 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     val context = kotlin.coroutines.coroutineContext
                     val source = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el archivo.")
                     ModZipInspector(File(app.cacheDir, "mod-zip-inspection")).withExtracted(source, { context.ensureActive() }) { root, names ->
-                        PsychModImporter({ file -> if (MediaTools.isPng(file)) MediaTools.imageSize(file) else null }, { file -> MediaTools.readDurationMs(file.absolutePath) }).prepare(root, names, stage) { context.ensureActive() }
+                        val size = { file: File -> if (MediaTools.isPng(file)) MediaTools.imageSize(file) else null }
+                        val duration = { file: File -> MediaTools.readDurationMs(file.absolutePath) }
+                        val isVSlice = names.any { it.equals("_polymod_meta.json", true) || it.endsWith("/_polymod_meta.json", true) || Regex("(?:^|/)data/songs/[^/]+/[^/]+-metadata(?:-[^/]+)?\\.json$", RegexOption.IGNORE_CASE).containsMatchIn(it) }
+                        if (isVSlice) {
+                            val result = VSliceModImporter(size, duration).prepare(root, names, stage) { context.ensureActive() }
+                            PreparedPsychImport(result.stage, result.config, result.warnings)
+                        } else PsychModImporter(size, duration).prepare(root, names, stage) { context.ensureActive() }
                     }
                 }
                 preparedPsych = prepared
                 val config = prepared.config
-                val items = config.importedModResources.map { r -> InventoriedFile(r.originalPath, if (r.originalPath.endsWith(".lua", true) || r.originalPath.endsWith(".hx", true)) "Script" else "Recurso",
+                val items = config.importedModResources.map { r -> InventoriedFile(r.originalPath, if (r.originalPath.endsWith(".lua", true) || r.originalPath.endsWith(".hx", true) || r.originalPath.endsWith(".hscript", true)) "Script" else "Recurso",
                     if (r.converted) "Editable o regenerado" else "Conservado sin edición",
                     if (r.converted) "Se regenerará al exportar; el original se conserva en el proyecto." else "Se conservará si no colisiona con un archivo generado.") }
-                modZipReview = ModZipReview(name, listOf("Psych Engine"), config.songs.map { it.songName },
+                modZipReview = ModZipReview(name, listOf(if (config.engine == TargetEngine.VSLICE) "V-Slice" else "Psych Engine"), config.songs.map { it.songName },
                     config.songs.flatMap { song -> song.orderedDifficulties.map { "${song.songName}: $it" } },
-                    if (config.character.enabled) 1 else 0, 0, config.songs.sumOf { 1 + if (it.hasVocals) 1 else 0 },
+                    if (config.character.enabled) 1 else 0, 0, config.songs.sumOf { 1 + (if (it.vocalsPlayer != null) 1 else 0) + (if (it.vocalsOpponent != null) 1 else 0) },
                     items.count { it.kind == "Script" }, items, prepared.warnings)
                 delivered = true
             } catch (e: CancellationException) {
                 portableMessage = "Importación cancelada. El proyecto actual no cambió."
                 throw e
             } catch (e: Exception) {
-                portableMessage = "No se pudo preparar el mod Psych: ${e.message}. El proyecto actual no cambió."
+                portableMessage = "No se pudo preparar el mod: ${e.message}. El proyecto actual no cambió."
             } finally {
                 if (!delivered) stage.deleteRecursively()
                 modZipInspecting = false; busy = false; portableProgress = null; modZipJob = null
@@ -1072,7 +1079,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             preparedPsych = null; modZipReview = null
             busy = false; portableProgress = null
             result.onSuccess { id ->
-                portableMessage = "Proyecto Psych importado como copia independiente. Abriendo…"
+                portableMessage = "Proyecto importado como copia independiente. Abriendo…"
                 switchProject(id)
             }.onFailure { portableMessage = "No se pudo importar el mod: ${it.message}. El proyecto actual no cambió." }
         }

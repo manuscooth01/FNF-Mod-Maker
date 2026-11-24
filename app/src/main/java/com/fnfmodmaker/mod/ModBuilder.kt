@@ -21,6 +21,15 @@ data class BuildResult(
     val warnings: List<String>
 )
 
+/** Adapters keep Android media operations replaceable in deterministic integration tests. */
+internal data class ModBuildServices(
+    val audio: AudioEncoder,
+    val character: (File, ModConfig, (String) -> Unit, MutableList<String>) -> Unit,
+    val stage: (File, ModConfig, (String) -> Unit, MutableList<String>) -> Unit,
+    val icon: (File, File) -> Boolean,
+    val title: (String, String, File) -> Boolean
+)
+
 /**
  * Crea la carpeta del mod y todos sus archivos (una o varias canciones),
  * y la empaqueta en un ZIP.
@@ -32,18 +41,35 @@ object ModBuilder {
         rawConfig: ModConfig,
         workRoot: File,
         onProgress: (String) -> Unit
-    ): BuildResult {
+    ): BuildResult = buildInternal(rawConfig, workRoot, File(context.applicationInfo.dataDir), onProgress,
+        ModBuildServices(
+            object : AudioEncoder {
+                override fun convert(input: File, output: File) = MediaTools.convertToOgg(input, output)
+                override fun mix(first: File, second: File, output: File) = MediaTools.mixToOgg(first, second, output)
+            }, CharacterBuilder::build, StageBuilder::build,
+            { input, output -> MediaTools.preparePng(input, output, 512) }, MediaTools::makeTitleCard
+        ))
+
+    internal fun buildInternal(rawConfig: ModConfig, workRoot: File, appRoot: File, onProgress: (String) -> Unit, services: ModBuildServices): BuildResult {
         // Fail before creating or clearing output directories, even if called outside the wizard.
         rawConfig.songs.forEach { song -> song.orderedDifficulties.forEach { difficulty ->
             rawConfig.getChart(song.songFolder, difficulty)?.requireExportable()
         } }
         val warnings = mutableListOf<String>()
-        require(rawConfig.importedModResources.isEmpty() || rawConfig.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) { "Los recursos importados solo pueden exportarse para Psych Engine en esta versión." }
+        val importedVSlice = rawConfig.songs.any { it.vSliceOrigin != null }
+        require(rawConfig.importedModResources.isEmpty() || rawConfig.engine == if (importedVSlice) com.fnfmodmaker.model.TargetEngine.VSLICE else com.fnfmodmaker.model.TargetEngine.PSYCH) {
+            "Los proyectos importados solo se exportan para su motor original; BOTH aún no está soportado."
+        }
+        require(!importedVSlice || rawConfig.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) { "El proyecto importado debe exportarse para V-Slice." }
         // Si hay personaje propio, el chart de cada canción debe apuntar a él.
         val characterConfig = rawConfig.withCharacter()
         val config = if (characterConfig.stageDraft.enabled) characterConfig.copy(songs = characterConfig.songs.map {
             it.copy(stagePsych = characterConfig.stageDraft.stageFolder, stageVSlice = characterConfig.stageDraft.stageFolder)
         }) else characterConfig
+        val importedCharts = config.songs.filter { it.vSliceOrigin != null }.associate { song ->
+            require(song.difficulties.isNotEmpty()) { "${song.songFolder}: elige una dificultad editable." }
+            song.songFolder to buildImportedVSliceChart(config, song, appRoot)
+        }
         val modFolder = config.modFolder
         val root = File(workRoot, modFolder)
         if (root.exists()) root.deleteRecursively()
@@ -56,16 +82,23 @@ object ModBuilder {
         config.icon?.let { icon ->
             onProgress("Preparando el icono del mod…")
             val iconTarget = File(root, "_polymod_icon.png")
-            if (!MediaTools.preparePng(File(icon.path), iconTarget, 512)) {
+            if (!services.icon(File(icon.path), iconTarget)) {
                 warnings.add("El icono no se pudo procesar, el mod se creó sin icono.")
             }
         }
 
         // ---------------- Personaje propio (uno solo para todo el mod) ----------------
-        CharacterBuilder.build(root, config, onProgress, warnings)
+        services.character(root, config, onProgress, warnings)
+        if (importedVSlice && config.character.enabled && config.character.importedSourceFormat == "V-Slice") {
+            val path = "data/characters/${config.character.charFolder}.json"
+            val generated = File(root, path)
+            require(generated.isFile) { "No se generó el personaje importado: $path" }
+            val original = originalVSliceText(config, path, appRoot, true)
+            generated.writeText(patchVSliceCharacter(original, generated.readText(), config.character.icon != null))
+        }
 
         // ---------------- Stage propio (uno solo para todo el mod) ----------------
-        StageBuilder.build(root, config, onProgress, warnings)
+        services.stage(root, config, onProgress, warnings)
 
         // Recopilamos metadatos por canción para los niveles/semanas.
         val songEntries = mutableListOf<SongEntry>()
@@ -81,12 +114,11 @@ object ModBuilder {
             val instrumental = song.instrumental
                 ?: throw IllegalArgumentException("Falta la instrumental de '$songFolder'.")
             fun source(audio: com.fnfmodmaker.model.PickedAudio) = AudioSource(File(audio.path), audio.isOgg)
+            val origin = song.vSliceOrigin
             exportSongAudio(songDir, songFolder, config.engine, song.player, song.opponent,
                 source(instrumental), song.vocalsPlayer?.let(::source), song.vocalsOpponent?.let(::source),
-                object : AudioEncoder {
-                    override fun convert(input: File, output: File) = MediaTools.convertToOgg(input, output)
-                    override fun mix(first: File, second: File, output: File) = MediaTools.mixToOgg(first, second, output)
-                }, onProgress)
+                services.audio, onProgress, origin?.instrumentalFile ?: "Inst.ogg",
+                origin?.playerVoiceFile?.takeIf { it.isNotEmpty() }, origin?.opponentVoiceFile?.takeIf { it.isNotEmpty() })
             val durationMs = instrumental.durationMs
 
             songEntries.add(SongEntry(song, durationMs))
@@ -95,23 +127,24 @@ object ModBuilder {
         // ---------------- V-Slice ----------------
         if (config.engine.includesVSlice) {
             onProgress("Escribiendo archivos de V-Slice…")
-            writeText(root, "_polymod_meta.json", JsonBuilders.polymodMeta(config))
+            val originalPolymod = config.importedModResources.singleOrNull { it.originalPath == "_polymod_meta.json" }
+            if (importedVSlice && originalPolymod != null) {
+                val meta = com.fnfmodmaker.modimport.readVSliceJson(originalVSliceText(config, "_polymod_meta.json", appRoot, true), "_polymod_meta.json")
+                meta.put("title", config.modTitle.trim()); meta.put("description", config.description.trim())
+                writeText(root, "_polymod_meta.json", meta.toString(2))
+            } else writeText(root, "_polymod_meta.json", JsonBuilders.polymodMeta(config))
 
             for (entry in songEntries) {
                 val song = entry.song
                 val songFolder = song.songFolder
-                writeText(
-                    root,
-                    "data/songs/$songFolder/$songFolder-metadata.json",
-                    JsonBuilders.vsliceMetadata(song, entry.durationMs)
+                if (song.vSliceOrigin == null) writeText(
+                    root, "data/songs/$songFolder/$songFolder-metadata.json", JsonBuilders.vsliceMetadata(song, entry.durationMs)
                 )
-                writeText(
-                    root,
-                    "data/songs/$songFolder/$songFolder-chart.json",
-                    JsonBuilders.vsliceChart(config, song, entry.durationMs)
-                )
+                writeText(root, "data/songs/$songFolder/$songFolder-chart.json",
+                    importedCharts[songFolder] ?: JsonBuilders.vsliceChart(config, song, entry.durationMs))
             }
 
+            if (config.importedModResources.none { it.originalPath.startsWith("data/levels/", true) && it.originalPath.endsWith(".json", true) }) {
             // Una entrada por canción, todas comparten la imagen de título del mod.
             for ((index, entry) in songEntries.withIndex()) {
                 val levelName = if (songEntries.size == 1) modFolder else "$modFolder-${index + 1}"
@@ -122,8 +155,9 @@ object ModBuilder {
 
             onProgress("Generando el título de la semana…")
             val titleFile = File(root, "images/storymenu/titles/$modFolder.png")
-            if (!MediaTools.makeTitleCard(config.modTitle, config.weekColor, titleFile)) {
+            if (!services.title(config.modTitle, config.weekColor, titleFile)) {
                 warnings.add("No se pudo generar la imagen del título de la semana.")
+            }
             }
         }
 
@@ -200,8 +234,8 @@ object ModBuilder {
         writeText(root, "LEEME.txt", readmeText(config, songEntries))
         if (config.importedModResources.isNotEmpty()) {
             onProgress("Conservando recursos originales…")
-            mergeImportedResources(root, config.importedModResources, File(context.applicationInfo.dataDir))
-            warnings.add("Los archivos convertidos se regeneraron; sus originales se conservan en el proyecto. Revisa el mod en Psych Engine.")
+            mergeImportedResources(root, config.importedModResources, appRoot)
+            warnings.add("Los archivos convertidos se regeneraron; sus originales se conservan en el proyecto. Revisa el mod en el motor correspondiente.")
         }
 
         onProgress("Empaquetando…")

@@ -27,9 +27,17 @@ internal fun validateVoiceNames(engine: TargetEngine, player: String, opponent: 
 internal fun exportSongAudio(
     songDir: File, songFolder: String, engine: TargetEngine, playerId: String, opponentId: String,
     instrumental: AudioSource, player: AudioSource?, opponent: AudioSource?, encoder: AudioEncoder,
-    progress: (String) -> Unit = {}
+    progress: (String) -> Unit = {},
+    instrumentalFilename: String = "Inst.ogg", playerVoiceFilename: String? = null, opponentVoiceFilename: String? = null
 ) {
-    validateVoiceNames(engine, playerId, opponentId, player != null && opponent != null)
+    if (playerVoiceFilename == null && opponentVoiceFilename == null) validateVoiceNames(engine, playerId, opponentId, player != null && opponent != null)
+    fun validFilename(name: String) = name.matches(Regex("[A-Za-z0-9_-]{1,100}\\.ogg"))
+    require(validFilename(instrumentalFilename) && listOfNotNull(playerVoiceFilename, opponentVoiceFilename).all(::validFilename)) { "Nombre de pista importada inválido." }
+    if (player != null && opponent != null && engine.includesVSlice) {
+        val p = playerVoiceFilename ?: "Voices-${characterVoiceFileId(playerId)}.ogg"
+        val o = opponentVoiceFilename ?: "Voices-${characterVoiceFileId(opponentId)}.ogg"
+        require(!p.equals(o, true) && !p.equals(instrumentalFilename, true) && !o.equals(instrumentalFilename, true)) { "V-Slice: las pistas de audio tienen nombres en conflicto." }
+    }
     val engineLabel = when (engine) {
         TargetEngine.BOTH -> "V-Slice y Psych Engine"
         TargetEngine.VSLICE -> "V-Slice"
@@ -56,10 +64,10 @@ internal fun exportSongAudio(
             else encoder.convert(source.file, target)
         }
     }
-    encode(instrumental, "la instrumental", engineLabel, "Inst.ogg")
+    encode(instrumental, "la instrumental", engineLabel, instrumentalFilename)
     if (player != null && opponent != null) {
-        val playerName = "Voices-${characterVoiceFileId(playerId)}.ogg"
-        val opponentName = "Voices-${characterVoiceFileId(opponentId)}.ogg"
+        val playerName = playerVoiceFilename ?: "Voices-${characterVoiceFileId(playerId)}.ogg"
+        val opponentName = opponentVoiceFilename ?: "Voices-${characterVoiceFileId(opponentId)}.ogg"
         // Psych-only needs temporary converted sources so each failing voice is identified separately.
         val pName = if (engine.includesVSlice) playerName else ".player-temp.ogg"
         val oName = if (engine.includesVSlice) opponentName else ".opponent-temp.ogg"
@@ -77,6 +85,10 @@ internal fun exportSongAudio(
         }
     } else {
         val single = player ?: opponent
-        if (single != null) encode(single, if (player != null) "la voz del jugador" else "la voz del rival", engineLabel, "Voices.ogg")
+        if (single != null) {
+            val filename = (if (player != null) playerVoiceFilename else opponentVoiceFilename) ?: "Voices.ogg"
+            require(!filename.equals(instrumentalFilename, true)) { "V-Slice: las pistas de audio tienen nombres en conflicto." }
+            encode(single, if (player != null) "la voz del jugador" else "la voz del rival", engineLabel, filename)
+        }
     }
 }

@@ -57,6 +57,16 @@ data class PickedImage(
 /** Original bytes kept as project assets; converted paths may be regenerated on ZIP export. */
 data class ImportedModResource(val originalPath: String = "", val asset: PickedImage? = null, val converted: Boolean = false)
 
+/** Provenance for a V-Slice chart. Noneditable metadata and unsupported difficulties stay in the original files. */
+data class VSliceSongOrigin(
+    val folder: String = "", val metadataPath: String = "", val chartPath: String = "",
+    val editableDifficulties: Set<String> = emptySet(),
+    val originalName: String = "", val originalArtist: String = "", val originalBpm: String = "",
+    val originalSpeed: String = "", val originalOffset: String = "", val originalPlayer: String = "",
+    val originalOpponent: String = "", val originalGirlfriend: String = "", val originalStage: String = "",
+    val instrumentalFile: String = "Inst.ogg", val playerVoiceFile: String = "", val opponentVoiceFile: String = ""
+)
+
 /** Configuración de una canción individual dentro de un mod. */
 data class SongConfig(
     val songName: String = "",
@@ -75,7 +85,8 @@ data class SongConfig(
     val instrumental: PickedAudio? = null,
     val vocalsPlayer: PickedAudio? = null,
     val vocalsOpponent: PickedAudio? = null,
-    val chartAudioMix: ChartAudioMix = ChartAudioMix()
+    val chartAudioMix: ChartAudioMix = ChartAudioMix(),
+    val vSliceOrigin: VSliceSongOrigin? = null
 ) {
     val songFolder: String get() = psychSongPath(songName)
     val bpmValue: Int get() = bpm.toIntOrNull() ?: 0

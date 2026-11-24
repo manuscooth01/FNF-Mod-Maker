@@ -171,7 +171,14 @@ private fun LiveSetup(vm: WizardViewModel) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         RecordingSnap.entries.forEach { snap -> FilterChip(vm.liveSnap == snap, { vm.selectLiveSnap(snap) }, enabled = !locked, label = { Text(snap.label) }) }
     }
-    Text(when { vm.config.engine == com.fnfmodmaker.model.TargetEngine.BOTH -> "Libre guarda el momento exacto. En BOTH, el ajuste de grabación y cuadrícula sigue V-Slice; el mapa Psych se edita y exporta por separado."; vm.config.engine.includesVSlice -> "Libre guarda el momento exacto. El ajuste sigue el mapa de tempo V-Slice."; else -> "Libre guarda el momento exacto. El ajuste sigue los cambios BPM de las secciones Psych." }, style = MaterialTheme.typography.labelSmall)
+    if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.BOTH) {
+        Text("Mapa de referencia del ajuste", style = MaterialTheme.typography.labelMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(vm.liveUsesVSliceSnap, { vm.setLivePsychSnapReference(false) }, enabled = !locked, label = { Text("V-Slice") })
+            FilterChip(!vm.liveUsesVSliceSnap, { vm.setLivePsychSnapReference(true) }, enabled = !locked, label = { Text("Psych") })
+        }
+    }
+    Text("Libre guarda el momento exacto. Grabación y cuadrícula usan ${if (vm.liveUsesVSliceSnap) "el mapa V-Slice" else "las secciones Psych"}; cambiar la referencia no modifica los mapas.", style = MaterialTheme.typography.labelSmall)
     Text("Corrección de toque: ${if (vm.liveCorrectionMs > 0) "+" else ""}${vm.liveCorrectionMs} ms", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = { vm.setLiveCorrection(vm.liveCorrectionMs - 10) }, enabled = !locked) { Text("−10 ms") }
@@ -237,8 +244,8 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
     }
     val psychTempos = psychSpans.mapIndexedNotNull { i, span -> if (i > 0 && span.bpm != psychSpans[i - 1].bpm) span.startMs else null }
     val tempoGrid = remember(vm.config, vm.liveSongIndex, vm.liveDifficulty, vm.liveDurationMs) { runCatching { vm.liveTempoGrid(1) }.getOrNull() }
-    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs, eventTimes, tempoTimes + psychTempos, psychSpans.map { it.startMs }, tempoGrid, vm.config.engine.includesVSlice)
-    Text("Línea blanca central: posición actual; rayas tenues: beats${if (vm.config.engine.includesVSlice) " y compases V-Slice" else " Psych (sin compás musical supuesto)"}. Dorado: eventos; cian: tempo; violeta: secciones Psych. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
+    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs, eventTimes, tempoTimes, psychTempos, psychSpans.map { it.startMs }, tempoGrid, vm.liveUsesVSliceSnap)
+    Text("Posición: blanco central. Beats${if (vm.liveUsesVSliceSnap) " y compases V-Slice" else " Psych (sin compás supuesto)"}: rayas tenues. Dorado: eventos; cian: tempo V-Slice; naranja: tempo Psych; violeta: secciones Psych. Las notas de práctica no se muestran.", style = MaterialTheme.typography.labelSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = vm::undoLiveNote, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveUndoCount > 0) { Text("Deshacer último toque") }
         if (chart != null) TextButton(onClick = { confirmDelete = true }, enabled = !vm.livePlaying && !vm.liveLoading) { Text("Borrar chart propio") }
@@ -356,7 +363,7 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
 }
 
 @Composable
-private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long, events: List<Double>, tempos: List<Double>, sections: List<Double>, grid: com.fnfmodmaker.model.TouchGrid?, showMeasures: Boolean) {
+private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long, events: List<Double>, tempos: List<Double>, psychTempos: List<Double>, sections: List<Double>, grid: com.fnfmodmaker.model.TouchGrid?, showMeasures: Boolean) {
     Canvas(Modifier.fillMaxWidth().height(100.dp).semantics { contentDescription = "Línea de tiempo de notas alrededor del momento de reproducción" }) {
         drawRect(Color(0xFF201A29))
         val laneHeight = size.height / 8f
@@ -391,6 +398,10 @@ private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long, events: List<
         for (tempo in tempos) {
             val x = size.width / 2f + ((tempo - positionMs) / windowMs * size.width).toFloat()
             if (x in 0f..size.width) drawLine(Color(0xFF36D8E7), Offset(x, 0f), Offset(x, size.height), 3f)
+        }
+        for (tempo in psychTempos) {
+            val x = size.width / 2f + ((tempo - positionMs) / windowMs * size.width).toFloat()
+            if (x in 0f..size.width) drawLine(Color(0xFFFF9147), Offset(x, 0f), Offset(x, size.height), 3f)
         }
         for (event in events) {
             val x = size.width / 2f + ((event - positionMs) / windowMs * size.width).toFloat()

@@ -61,11 +61,16 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
     val song = vm.liveSong ?: return
     if (song.bpmValue !in 1.0..400.0 || vm.liveDurationMs <= 0L) return
     var divisions by rememberSaveable { mutableStateOf(4) }
-    val tempos = remember(vm.config, vm.liveSongIndex) {
-        if (vm.config.engine.includesVSlice) runCatching { com.fnfmodmaker.mod.vSliceGridTempos(vm.liveVSliceTempo()) }.getOrNull()
-        else runCatching { vm.liveChart?.psychLayout?.takeIf { it.isNotEmpty() }?.let { com.fnfmodmaker.model.psychGridTempos(it, song.bpmValue) } ?: emptyList() }.getOrNull()
+    val grid = remember(vm.config, vm.liveSongIndex, vm.liveDifficulty, divisions, vm.liveDurationMs) {
+        runCatching { vm.liveTempoGrid(divisions) }.getOrNull()
     }
-    val grid = remember(song.bpmValue, divisions, vm.liveDurationMs, tempos) { TouchGrid(song.bpmValue, divisions, vm.liveDurationMs, tempos.orEmpty()) }
+    if (grid == null) {
+        AlertDialog(onDismissRequest = onClose, title = { Text("Mapa de ajuste inválido") },
+            text = { Text("No se puede abrir la cuadrícula sin un mapa válido. Corrige el tempo; no se utilizará otro mapa silenciosamente.") },
+            confirmButton = { TextButton(onClick = onClose) { Text("Cerrar") } })
+        return
+    }
+    val usesMeasures = vm.liveUsesVSliceSnap
     var page by rememberSaveable { mutableStateOf(grid.pageForTime(vm.livePositionMs)) }
     page = page.coerceIn(0, grid.pageCount - 1)
     var selected by remember { mutableStateOf<ChartNote?>(null) }
@@ -91,8 +96,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("Cuadrícula de notas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text("${song.songName} · ${vm.liveDifficulty} · ${gridClock(grid.pageStart(page))}", style = MaterialTheme.typography.labelSmall)
-                        if (tempos == null) Text("No se pudo leer el mapa de tempo; se usa el BPM inicial. Los tiempos exactos no cambian.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
-                        else Text("Página de cuatro beats · compás ${kotlin.math.floor(grid.measureAt(grid.pageStart(page).toDouble())).toInt() + 1}. Líneas violetas: límites de compás.", style = MaterialTheme.typography.labelSmall)
+                        Text(if (usesMeasures) "Referencia V-Slice · página de cuatro beats · compás ${kotlin.math.floor(grid.measureAt(grid.pageStart(page).toDouble())).toInt() + 1}. Líneas violetas: límites de compás." else "Referencia Psych · página de cuatro beats; Psych no define compases musicales.", style = MaterialTheme.typography.labelSmall)
                     }
                     LocalToolbarIcon()
                     TextButton(onClick = onClose) { Text("Listo") }
@@ -100,7 +104,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Ajuste", style = MaterialTheme.typography.labelMedium)
                     listOf(1 to "1/4", 2 to "1/8", 4 to "1/16", 8 to "1/32").forEach { (value, label) ->
-                        FilterChip(divisions == value, { val time = grid.pageStart(page); divisions = value; page = TouchGrid(song.bpmValue, value, vm.liveDurationMs, tempos.orEmpty()).pageForTime(time) },
+                        FilterChip(divisions == value, { val time = grid.pageStart(page); divisions = value; page = vm.liveTempoGrid(value).pageForTime(time) },
                             enabled = !locked, label = { Text(label) })
                     }
                     FilterChip(!resizeMode, { resizeMode = false }, enabled = !locked, label = { Text("Mover") })
@@ -108,7 +112,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     FilterChip(multiMode, { multiMode = !multiMode; group = emptySet(); selected = null; resizeMode = false }, enabled = !locked, label = { Text("Selección múltiple") })
                 }
                 Text("RIVAL    ${gridArrows.joinToString("  ")}       JUGADOR    ${gridArrows.joinToString("  ")}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-                Text(if (multiMode) "Toca notas para seleccionarlas, incluso en otras páginas. Al duplicar un compás, cada nota avanza un compás musical; si cambia el tempo o compás, pueden cambiar sus distancias en ms." else "Toca para añadir o seleccionar; arrastra para mover o, en Sostenido, cambiar el final. Tiempo exacto permite movimiento libre.", style = MaterialTheme.typography.labelSmall)
+                Text(if (multiMode) if (usesMeasures) "Toca notas para seleccionarlas, incluso en otras páginas. Al duplicar un compás, cada nota avanza un compás musical; si cambia el tempo o compás, pueden cambiar sus distancias en ms." else "Toca notas para seleccionarlas, incluso en otras páginas." else "Toca para añadir o seleccionar; arrastra para mover o, en Sostenido, cambiar el final. Tiempo exacto permite movimiento libre.", style = MaterialTheme.typography.labelSmall)
                 vm.liveNotice?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall) }
                 vm.liveError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
                 ChartWaveform(song, vm.liveDurationMs, grid, page, vm.livePositionMs, onPage = { page = it })
@@ -120,7 +124,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     Text("${page + 1}/${grid.pageCount}", style = MaterialTheme.typography.labelSmall)
                 }
                 Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    GridCanvas(grid, page, notes, vm.livePositionMs, if (multiMode) group else setOfNotNull(selected), resizeMode, multiMode, locked,
+                    GridCanvas(grid, page, notes, vm.livePositionMs, if (multiMode) group else setOfNotNull(selected), resizeMode, multiMode, locked, usesMeasures,
                         onSelect = { note ->
                             if (multiMode && note != null) group = if (note in group) group - note else group + note
                             else if (!multiMode) selected = note
@@ -158,7 +162,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                             val pasted = first?.let { translateGridNotes(clipboard, grid.pageStart(page) - it, 0) }
                             if (pasted != null && vm.applyGridChanges(emptyList(), pasted)) group = pasted.toSet()
                         }, enabled = clipboard.isNotEmpty() && !locked) { Text("Pegar al inicio de página") }
-                        TextButton(onClick = {
+                        if (usesMeasures) TextButton(onClick = {
                             val copies = chosen.map { it.copy(timeMs = grid.shiftMeasure(it.timeMs, 1.0)) }
                             if (vm.applyGridChanges(emptyList(), copies)) group = copies.toSet()
                         }, enabled = chosen.isNotEmpty() && !locked) { Text("Duplicar +1 compás") }
@@ -214,7 +218,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
 
 @Composable
 private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playheadMs: Long, selected: Set<ChartNote>, resizeMode: Boolean,
-    multiMode: Boolean, locked: Boolean, onSelect: (ChartNote?) -> Unit, onChange: (ChartNote?, ChartNote?) -> Unit) {
+    multiMode: Boolean, locked: Boolean, showMeasures: Boolean, onSelect: (ChartNote?) -> Unit, onChange: (ChartNote?, ChartNote?) -> Unit) {
     val currentNotes by rememberUpdatedState(notes)
     val currentOnChange by rememberUpdatedState(onChange)
     val currentOnSelect by rememberUpdatedState(onSelect)
@@ -278,6 +282,7 @@ private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playh
         for (column in 0..7) drawRect(gridColors[column % 4].copy(alpha = .08f), Offset(column * colW, 0f), Size(colW, size.height))
         for (column in 0..8) drawLine(Color.White.copy(alpha = if (column == 4) .7f else .2f), Offset(column * colW, 0f), Offset(column * colW, size.height), if (column == 4) 3f else 1f)
         for (row in 0..grid.rows) drawLine(Color.White.copy(alpha = if (row % grid.divisionsPerBeat == 0) .45f else .14f), Offset(0f, row * rowH), Offset(size.width, row * rowH), if (row % grid.divisionsPerBeat == 0) 2f else 1f)
+        if (showMeasures) {
         val startMeasure = grid.measureAt(grid.pageStart(page).toDouble())
         val endMeasure = grid.measureAt(grid.pageEnd(page).toDouble())
         var boundary = kotlin.math.ceil(startMeasure - 0.0000001).toInt()
@@ -286,6 +291,7 @@ private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playh
             val y = (grid.rowPosition(time, page) * rowH).toFloat()
             if (y in 0f..size.height) drawLine(Color(0xFFD69AF9), Offset(0f, y), Offset(size.width, y), 3f)
             boundary++
+        }
         }
         fun noteY(time: Long) = (grid.rowPosition(time, page) + .5).toFloat() * rowH
         for (note in notes) {

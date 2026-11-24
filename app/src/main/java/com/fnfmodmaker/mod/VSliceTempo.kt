@@ -91,7 +91,7 @@ internal fun vSliceBeatAt(source: String, time: Double): Double {
     rows.forEach { entry ->
         val row = entry.asJsonObject; val t = row.get("t").asDouble
         if (t <= time) {
-            if (bpm > 0) beats = kotlin.math.round((beats + (t - previousTime) * bpm / 60_000.0 * den / 4.0) * 10_000.0) / 10_000.0
+            if (bpm > 0) beats = kotlin.math.floor((beats + (t - previousTime) * bpm / 60_000.0 * den / 4.0) * 10_000.0 + 0.5) / 10_000.0
             bpm = row.get("bpm")?.asDouble ?: bpm
             den = row.get("d")?.asDouble ?: 4.0; previousTime = t
         }

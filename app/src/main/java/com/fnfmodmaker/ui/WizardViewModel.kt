@@ -400,12 +400,23 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private var nextLiveHoldId = 0L
     // Snapshot once per recording session: tempo cannot be edited during playback.
     private var liveRecordingGrid: com.fnfmodmaker.model.TouchGrid? = null
-    // BOTH always uses V-Slice's independent map for the grid and recording; Psych remains separate.
+    internal val liveUsesVSliceSnap: Boolean get() = config.engine.includesVSlice &&
+        !(config.engine == TargetEngine.BOTH && liveSong?.psychSnapReference == true)
+    internal fun setLivePsychSnapReference(psych: Boolean) {
+        check(config.engine == TargetEngine.BOTH && !busy && !livePlaying && !liveLoading) { "Pausa el editor para cambiar el mapa de ajuste." }
+        val song = liveSong ?: error("Selecciona una canción.")
+        if (song.psychSnapReference == psych) return
+        val songs = config.songs.toMutableList()
+        songs[liveSongIndex] = song.copy(psychSnapReference = psych)
+        config = config.copy(songs = songs)
+        scheduleAutoSave(); forceAutoSave()
+    }
     internal fun liveTempoGrid(divisions: Int): com.fnfmodmaker.model.TouchGrid {
         val song = liveSong ?: error("Selecciona una canción.")
-        val tempos = if (config.engine.includesVSlice) com.fnfmodmaker.mod.vSliceGridTempos(liveVSliceTempo())
+        val vslice = liveUsesVSliceSnap
+        val tempos = if (vslice) com.fnfmodmaker.mod.vSliceGridTempos(liveVSliceTempo())
             else liveChart?.psychLayout?.takeIf { it.isNotEmpty() }?.let { com.fnfmodmaker.model.psychGridTempos(it, song.bpmValue) }.orEmpty()
-        return com.fnfmodmaker.model.TouchGrid(song.bpmValue, divisions, liveDurationMs.coerceAtLeast(1L), tempos)
+        return com.fnfmodmaker.model.TouchGrid(song.bpmValue, divisions, liveDurationMs.coerceAtLeast(1L), tempos, vslice)
     }
     internal fun recordingTempoGrid(): com.fnfmodmaker.model.TouchGrid? {
         if (liveSnap == com.fnfmodmaker.model.RecordingSnap.FREE) return null

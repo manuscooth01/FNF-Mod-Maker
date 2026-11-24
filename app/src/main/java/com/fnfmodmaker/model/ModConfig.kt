@@ -105,7 +105,9 @@ data class SongConfig(
     val vSliceTempoUndo: List<String> = emptyList(),
     val vSliceTempoRedo: List<String> = emptyList(),
     /** BOTH can edit V-Slice's initial tempo without changing Psych's song BPM. */
-    val vSliceIndependentInitialBpm: Boolean = false
+    val vSliceIndependentInitialBpm: Boolean = false,
+    /** In BOTH, select Psych rather than V-Slice as the snap reference. */
+    val psychSnapReference: Boolean = false
 ) {
     val songFolder: String get() = psychSongPath(songName)
     val bpmValue: Double get() = runCatching {

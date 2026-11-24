@@ -594,4 +594,13 @@ class VSliceImportCycleTest {
         assertThrows(IllegalArgumentException::class.java) { validateVSliceTempo("""[{"t":0,"bpm":120.1},{"t":1000,"bpm":140.1234567890123456789}]""") }
     }
 
+    @Test fun gridMatchesOfficialVSliceRoundingAtDecimalTempoChanges() {
+        val map = """[{"t":0,"bpm":120.1},{"t":1000,"bpm":123.4567},{"t":4000,"bpm":140.25}]"""
+        val grid = TouchGrid(120.1, 4, 10000, vSliceGridTempos(map), true)
+        assertEquals(2.0017, grid.beatAt(1000.0), 1e-10)
+        assertEquals(8.1745, grid.beatAt(4000.0), 1e-10)
+        assertEquals(vSliceBeatAt(map, 4000.0), grid.beatAt(4000.0), 1e-10)
+        assertEquals(4000.0, grid.timeAtBeat(8.1745), 1e-8)
+    }
+
 }

@@ -109,4 +109,16 @@ class PsychSectionsTest {
         assertThrows(IllegalArgumentException::class.java) { ChartDraft(bpm = 0.0).toPsychJson() }
     }
 
+    @Test fun psychRoundsSectionStepsAtNonBinaryBoundaries() {
+        val sections = listOf(
+            PsychSectionData(beats = 1.13, bpm = 120.1, changeBpm = true),
+            PsychSectionData(beats = 1.12, bpm = 123.4567, changeBpm = true),
+            PsychSectionData(beats = 1.0, bpm = 140.25, changeBpm = true)
+        )
+        val spans = psychSectionSpans(sections, 120.1)
+        assertEquals(1.25 * 60000.0 / 120.1, spans[1].startMs, 1e-9)
+        assertEquals(spans[1].startMs + 60000.0 / 123.4567, spans[2].startMs, 1e-9)
+        assertEquals(2.25, spans[2].startBeat, 0.0)
+    }
+
 }

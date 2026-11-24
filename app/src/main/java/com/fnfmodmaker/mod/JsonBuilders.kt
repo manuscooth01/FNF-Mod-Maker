@@ -126,7 +126,7 @@ object JsonBuilders {
         val beatMs = 60000.0 / bpm
         val tempoGrid = song.vSliceTempoJson?.let { text ->
             val source = if (song.vSliceIndependentInitialBpm) validateVSliceTempo(text) else tempoWithInitialBpm(text, bpm)
-            com.fnfmodmaker.model.TouchGrid(bpm, 1, durationMs.coerceAtLeast(1L), vSliceGridTempos(source))
+            com.fnfmodmaker.model.TouchGrid(bpm, 1, durationMs.coerceAtLeast(1L), vSliceGridTempos(source), true)
         }
         val beats = if (tempoGrid != null && durationMs > 0) max(8, min(tempoGrid.beatAt(durationMs.toDouble()).toInt(), 4000)) else totalBeats(song, durationMs)
         for (beat in 0 until beats) {

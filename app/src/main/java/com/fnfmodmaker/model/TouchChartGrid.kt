@@ -6,8 +6,8 @@ import kotlin.math.roundToLong
 /** Timestamped V-Slice tempo; beat duration follows the engine time signature denominator. */
 data class GridTempo(val timeMs: Double, val bpm: Double, val denominator: Int = 4, val numerator: Int = 4)
 /** A four-beat page. Visual columns are opponent first; the model stores player first. */
-data class TouchGrid(val bpm: Double, val divisionsPerBeat: Int, val durationMs: Long, val tempoChanges: List<GridTempo> = emptyList()) {
-    constructor(bpm: Int, divisionsPerBeat: Int, durationMs: Long, tempoChanges: List<GridTempo> = emptyList()) : this(bpm.toDouble(), divisionsPerBeat, durationMs, tempoChanges)
+data class TouchGrid(val bpm: Double, val divisionsPerBeat: Int, val durationMs: Long, val tempoChanges: List<GridTempo> = emptyList(), val roundVSliceBeatChanges: Boolean = false) {
+    constructor(bpm: Int, divisionsPerBeat: Int, durationMs: Long, tempoChanges: List<GridTempo> = emptyList(), roundVSliceBeatChanges: Boolean = false) : this(bpm.toDouble(), divisionsPerBeat, durationMs, tempoChanges, roundVSliceBeatChanges)
     init {
         require(bpm in 1.0..400.0 && divisionsPerBeat in setOf(1, 2, 4, 8) && durationMs > 0)
         require(tempoChanges.isEmpty() || tempoChanges.first().timeMs == 0.0 && tempoChanges.zipWithNext().all { it.first.timeMs < it.second.timeMs })
@@ -19,6 +19,8 @@ data class TouchGrid(val bpm: Double, val divisionsPerBeat: Int, val durationMs:
             if (index > 0) {
                 val prev = changes[index - 1]
                 beats += (change.timeMs - prev.timeMs) * prev.bpm / 60_000.0 * prev.denominator / 4.0
+                // V-Slice Conductor.mapTimeChanges rounds each accumulated beatTime to four decimals.
+                if (roundVSliceBeatChanges) beats = kotlin.math.floor(beats * 10_000.0 + 0.5) / 10_000.0
             }
             change to beats
         }

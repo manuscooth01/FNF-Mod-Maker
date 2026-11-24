@@ -519,8 +519,20 @@ externos sigue deshabilitada.
 
 ### Apariencia con imágenes propias (opcional)
 
-En Inicio, abre **Personalizar apariencia** para elegir un fondo del encabezado y un icono para
-las barras de herramientas, también en Chart Studio. El selector acepta PNG, JPG y WebP de hasta
+Al iniciar por primera vez, la app ofrece elegir un ZIP local de `funkin.assets`; puedes omitirlo
+y elegirlo después en **Inicio → Personalizar apariencia → Elegir ZIP de recursos**. Reconoce
+`preload/images/menuBG.png` como fondo de Inicio y `preload/images/icons/icon-bf.png` como icono
+de las barras, también en Chart Studio. Admite la carpeta raíz que GitHub añade a su ZIP. Solo se
+importan estas dos imágenes si están disponibles: no se instalan los demás elementos ni se importa
+un mod. Los errores por imagen se notifican y las imágenes ya aplicadas no se revierten al cancelar.
+
+El ZIP puede tener hasta 2 GiB. Si el proveedor de archivos admite acceso directo se leen solo las
+entradas necesarias; en caso contrario se copia temporalmente el ZIP completo a la caché (necesita
+espacio libre y puede tardar). La copia se elimina al terminar o cancelar, y se intenta limpiar al
+abrir la app tras una interrupción. El ZIP elegido no se conserva como paquete.
+
+En ese mismo panel también puedes elegir un fondo del encabezado y un icono individual para
+las barras de herramientas. El selector acepta PNG, JPG y WebP de hasta
 8 MiB y 8192 × 8192 píxeles; se guarda una copia reducida en almacenamiento privado del dispositivo.
 Puedes cambiar o quitar cada imagen sin borrar el archivo original. El fondo se recorta para cubrir
 el encabezado. El icono puede mostrarse completo o usando su mitad izquierda (útil para hojas con

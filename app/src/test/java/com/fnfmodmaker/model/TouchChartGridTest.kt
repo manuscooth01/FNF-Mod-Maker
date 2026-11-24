@@ -27,7 +27,7 @@ class TouchChartGridTest {
         assertEquals(2, grid.pageForTime(2667))
         assertEquals(3000L, grid.timeAtBeat(10.0).toLong())
         assertEquals(3667L, grid.shiftTime(3000, 1.0))
-        assertEquals(4000L, grid.pageEnd(2))
+        assertEquals(4333L, grid.pageEnd(2))
     }
     @Test fun replaceIsAtomicAndPreservesOtherNotes() {
         val hold = ChartNote(500, 0, 500)

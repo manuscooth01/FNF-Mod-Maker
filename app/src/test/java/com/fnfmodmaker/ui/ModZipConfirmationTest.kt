@@ -85,9 +85,9 @@ class ModZipConfirmationTest {
         }
         return Uri.fromFile(file)
     }
-    private fun psychZip(): Uri {
+    private fun psychZip(advanced: Boolean = false): Uri {
         val file = File(app.cacheDir, "psych-events-test.zip")
-        val chart = """{"song":{"song":"test","bpm":120,"speed":1,"player1":"bf","player2":"dad","stage":"stage","events":[[100,[["Hey!","0",""]]]],"notes":[{"sectionBeats":4,"mustHitSection":true,"sectionNotes":[[100,0,0]]}]}}"""
+        val chart = if (!advanced) """{"song":{"song":"test","bpm":120,"speed":1,"player1":"bf","player2":"dad","stage":"stage","events":[[100,[["Hey!","0",""]]]],"notes":[{"sectionBeats":4,"mustHitSection":true,"sectionNotes":[[100,0,0]]}]}}""" else """{"song":{"song":"test","bpm":120,"speed":1,"player1":"bf","player2":"dad","stage":"stage","customSong":{"huge":123456789012345678901234567890},"events":[[100,[["Hey!","0",""]]]],"notes":[{"lengthInSteps":16,"mustHitSection":true,"sectionNotes":[[100,0,500,"Hurt Note"]],"customSection":{"keep":true}},{"sectionBeats":3,"lengthInSteps":12,"mustHitSection":false,"altAnim":true,"gfSection":true,"changeBPM":true,"bpm":180,"sectionNotes":[[2200,0,300]]},{"sectionBeats":4,"mustHitSection":true,"changeBPM":true,"bpm":90,"sectionNotes":[[3100,5,100]]}]}}"""
         ZipOutputStream(file.outputStream()).use { out ->
             fun entry(name: String, bytes: ByteArray) { out.putNextEntry(ZipEntry(name)); out.write(bytes); out.closeEntry() }
             entry("pack.json", """{"name":"Test","description":"Test"}""".toByteArray())
@@ -123,6 +123,46 @@ class ModZipConfirmationTest {
         java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
         val chart = org.json.JSONObject(files.getValue(vm.config.modFolder + "/data/test/test.json").toString(Charsets.UTF_8))
         assertEquals(200, chart.getJSONArray("events").getJSONArray(0).getInt(0))
+    }
+    @Test fun psychSectionsEditPersistHistoryExportAndReimportBothFormats() {
+        val previous = vm.currentProjectId!!
+        vm.inspectModZip(psychZip(advanced = true)); await { !vm.busy }; assertNotNull(vm.portableMessage, vm.modZipReview)
+        vm.confirmModZipImport(); await { !vm.busy }; assertNull(vm.modZipImportError)
+        val imported = vm.currentProjectId!!
+        vm.openLiveChart()
+        val original = vm.liveChart!!
+        assertEquals(3, original.psychLayout.size)
+        assertTrue(original.psychLayout[1].altAnim && original.psychLayout[1].gfSection)
+        assertEquals(4, original.notes[1].lane) // 0.7.3 relative to opponent section
+        val spans = com.fnfmodmaker.model.psychSectionSpans(original.psychLayout, 120)
+        assertEquals(2000.0, spans[1].startMs, 0.0001)
+        assertEquals(3000.0, spans[2].startMs, 0.0001)
+        val sections = original.psychLayout.toMutableList().apply { this[1] = this[1].copy(beats = 3.0, bpm = 240.0, mustHit = true, altAnim = false) }
+        vm.saveLivePsychSections(sections)
+        assertEquals(original.notes, vm.liveChart!!.notes)
+        vm.closeLiveChart(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
+        vm.openLiveChart(); assertEquals(sections, vm.liveChart!!.psychLayout)
+        vm.undoLiveChartEdit(); assertEquals(original.psychLayout, vm.liveChart!!.psychLayout)
+        vm.redoLiveChartEdit(); assertEquals(sections, vm.liveChart!!.psychLayout)
+        val extra = sections + com.fnfmodmaker.model.PsychSectionData(bpm = 90.0)
+        vm.saveLivePsychSections(extra); assertEquals(4, vm.liveChart!!.psychLayout.size)
+        vm.saveLivePsychSections(sections); assertEquals(3, vm.liveChart!!.psychLayout.size)
+        for (format in com.fnfmodmaker.model.PsychChartFormat.entries) {
+            vm.setPsychChartFormat(format); vm.closeLiveChart()
+            val out = File(app.cacheDir, "sections-${format.name}.zip")
+            vm.export(Uri.fromFile(out)); await { !vm.busy }; assertNull(vm.error)
+            vm.inspectModZip(Uri.fromFile(out)); await { !vm.busy }; assertNotNull(vm.portableMessage, vm.modZipReview)
+            vm.confirmModZipImport(); await { !vm.busy }; assertNull(vm.modZipImportError)
+            vm.openLiveChart()
+            val roundTrip = vm.liveChart!!
+            assertEquals(original.notes.sortedBy { it.timeMs }, roundTrip.notes.sortedBy { it.timeMs })
+            assertEquals(original.psychEventsJson, roundTrip.psychEventsJson)
+            assertEquals(240.0, roundTrip.psychLayout[1].bpm, 0.0)
+            assertTrue(roundTrip.psychLayout[1].mustHit && roundTrip.psychLayout[1].gfSection)
+            assertTrue(roundTrip.psychLayout[0].sourceJson.contains("customSection"))
+            assertTrue(roundTrip.psychSongExtras.contains("123456789012345678901234567890"))
+            vm.closeLiveChart(); vm.switchProject(imported); await { !vm.busy }; vm.openLiveChart()
+        }
     }
     private fun inspect() {
         vm.inspectModZip(zip())

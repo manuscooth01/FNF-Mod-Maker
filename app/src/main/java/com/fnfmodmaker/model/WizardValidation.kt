@@ -99,6 +99,10 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
         song.orderedDifficulties.forEach { difficulty ->
             val chart = config.getChart(song.songFolder, difficulty)
             val problems = chart?.exportProblems().orEmpty().toMutableList()
+            if (!config.engine.includesPsych && chart != null && (chart.psychLayout.isNotEmpty() || chart.psychSongExtras.isNotBlank())) problems.add("secciones Psych sin destino Psych")
+            if (config.engine.includesPsych && chart != null && chart.psychLayout.isNotEmpty()) {
+                runCatching { chart.copy(bpm = song.bpmValue).toPsychJson() }.exceptionOrNull()?.let { problems.add(it.message ?: "secciones Psych inválidas") }
+            }
             if (config.engine.includesVSlice && chart != null && chart.psychEventsJson.isNotBlank() && chart.psychEventsJson != "[]") problems.add("eventos Psych sin traducción a V-Slice")
             if (problems.isNotEmpty()) add(WizardIssue(1, "$label ($difficulty): no se puede exportar sin perder ${problems.joinToString()}. Conserva el proyecto editable.", index))
         }

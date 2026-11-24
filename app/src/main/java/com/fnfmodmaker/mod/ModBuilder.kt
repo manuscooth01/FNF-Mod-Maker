@@ -56,7 +56,11 @@ object ModBuilder {
         require(rawConfig.songs.all { it.songFolder.matches(Regex("[a-z0-9_-]{1,80}")) }) { "Nombre de carpeta de canción inválido." }
         require(rawConfig.songs.all { song -> song.difficulties.size <= 64 && song.difficulties.all { com.fnfmodmaker.model.isValidDifficulty(it) } }) { "ID de dificultad inválido." }
         rawConfig.songs.forEach { song -> song.orderedDifficulties.forEach { difficulty ->
-            rawConfig.getChart(song.songFolder, difficulty)?.requireExportable()
+            rawConfig.getChart(song.songFolder, difficulty)?.let { chart ->
+                chart.requireExportable()
+                require(rawConfig.engine.includesPsych || (chart.psychLayout.isEmpty() && chart.psychSongExtras.isBlank())) { "El chart contiene secciones Psych; no se exporta solo a V-Slice sin pérdida." }
+                if (rawConfig.engine.includesPsych && chart.psychLayout.isNotEmpty()) chart.copy(bpm = song.bpmValue).toPsychJson()
+            }
         } }
         val warnings = mutableListOf<String>()
         val importedVSlice = rawConfig.songs.any { it.vSliceOrigin != null } || rawConfig.importedModResources.any { it.originalPath.startsWith("data/songs/") && it.originalPath.endsWith("-metadata.json") }

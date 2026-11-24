@@ -62,7 +62,8 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
     if (song.bpmValue !in 1..400 || vm.liveDurationMs <= 0L) return
     var divisions by rememberSaveable { mutableStateOf(4) }
     val tempos = remember(vm.config, vm.liveSongIndex) {
-        if (vm.config.engine.includesVSlice) runCatching { com.fnfmodmaker.mod.vSliceGridTempos(vm.liveVSliceTempo()) }.getOrNull() else emptyList()
+        if (vm.config.engine.includesVSlice) runCatching { com.fnfmodmaker.mod.vSliceGridTempos(vm.liveVSliceTempo()) }.getOrNull()
+        else runCatching { vm.liveChart?.psychLayout?.takeIf { it.isNotEmpty() }?.let { com.fnfmodmaker.model.psychGridTempos(it, song.bpmValue) } ?: emptyList() }.getOrNull()
     }
     val grid = remember(song.bpmValue, divisions, vm.liveDurationMs, tempos) { TouchGrid(song.bpmValue, divisions, vm.liveDurationMs, tempos.orEmpty()) }
     var page by rememberSaveable { mutableStateOf(grid.pageForTime(vm.livePositionMs)) }

@@ -401,10 +401,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // Snapshot once per recording session: tempo cannot be edited during playback.
     private var liveRecordingGrid: com.fnfmodmaker.model.TouchGrid? = null
     internal fun recordingTempoGrid(): com.fnfmodmaker.model.TouchGrid? {
-        if (!config.engine.includesVSlice || liveSnap == com.fnfmodmaker.model.RecordingSnap.FREE) return null
+        if (liveSnap == com.fnfmodmaker.model.RecordingSnap.FREE) return null
         val song = liveSong ?: error("Selecciona una canción.")
-        return com.fnfmodmaker.model.TouchGrid(song.bpmValue, liveSnap.divisionsPerBeat,
-            liveDurationMs.coerceAtLeast(1L), com.fnfmodmaker.mod.vSliceGridTempos(liveVSliceTempo()))
+        val tempos = if (config.engine.includesVSlice) com.fnfmodmaker.mod.vSliceGridTempos(liveVSliceTempo())
+            else liveChart?.psychLayout?.takeIf { it.isNotEmpty() }?.let { com.fnfmodmaker.model.psychGridTempos(it, song.bpmValue) } ?: return null
+        return com.fnfmodmaker.model.TouchGrid(song.bpmValue, liveSnap.divisionsPerBeat, liveDurationMs.coerceAtLeast(1L), tempos)
     }
     val livePreviewNotes: List<ChartNote> get() {
         val chart = liveChart ?: return emptyList()
@@ -519,6 +520,30 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         songs[liveSongIndex] = if (redo) song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = checked, vSliceTempoRedo = song.vSliceTempoRedo.dropLast(1), vSliceTempoUndo = (song.vSliceTempoUndo + current).takeLast(10))
             else song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = checked, vSliceTempoUndo = song.vSliceTempoUndo.dropLast(1), vSliceTempoRedo = (song.vSliceTempoRedo + current).takeLast(10))
         config = config.copy(songs = songs); scheduleAutoSave(); forceAutoSave()
+    }
+
+    /** Section edits are atomic chart history transitions for the selected difficulty. */
+    internal fun createLivePsychChart() {
+        check(config.engine.includesPsych && !busy && !livePlaying && !liveLoading && liveChartAvailable && liveChart == null) { "No se puede crear este chart." }
+        val song = liveSong ?: error("Selecciona una canción.")
+        val draft = ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
+            scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
+            player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych,
+            psychLayout = listOf(com.fnfmodmaker.model.PsychSectionData(bpm = song.bpmValue.toDouble())))
+        draft.toPsychJson()
+        storeLiveChartTransition(null, draft); scheduleAutoSave(); forceAutoSave()
+    }
+    internal fun saveLivePsychSections(layout: List<com.fnfmodmaker.model.PsychSectionData>, notes: List<ChartNote>? = null) {
+        check(config.engine.includesPsych && !busy && !livePlaying && !liveLoading && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
+        val song = liveSong ?: error("Selecciona una canción.")
+        val current = liveChart ?: error("Crea primero un chart para esta dificultad.")
+        val next = current.copy(psychLayout = layout, notes = notes ?: current.notes)
+        // Test the actual output with the current initial song BPM, before recording history.
+        next.copy(bpm = song.bpmValue).toPsychJson()
+        if (next == current) return
+        storeLiveChartTransition(current, next)
+        liveUndo.clear(); liveUndoCount = 0
+        scheduleAutoSave(); forceAutoSave()
     }
 
     internal fun livePsychEvents(): String = liveChart?.psychEventsJson?.ifBlank { "[]" } ?: "[]"
@@ -780,6 +805,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val song = liveSong ?: return null
         val position = runCatching { livePlayer?.currentPosition?.toLong() }.getOrNull() ?: return null
         val time = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, liveRecordingGrid)
+        val layout = liveChart?.psychLayout.orEmpty()
+        if (layout.isNotEmpty() && runCatching { com.fnfmodmaker.model.psychSectionIndex(com.fnfmodmaker.model.psychSectionSpans(layout, song.bpmValue), time) }.getOrDefault(-1) < 0) {
+            liveNotice = "Añade secciones Psych para cubrir este momento antes de grabar."; return null
+        }
         val note = ChartNote(timeMs = time, lane = direction + if (liveOpponent) 4 else 0)
         val existing = config.getChart(song.songFolder, liveDifficulty)
         val draft = existing ?: ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
@@ -896,6 +925,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val notes = com.fnfmodmaker.model.replaceGridNotes(draft.notes, originals, replacements, liveDurationMs)
         if (notes == null) { liveNotice = "Cambio cancelado: selección obsoleta, límite de notas, colisión o fuera de la canción."; return false }
         if (notes == draft.notes) return false
+        if (draft.psychLayout.isNotEmpty() && runCatching { draft.copy(notes = notes, bpm = song.bpmValue).toPsychJson() }.isFailure) {
+            liveNotice = "Cambio cancelado: añade secciones Psych para cubrir todos los tiempos de nota."; return false
+        }
         val updated = draft.copy(notes = notes)
         liveUndo.clear(); liveUndoCount = 0
         storeLiveChartTransition(existing, updated)
@@ -1047,7 +1079,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             stage = song.stagePsych,
             events = activeChartDraft.events,
             sections = activeChartDraft.sections,
-            psychEventsJson = activeChartDraft.psychEventsJson
+            psychEventsJson = activeChartDraft.psychEventsJson,
+            psychLayout = activeChartDraft.psychLayout,
+            psychSongExtras = activeChartDraft.psychSongExtras
         )
         pushHistoryAndSave(draft)
     }
@@ -1070,7 +1104,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             stage = song.stagePsych,
             events = activeChartDraft.events,
             sections = activeChartDraft.sections,
-            psychEventsJson = activeChartDraft.psychEventsJson
+            psychEventsJson = activeChartDraft.psychEventsJson,
+            psychLayout = activeChartDraft.psychLayout,
+            psychSongExtras = activeChartDraft.psychSongExtras
         )
         pushHistoryAndSave(draft)
     }

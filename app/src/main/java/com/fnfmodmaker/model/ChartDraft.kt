@@ -79,11 +79,18 @@ data class ChartDraft(
     val gfVersion: String = "gf",
     val stage: String = "stage",
     /** Exact Psych event groups. Empty string denotes an empty list in older projects. */
-    val psychEventsJson: String = ""
+    val psychEventsJson: String = "",
+    val psychLayout: List<PsychSectionData> = emptyList(),
+    val psychSongExtras: String = ""
 ) {
     /** Current exporters have no mapping for these fields; never discard them silently. */
     fun exportProblems(): List<String> = buildList {
         if (events.isNotEmpty()) add("eventos")
+        if (psychLayout.isNotEmpty() && runCatching { psychSectionSpans(psychLayout, bpm) }.isFailure) add("secciones Psych inválidas")
+        if (psychSongExtras.isNotBlank() && (psychLayout.isEmpty() || runCatching {
+            val obj = psychObject(psychSongExtras, "propiedades Psych")
+            require(obj.keySet().none { it in setOf("song", "notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format") })
+        }.isFailure)) add("propiedades Psych inválidas")
         if (psychEventsJson.isNotBlank() && runCatching { com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson) }.isFailure) add("eventos Psych inválidos")
         if (sections.isNotEmpty()) add("secciones personalizadas")
         if (notes.any { it.kind.length > 128 || it.kind.any(Char::isISOControl) }) add("tipos de nota inválidos")
@@ -98,6 +105,7 @@ data class ChartDraft(
     /** Convierte a JSON Psych Engine (formato psych_v1). */
     fun toPsychJson(): String {
         requireExportable()
+        if (psychLayout.isNotEmpty()) return psychSectionsToJson(this)
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0
         // Estimar beats totales desde la última nota
         val lastNoteTime = notes.maxByOrNull { it.endTimeMs }?.endTimeMs ?: 0L
@@ -111,14 +119,13 @@ data class ChartDraft(
             val sectionNotes = JSONArray()
             val sectionStartBeat = sectionIndex * 4
             val sectionEndBeat = sectionStartBeat + 4
-            val sectionStartMs = (sectionStartBeat * beatMs).toLong()
-            val sectionEndMs = (sectionEndBeat * beatMs).toLong()
+            val sectionStartMs = sectionStartBeat * beatMs
+            val sectionEndMs = sectionEndBeat * beatMs
 
             // Filtrar notas de esta sección
             val sectionNotesList = notes.filter { it.timeMs >= sectionStartMs && it.timeMs < sectionEndMs }
             
             for (note in sectionNotesList) {
-                val relativeBeat = ((note.timeMs - sectionStartMs) / beatMs)
                 val isPlayerSide = note.lane in 0..3
                 val lane = note.lane % 4
                 // psych_v1 stores the absolute player/opponent lane, independent of mustHitSection.

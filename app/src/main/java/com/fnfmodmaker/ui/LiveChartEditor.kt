@@ -171,7 +171,7 @@ private fun LiveSetup(vm: WizardViewModel) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         RecordingSnap.entries.forEach { snap -> FilterChip(vm.liveSnap == snap, { vm.selectLiveSnap(snap) }, enabled = !locked, label = { Text(snap.label) }) }
     }
-    Text("Libre guarda el momento exacto. Los demás usan el BPM inicial de la canción (${song?.bpm ?: "—"}); no siguen cambios posteriores de tempo.", style = MaterialTheme.typography.labelSmall)
+    Text(if (vm.config.engine.includesVSlice) "Libre guarda el momento exacto. El ajuste sigue el mapa de tempo V-Slice." else "Libre guarda el momento exacto. El ajuste sigue los cambios BPM de las secciones Psych.", style = MaterialTheme.typography.labelSmall)
     Text("Corrección de toque: ${if (vm.liveCorrectionMs > 0) "+" else ""}${vm.liveCorrectionMs} ms", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = { vm.setLiveCorrection(vm.liveCorrectionMs - 10) }, enabled = !locked) { Text("−10 ms") }
@@ -233,8 +233,12 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
             runCatching { com.google.gson.JsonParser.parseString(vm.liveVSliceTempo()).asJsonArray.drop(1).map { it.asJsonObject.get("t").asDouble } }.getOrDefault(emptyList())
         else emptyList()
     }
-    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs, eventTimes, tempoTimes)
-    Text("La línea indica el momento actual; arriba: jugador, abajo: rival. Dorado: eventos; cian: cambios de tempo. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
+    val psychSpans = remember(vm.config, vm.liveSongIndex, vm.liveDifficulty) {
+        runCatching { chart?.psychLayout?.takeIf { it.isNotEmpty() }?.let { com.fnfmodmaker.model.psychSectionSpans(it, vm.liveSong!!.bpmValue) }.orEmpty() }.getOrDefault(emptyList())
+    }
+    val psychTempos = psychSpans.mapIndexedNotNull { i, span -> if (i > 0 && span.bpm != psychSpans[i - 1].bpm) span.startMs else null }
+    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs, eventTimes, tempoTimes + psychTempos, psychSpans.map { it.startMs })
+    Text("La línea indica el momento actual; arriba: jugador, abajo: rival. Dorado: eventos; cian: cambios de tempo; violeta: secciones Psych. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = vm::undoLiveNote, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveUndoCount > 0) { Text("Deshacer último toque") }
         if (chart != null) TextButton(onClick = { confirmDelete = true }, enabled = !vm.livePlaying && !vm.liveLoading) { Text("Borrar chart propio") }
@@ -243,6 +247,7 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         text = { Text("Se eliminarán el chart y la dificultad de la canción. Las demás dificultades no cambian; el original del proyecto se conserva.") },
         confirmButton = { TextButton(onClick = { vm.deleteLiveCustomChart(); confirmDelete = false }) { Text("Borrar") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } })
+    if (vm.config.engine.includesPsych) PsychSectionEditor(vm)
     if (vm.config.engine.includesVSlice) {
         VSliceTempoEditor(vm)
         VSliceVisualEvents(vm)
@@ -351,12 +356,16 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
 }
 
 @Composable
-private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long, events: List<Double>, tempos: List<Double>) {
+private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long, events: List<Double>, tempos: List<Double>, sections: List<Double>) {
     Canvas(Modifier.fillMaxWidth().height(100.dp).semantics { contentDescription = "Línea de tiempo de notas alrededor del momento de reproducción" }) {
         drawRect(Color(0xFF201A29))
         val laneHeight = size.height / 8f
         for (lane in 0..8) drawLine(Color.White.copy(alpha = .13f), Offset(0f, lane * laneHeight), Offset(size.width, lane * laneHeight), 1f)
         val windowMs = 6000f
+        for (section in sections) {
+            val x = size.width / 2f + ((section - positionMs) / windowMs * size.width).toFloat()
+            if (x in 0f..size.width) drawLine(Color(0xFFC581F0), Offset(x, 0f), Offset(x, size.height), 2f)
+        }
         for (tempo in tempos) {
             val x = size.width / 2f + ((tempo - positionMs) / windowMs * size.width).toFloat()
             if (x in 0f..size.width) drawLine(Color(0xFF36D8E7), Offset(x, 0f), Offset(x, size.height), 3f)

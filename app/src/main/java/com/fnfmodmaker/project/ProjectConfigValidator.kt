@@ -120,6 +120,21 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                     require(events.isJsonPrimitive && events.asJsonPrimitive.isString) { "Eventos Psych inválidos." }
                     if (events.asString.isNotBlank()) com.fnfmodmaker.mod.validatePsychEvents(events.asString)
                 }
+                chart.asJsonObject.get("psychLayout")?.let { layout ->
+                    require(layout.isJsonArray && layout.asJsonArray.size() <= 1000) { "Secciones Psych inválidas." }
+                    layout.asJsonArray.forEach { entry ->
+                        require(entry.isJsonObject) { "Sección Psych inválida." }
+                        compare(entry.asJsonObject, autoSaveGson.toJsonTree(com.fnfmodmaker.model.PsychSectionData()).asJsonObject)
+                    }
+                    if (layout.asJsonArray.size() > 0) {
+                        val parsed = autoSaveGson.fromJson(chart, ChartDraft::class.java)
+                        com.fnfmodmaker.model.psychSectionSpans(parsed.psychLayout, parsed.bpm)
+                    }
+                }
+                chart.asJsonObject.get("psychSongExtras")?.let { extras ->
+                    require(extras.isJsonPrimitive && extras.asJsonPrimitive.isString) { "Propiedades Psych inválidas." }
+                    if (extras.asString.isNotBlank()) com.fnfmodmaker.model.psychObject(extras.asString, "propiedades Psych")
+                }
                 objectArray(chart.asJsonObject, "events", autoSaveGson.toJsonTree(com.fnfmodmaker.model.ChartEvent()).asJsonObject) { event ->
                     event.get("type")?.let { require(it.asString in com.fnfmodmaker.model.ChartEvent.EventType.entries.map { type -> type.name }) { "Evento inválido." } }
                 }

@@ -22,8 +22,8 @@ class PsychChartReaderTest {
         assertEquals(listOf(ChartNote(100, 4), ChartNote(500, 2, 250)), draft.notes)
     }
     @Test fun editedLaneSurvivesOutputEvenInOpponentSection() {
-        val draft = readPsychChart(chart("\"format\":\"psych_v1\",", false), "test", "normal")
-            .copy(notes = listOf(ChartNote(2100, 1, 200)))
+        val original = readPsychChart(chart("\"format\":\"psych_v1\",", false), "test", "normal")
+        val draft = original.copy(notes = listOf(ChartNote(2100, 1, 200)), psychLayout = original.psychLayout + com.fnfmodmaker.model.PsychSectionData(bpm = 120.0))
         val encoded = JSONObject(draft.toPsychJson())
         val note = encoded.getJSONArray("notes").getJSONObject(1).getJSONArray("sectionNotes").getJSONArray(0)
         assertEquals(1, note.getInt(1)); assertEquals(200, note.getInt(2))

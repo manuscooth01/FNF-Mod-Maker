@@ -35,8 +35,11 @@ private fun legacyChartFingerprint(chart: ChartDraft?): String? {
 private fun fingerprintMatches(chart: ChartDraft?, hash: String): Boolean {
     if (chartFingerprint(chart) == hash) return true
     val c = normalizedChart(chart) ?: return false
+    if (c.psychLayout.isNotEmpty() || c.psychSongExtras.isNotEmpty()) return false
+    val oldChart = c.toString().removeSuffix(", psychLayout=[], psychSongExtras=)") + ")"
+    if (hashChartText(oldChart) == hash) return true
     if (c.psychEventsJson.isNotEmpty()) return false
-    val previous = c.toString().removeSuffix(", psychEventsJson=)") + ")"
+    val previous = oldChart.removeSuffix(", psychEventsJson=)") + ")"
     return hashChartText(previous) == hash || legacyChartFingerprint(c) == hash
 }
 private fun difference(a: List<ChartNote>, b: List<ChartNote>): List<ChartNote> {

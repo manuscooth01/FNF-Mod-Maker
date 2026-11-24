@@ -44,9 +44,10 @@ internal fun VSliceTempoEditor(vm: WizardViewModel) {
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Tempo V-Slice") }, text = { Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
         Text("Tiempos en milisegundos. El primer cambio comienza en cero. Un BPM vacío en cambios posteriores hereda el anterior. Las notas conservan su tiempo absoluto.")
         val rows = JsonParser.parseString(draft).asJsonArray
+        val beatGrid = remember(draft) { com.fnfmodmaker.model.TouchGrid(rows[0].asJsonObject.get("bpm").asInt, 4, 1L, vSliceGridTempos(draft)) }
         rows.forEachIndexed { index, item ->
             val row = item.asJsonObject
-            Text("${row.get("t").asString} ms · beat ${"%.2f".format(vSliceBeatAt(draft, row.get("t").asDouble))} · BPM ${row.get("bpm")?.asString ?: "heredado"} · ${row.get("n")?.asString ?: "4"}/${row.get("d")?.asString ?: "4"}")
+            Text("${row.get("t").asString} ms · beat ${"%.2f".format(beatGrid.beatAt(row.get("t").asDouble))} · BPM ${row.get("bpm")?.asString ?: "heredado"} · ${row.get("n")?.asString ?: "4"}/${row.get("d")?.asString ?: "4"}")
             Row(Modifier.horizontalScroll(rememberScrollState())) {
                 TextButton(onClick = { edit(index, "editar") }) { Text("Editar") }
                 TextButton(onClick = { edit(index, "duplicar") }) { Text("Duplicar") }

@@ -13,6 +13,15 @@ internal data class CharacterJsonPreview(
 /** Imports editable fields only. The original JSON remains in the project for later recovery. */
 internal fun parseCharacterJson(text: String, fileName: String, side: CharacterSide): CharacterJsonPreview {
     require(text.toByteArray(Charsets.UTF_8).size in 1..512_000) { "El JSON debe tener un máximo de 512 KB." }
+    var depth = 0; var inString = false; var escaped = false
+    for (c in text) {
+        if (inString) {
+            if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == '"') inString = false
+        } else if (c == '"') inString = true
+        else if (c == '{' || c == '[') { depth++; require(depth <= 64) { "JSON demasiado profundo." } }
+        else if (c == '}' || c == ']') { depth--; require(depth >= 0) { "JSON inválido." } }
+    }
+    require(!inString && depth == 0) { "JSON incompleto." }
     val json = JSONObject(text)
     val vSlice = json.has("assetPath") && json.has("animations")
     val psych = json.has("image") && json.has("animations")

@@ -478,7 +478,7 @@ No es Psych ni V-Slice: no ejecuta scripts, eventos, cámara dinámica ni reglas
 mezcla las voces, no aplica el offset y usa velocidad visual fija. Las animaciones no reaccionan a
 las notas. La vista se basa en el borrador actual, no en un ZIP exportado, y puede diferir del mod
 final; hay que probarlo en el motor correspondiente. Los archivos originales de FNF no están incluidos.
-Todavía no se pueden importar ZIP de mods externos de forma segura. El autoguardado permite volver
+Todavía no se pueden convertir ZIP de mods externos en proyectos editables. El autoguardado permite volver
 al borrador actual en la misma instalación, pero no sustituye una copia `.fnfproject` guardada fuera de la app.
 
 ## Proyectos locales (primera fase)
@@ -492,7 +492,7 @@ migración. La duplicación hace copias independientes de los recursos disponibl
 falta alguno. El indicador de guardado y los errores aparecen en el asistente.
 
 Los proyectos permanecen en esta instalación de la app: desinstalarla o borrar sus datos puede
-eliminarlos. Ya se pueden crear copias portables `.fnfproject`; todavía no se pueden importar ZIP de mods existentes. Los formatos
+eliminarlos. Ya se pueden crear copias portables `.fnfproject`; las copias ZIP de mods no se convierten en proyectos editables. Los formatos
 V-Slice y Psych continúan necesitando pruebas reales en sus motores. No hay prueba en dispositivo
 para la migración ni garantía ante una interrupción forzada durante un guardado pendiente.
 
@@ -515,7 +515,7 @@ son 4096 entradas, 256 MiB por recurso y 1 GiB total y de paquete. La importaci�
 directorio temporal y se publica con un identificador nuevo tras la confirmación. Si falta un recurso
 antiguo de la caché, vuelve a elegirlo antes de exportar. La exportación de mods para el juego es
 una operación distinta: `.fnfproject` no es un mod instalable, y la importación de ZIP de mods
-externos sigue deshabilitada.
+externos como proyectos editables sigue pendiente.
 
 ### Apariencia con imágenes propias (opcional)
 
@@ -542,3 +542,23 @@ La apariencia es independiente del proyecto: no se incorpora en `.fnfproject`, e
 ni en el APK, y no se incluye en la copia automática de Android. No se descargan ni se incluyen
 recursos oficiales: utiliza únicamente imágenes que tengas derecho a usar. Al desinstalar la app se
 eliminan las copias locales. El selector, el guardado y la apariencia deben probarse en Android.
+
+## JSON de personajes y copias de mods ZIP
+
+En el editor de personaje (herramienta independiente o asistente del mod), **Importar JSON de
+personaje** permite revisar y aplicar campos editables de JSON Psych o V-Slice reconocidos.
+Importa identidad derivada del nombre del archivo, imagen de referencia, escala, giro, posiciones,
+prefijos, FPS, bucles y offsets compatibles. El PNG y XML Sparrow se eligen aparte. Se conserva el
+JSON original dentro del proyecto editable y en su respaldo `.fnfproject`, pero el ZIP exportado
+regenera el JSON: índices de frames, renderizadores como AnimateAtlas y otros campos específicos no
+se trasladan. Revisa los avisos y comprueba el resultado en el motor; no es una conversión sin pérdidas.
+
+En **Copias de mods ZIP**, elige un ZIP para guardar una copia idéntica en almacenamiento privado
+y recuperarla mediante **Guardar copia ZIP**. No se extraen ni ejecutan archivos, ni se edita el
+mod: el proyecto actual no cambia. Los nombres `pack.json` y `_polymod_meta.json` son solo
+indicadores, no validan el contenido ni su compatibilidad. Se comprueban rutas, duplicados y límites
+del índice (2 GiB de ZIP, 20 000 entradas, 4 GiB descomprimidos declarados y 512 MiB por entrada);
+no se verifica la integridad interna de las entradas. El SHA-256 verifica la copia completa al
+recuperarla, no su procedencia ni seguridad. Estas copias se pierden al desinstalar o borrar los datos
+de la app: guarda una copia externa. Al elegir un destino existente, Android puede sobrescribirlo.
+La conversión de mods ZIP a proyectos editables, incluidos charts y scripts, no está implementada.

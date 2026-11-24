@@ -38,7 +38,8 @@ import com.fnfmodmaker.model.characterInputProblems
 import com.fnfmodmaker.model.parseSparrowAtlas
 import com.fnfmodmaker.model.slugify
 import com.fnfmodmaker.mod.ModBuilder
-import com.fnfmodmaker.mod.ModImporter
+import com.fnfmodmaker.mod.ModArchiveLibrary
+import com.fnfmodmaker.mod.ArchivedMod
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1003,44 +1004,43 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---------------- Importar Mod ----------------
 
-    /** Importa un mod desde un ZIP y carga el config en el wizard. */
+    private val modArchiveLibrary = ModArchiveLibrary(File(application.filesDir, "mod-archives"))
+    internal var archivedMods by mutableStateOf<List<ArchivedMod>>(emptyList())
+        private set
+    internal fun loadModArchives() {
+        if (busy) return
+        busy = true; status = "Cargando copias…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { modArchiveLibrary.cleanupInterrupted(); modArchiveLibrary.list() } }
+            result.onSuccess { archivedMods = it }.onFailure { error = "No se pudo cargar la biblioteca: ${it.message}" }
+            status = ""; busy = false
+        }
+    }
     internal fun importMod(uri: Uri) {
         if (busy) return
         val app = getApplication<Application>()
-        busy = true
-        error = null
-        status = "Importando mod…"
-        warnings = emptyList()
+        busy = true; error = null; status = "Guardando copia del ZIP…"
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val workRoot = File(app.cacheDir, "modimport")
-                    if (workRoot.exists()) workRoot.deleteRecursively()
-                    workRoot.mkdirs()
-                    // Copiar ZIP a archivo temporal
-                    val tempZip = File(workRoot, "import_${System.currentTimeMillis()}.zip")
-                    app.contentResolver.openInputStream(uri)?.use { input ->
-                        tempZip.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    val imported = ModImporter.importFromZip(app, tempZip, workRoot) { message -> status = message }
-                    imported
-                }
-            }
-            result.onSuccess { imported ->
-                config = imported.config
-                warnings = imported.warnings
-                // Ir al wizard (paso 0 = Mod)
-                tool = Tool.MOD
-                step = 0
-                activeSongIndex = 0
-                activeChartSongIndex = 0
-                activeChartDifficulty = config.songs.firstOrNull()?.orderedDifficulties?.firstOrNull() ?: "normal"
-                initChartHistory()
-                status = "¡Mod importado! Revisa los datos y edita lo que necesites."
-            }.onFailure {
-                status = ""
-                error = it.message ?: "No se pudo importar el mod: ${it}"
-            }
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val name = MediaTools.displayName(app, uri)
+                val input = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el ZIP.")
+                input.use { modArchiveLibrary.import(it, name) }
+            } }
+            result.onSuccess { archivedMods = withContext(Dispatchers.IO) { modArchiveLibrary.list() }; status = "Copia guardada: ${it.name}. No se creó un proyecto editable." }
+                .onFailure { status = ""; error = "No se pudo guardar el ZIP: ${it.message}" }
+            busy = false
+        }
+    }
+    internal fun exportArchivedMod(id: String, uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>(); busy = true; error = null; status = "Verificando y guardando ZIP…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                modArchiveLibrary.verify(id)
+                val output = app.contentResolver.openOutputStream(uri, "wt") ?: error("No se pudo abrir el destino.")
+                output.use { modArchiveLibrary.export(id, it) }
+            } }
+            result.onSuccess { status = "Copia ZIP guardada." }.onFailure { status = ""; error = "No se pudo guardar la copia: ${it.message}" }
             busy = false
         }
     }
@@ -2749,38 +2749,6 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             }.onFailure {
                 status = ""
                 error = it.message ?: it.toString()
-            }
-            busy = false
-        }
-    }
-
-    /** Importa un stage desde un ZIP y carga en el config. */
-    fun importStage(uri: Uri) {
-        if (busy) return
-        val app = getApplication<Application>()
-        busy = true
-        error = null
-        status = "Importando stage…"
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val workRoot = File(app.cacheDir, "stageimport")
-                    if (workRoot.exists()) workRoot.deleteRecursively()
-                    workRoot.mkdirs()
-                    val tempZip = File(workRoot, "import_${System.currentTimeMillis()}.zip")
-                    app.contentResolver.openInputStream(uri)?.use { input ->
-                        tempZip.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    val imported = com.fnfmodmaker.mod.ModImporter.importStageFromZip(app, tempZip, workRoot) { message -> status = message }
-                    imported
-                }
-            }
-            result.onSuccess { imported ->
-                config = config.copy(stageDraft = imported)
-                status = "¡Stage importado! Revisa el editor visual."
-            }.onFailure {
-                status = ""
-                error = it.message ?: "No se pudo importar el stage: ${it}"
             }
             busy = false
         }

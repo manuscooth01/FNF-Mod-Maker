@@ -235,97 +235,38 @@ internal fun HomeScreen(vm: WizardViewModel) {
 
 @Composable
 internal fun ImportScreen(vm: WizardViewModel) {
-    val pickImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.importMod(uri)
+    val pickImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.importMod(uri) }
+    var exportId by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    val saveZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        val id = exportId; exportId = null
+        if (uri != null && id != null) vm.exportArchivedMod(id, uri)
     }
-
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            ToolTopBar(
-                title = "Importar mod existente",
-                subtitle = "Carga un ZIP de V-Slice o Psych Engine",
-                onHome = vm::goHome
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "Importar mod",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+    LaunchedEffect(vm) { vm.loadModArchives() }
+    Scaffold(containerColor = MaterialTheme.colorScheme.background,
+        topBar = { ToolTopBar(title = "Copias de mods ZIP", subtitle = "Biblioteca local · no editable", onHome = vm::goHome) }) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Spacer(Modifier.height(4.dp))
-            Text(
-                "Selecciona un archivo .zip de un mod de FNF (V-Slice o Psych Engine). " +
-                    "La app leerá la estructura, canciones, charts, personajes y audio " +
-                    "para que puedas editarlo y re-exportarlo.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(16.dp))
-
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Archivo ZIP del mod", fontWeight = FontWeight.SemiBold)
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Debe contener _polymod_meta.json (V-Slice) o pack.json (Psych)",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        OutlinedButton(onClick = {
-                            // Import placeholder
-                        }, enabled = false) { Text("📥 Importar ZIP (pendiente)") }
+            Text("Guardar un mod ZIP", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Guarda una copia independiente del ZIP original en la aplicación. No crea un proyecto editable ni importa canciones, charts, personajes, audio o scripts al editor. El proyecto actual no cambia.")
+            Text("Puedes recuperar la copia como ZIP. Elegir un archivo existente como destino puede sobrescribirlo. Al desinstalar la app se borran las copias locales: guarda una copia externa.", style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = { pickImport.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }, enabled = !vm.busy) { Text("Elegir ZIP de mod") }
+            Text("Máximo: ZIP 2 GiB, 20 000 entradas; contenido declarado 4 GiB y 512 MiB por archivo. Se revisan rutas y el índice, no se extrae ni ejecuta el contenido. La compatibilidad y la integridad interna del mod no se garantizan.", style = MaterialTheme.typography.bodySmall)
+            if (vm.busy) { CircularProgressIndicator(); Text(vm.status) }
+            else if (vm.status.isNotBlank()) Text(vm.status)
+            vm.error?.let { MessageCard(it, error = true) }
+            Text("Copias guardadas", style = MaterialTheme.typography.titleMedium)
+            if (vm.archivedMods.isEmpty()) Text("Todavía no hay copias guardadas.")
+            vm.archivedMods.forEach { item ->
+                Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(item.name, fontWeight = FontWeight.Bold)
+                        Text("${android.text.format.Formatter.formatFileSize(LocalContext.current, item.size)} · ${item.entries} entradas · ${item.scripts} scripts por extensión", style = MaterialTheme.typography.bodySmall)
+                        Text("Indicadores de estructura: ${item.engines.joinToString().ifEmpty { "no detectados" }} (no verifica el motor)", style = MaterialTheme.typography.bodySmall)
+                        Text("SHA-256: ${item.sha256}", style = MaterialTheme.typography.labelSmall)
+                        OutlinedButton(enabled = !vm.busy, onClick = { exportId = item.id; saveZip.launch(item.name) }) { Text("Guardar copia ZIP") }
                     }
                 }
             }
-
-            Spacer(Modifier.height(16.dp))
-            HelpCard(
-                "Formatos soportados:\n" +
-                "• V-Slice (FNF 0.8.x Android): _polymod_meta.json, data/songs/, data/levels/\n" +
-                "• Psych Engine: pack.json, weeks/, data/, songs/\n" +
-                "• Ambos: si el ZIP tiene los dos, se detectan automáticamente\n\n" +
-                "Qué se importa:\n" +
-                "• Metadatos del mod (nombre, autor, descripción, color)\n" +
-                "• Canciones: nombre, artista, BPM, offset, speed, dificultades\n" +
-                "• Audio: instrumental y voces (se copian, no se reconvierten)\n" +
-                "• Charts: notas existentes (se cargan en el editor de chart)\n" +
-                "• Personaje propio: spritesheet, XML, JSON, icono de vida\n" +
-                "• Icono del mod\n\n" +
-                "Limitaciones:\n" +
-                "• Escenarios (stages) no se importan aún\n" +
-                "• Eventos de cámara / cambios de BPM no se leen\n" +
-                "• Múltiples semanas por mod: se intenta detectar"
-            )
-
-            Spacer(Modifier.height(16.dp))
-            ToolStatus(
-                status = "",
-                error = null,
-                saved = null,
-                warnings = emptyList(),
-                savedLabel = ""
-            )
             Spacer(Modifier.height(24.dp))
         }
     }

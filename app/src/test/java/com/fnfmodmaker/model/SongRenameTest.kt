@@ -37,7 +37,7 @@ class SongRenameTest {
         val savedHard = saved.getChart("new-song", "hard")!!
         assertEquals(hard.copy(songFolder = "new-song"), savedHard)
         assertNull(restoreChartHistory(saved.chartHistories.getValue("new-song").getValue("hard"), savedHard, false)!!.chart)
-        assertNull(restoreChartHistory(history, normal.copy(bpm = 300), false))
+        assertNull(restoreChartHistory(history, normal.copy(bpm = 300.0), false))
     }
     @Test fun historyForAbsentChartAndRedoIsRebased() {
         val c = ChartDraft(songFolder = "old", notes = listOf(ChartNote(10, 0)))
@@ -57,7 +57,7 @@ class SongRenameTest {
         assertEquals(chart, base.getChart("old", "normal")); assertEquals(history, base.chartHistories.getValue("old").getValue("normal"))
         val orphan = base.copy(songs = base.songs.take(1), chartHistories = base.chartHistories + ("new-song" to emptyMap()))
         assertThrows(IllegalArgumentException::class.java) { renameSong(orphan, 0, "New Song") }
-        val stale = base.copy(songs = base.songs.take(1)).withChart("old", "normal", chart.copy(bpm = 200))
+        val stale = base.copy(songs = base.songs.take(1)).withChart("old", "normal", chart.copy(bpm = 200.0))
         assertThrows(IllegalArgumentException::class.java) { renameSong(stale, 0, "other") }
         assertEquals("old", stale.songs[0].songName)
     }

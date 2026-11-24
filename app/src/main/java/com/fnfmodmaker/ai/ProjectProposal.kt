@@ -223,7 +223,7 @@ object ProjectProposalPlanner {
                     if (song.songName.isBlank() || current.songs.count { it.songFolder == song.songFolder } != 1) fail("la canción necesita un nombre único antes de editar su chart")
                     val diff = requiredString(change, "difficulty", 32).lowercase()
                     if (diff !in song.difficulties) fail("la dificultad $diff no está activada en la canción")
-                    if (song.bpmValue !in 1..400) fail("corrige el BPM de la canción antes de crear el chart")
+                    if (song.bpmValue !in 1.0..400.0) fail("corrige el BPM de la canción antes de crear el chart")
                     val array = change.get("notes")?.takeIf { it.isJsonArray }?.asJsonArray ?: fail("faltan notas")
                     if (array.size() > 1000) fail("máximo 1000 notas por propuesta de chart")
                     val notes = array.map { e ->

@@ -27,8 +27,8 @@ internal fun psychObject(text: String, label: String): JsonObject {
 }
 
 /** Psych 0.7.3 and current Conductor round sectionBeats * 4 to whole steps. */
-internal fun psychSectionSpans(sections: List<PsychSectionData>, initialBpm: Int): List<PsychSectionSpan> {
-    require(initialBpm in 1..400 && sections.size in 1..1000) { "Secciones o BPM inicial Psych inválidos." }
+internal fun psychSectionSpans(sections: List<PsychSectionData>, initialBpm: Double): List<PsychSectionSpan> {
+    require(initialBpm in 1.0..400.0 && sections.size in 1..1000) { "Secciones o BPM inicial Psych inválidos." }
     require(sections.sumOf { it.sourceJson.length.toLong() } <= 256_000) { "Propiedades de secciones demasiado grandes." }
     var time = 0.0; var beat = 0.0; var tempo = initialBpm.toDouble()
     return sections.map { section ->
@@ -98,14 +98,14 @@ internal fun psychSectionsToJson(chart: ChartDraft): String {
 }
 
 /** Snap follows Psych section tempo map, without changing absolute note timestamps. */
-internal fun psychGridTempos(sections: List<PsychSectionData>, bpm: Int): List<GridTempo> {
+internal fun psychGridTempos(sections: List<PsychSectionData>, bpm: Double): List<GridTempo> {
     val spans = psychSectionSpans(sections, bpm)
     return spans.mapIndexedNotNull { i, span ->
         if (i == 0 || span.bpm != spans[i - 1].bpm) GridTempo(span.startMs, span.bpm) else null
     }
 }
-internal fun materializePsychLayout(chart: ChartDraft, initialBpm: Int): List<PsychSectionData> {
-    require(initialBpm in 1..400) { "BPM inicial Psych inválido." }
+internal fun materializePsychLayout(chart: ChartDraft, initialBpm: Double): List<PsychSectionData> {
+    require(initialBpm in 1.0..400.0) { "BPM inicial Psych inválido." }
     if (chart.psychLayout.isNotEmpty()) return chart.psychLayout
     val last = chart.notes.maxOfOrNull { it.timeMs } ?: 0L
     val count = (last / (240_000.0 / initialBpm)).toInt() + 1
@@ -114,7 +114,7 @@ internal fun materializePsychLayout(chart: ChartDraft, initialBpm: Int): List<Ps
 }
 
 /** Append a copy of the section and its notes; existing timestamps never move. */
-internal fun duplicatePsychSection(chart: ChartDraft, index: Int, bpm: Int): ChartDraft {
+internal fun duplicatePsychSection(chart: ChartDraft, index: Int, bpm: Double): ChartDraft {
     val layout = materializePsychLayout(chart, bpm)
     require(index in layout.indices && layout.size < 1000) { "Sección no disponible o límite alcanzado." }
     val spans = psychSectionSpans(layout, bpm)
@@ -130,3 +130,9 @@ internal fun duplicatePsychSection(chart: ChartDraft, index: Int, bpm: Int): Cha
         ?: error("No se puede duplicar: límite de notas, colisión o sostenido fuera de rango.")
     return chart.copy(psychLayout = next, notes = combined)
 }
+
+// Integer overloads keep older callers source-compatible.
+internal fun psychSectionSpans(sections: List<PsychSectionData>, bpm: Int) = psychSectionSpans(sections, bpm.toDouble())
+internal fun psychGridTempos(sections: List<PsychSectionData>, bpm: Int) = psychGridTempos(sections, bpm.toDouble())
+internal fun materializePsychLayout(chart: ChartDraft, bpm: Int) = materializePsychLayout(chart, bpm.toDouble())
+internal fun duplicatePsychSection(chart: ChartDraft, index: Int, bpm: Int) = duplicatePsychSection(chart, index, bpm.toDouble())

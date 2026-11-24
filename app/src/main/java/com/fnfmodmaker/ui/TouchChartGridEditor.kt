@@ -59,7 +59,7 @@ private fun gridClock(ms: Long): String = "%d:%02d.%03d".format(ms / 60000, ms /
 @Composable
 internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
     val song = vm.liveSong ?: return
-    if (song.bpmValue !in 1..400 || vm.liveDurationMs <= 0L) return
+    if (song.bpmValue !in 1.0..400.0 || vm.liveDurationMs <= 0L) return
     var divisions by rememberSaveable { mutableStateOf(4) }
     val tempos = remember(vm.config, vm.liveSongIndex) {
         if (vm.config.engine.includesVSlice) runCatching { com.fnfmodmaker.mod.vSliceGridTempos(vm.liveVSliceTempo()) }.getOrNull()

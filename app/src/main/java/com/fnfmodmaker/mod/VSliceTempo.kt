@@ -27,7 +27,7 @@ internal fun validateVSliceTempo(text: String): String {
         previous = time
         val bpm = number("bpm")
         require((bpm != null || index > 0) && (bpm == null || bpm > 0 && bpm <= 10000)) { "BPM inválido." }
-        if (index == 0) require(bpm != null && bpm in 1.0..400.0 && bpm % 1.0 == 0.0) { "El BPM inicial debe ser entero entre 1 y 400." }
+        if (index == 0) require(bpm != null && bpm in 1.0..400.0) { "El BPM inicial debe estar entre 1 y 400." }
         val n = number("n") ?: 4.0; val d = number("d") ?: 4.0
         require(n % 1.0 == 0.0 && n in 1.0..64.0 && d % 1.0 == 0.0 && d.toInt() in setOf(1, 2, 4, 8, 16, 32, 64)) { "Compás inválido." }
         val bt = row.get("bt")
@@ -39,8 +39,8 @@ internal fun validateVSliceTempo(text: String): String {
     }
     return rows.toString()
 }
-internal fun tempoWithInitialBpm(source: String, bpm: Int): String {
-    require(bpm in 1..400) { "BPM inicial inválido." }
+internal fun tempoWithInitialBpm(source: String, bpm: Double): String {
+    require(bpm in 1.0..400.0) { "BPM inicial inválido." }
     val array = JsonParser.parseString(validateVSliceTempo(source)).asJsonArray
     array[0].asJsonObject.addProperty("bpm", bpm)
     return validateVSliceTempo(array.toString())

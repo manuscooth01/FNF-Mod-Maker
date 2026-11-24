@@ -3,7 +3,7 @@ package com.fnfmodmaker.model
 import kotlin.math.roundToLong
 
 /** Match the practice-note generator used by the exporter, where timing is known. */
-fun previewPracticeNotes(bpm: Int, durationMs: Long): List<ChartNote> {
+fun previewPracticeNotes(bpm: Double, durationMs: Long): List<ChartNote> {
     if (bpm <= 0) return emptyList()
     val beatMs = 60_000.0 / bpm
     val count = (if (durationMs > 0) (durationMs / beatMs).toInt() else 64).coerceIn(8, 4000)
@@ -17,3 +17,5 @@ fun previewHitIndex(notes: List<ChartNote>, alreadyHit: Set<Int>, lane: Int, tim
         .filter { kotlin.math.abs(notes[it].timeMs - timeMs) <= windowMs }
         .minByOrNull { kotlin.math.abs(notes[it].timeMs - timeMs) }
 }
+
+fun previewPracticeNotes(bpm: Int, durationMs: Long) = previewPracticeNotes(bpm.toDouble(), durationMs)

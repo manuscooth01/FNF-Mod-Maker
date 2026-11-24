@@ -90,7 +90,7 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
         if (!song.songFolder.matches(Regex("[a-z0-9_-]{1,80}"))) {
             add(WizardIssue(1, "$label: el nombre no puede contener barras.", index))
         }
-        if (song.bpmValue !in 1..400) add(WizardIssue(1, "$label: el BPM debe estar entre 1 y 400.", index))
+        if (song.bpmValue !in 1.0..400.0) add(WizardIssue(1, "$label: el BPM debe estar entre 1 y 400.", index))
         val speed = song.speed.toFloatOrNull()
         if (speed == null || !speed.isFinite() || speed <= 0f) {
             add(WizardIssue(1, "$label: la velocidad debe ser mayor que cero.", index))

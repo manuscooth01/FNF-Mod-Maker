@@ -19,7 +19,7 @@ class ChartPersistentHistoryTest {
         val redone = restoreChartHistory(removed.history, null, true)!!
         assertEquals(first, redone.chart)
         assertEquals(second, restoreChartHistory(redone.history, first, true)!!.chart)
-        assertNull(restoreChartHistory(history, second.copy(bpm = 180), false))
+        assertNull(restoreChartHistory(history, second.copy(bpm = 180.0), false))
     }
     @Test fun oldUntypedProjectAndHistoryStillRestore() {
         val gson = Gson()

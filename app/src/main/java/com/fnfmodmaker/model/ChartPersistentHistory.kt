@@ -32,11 +32,21 @@ private fun legacyChartFingerprint(chart: ChartDraft?): String? {
     val notes = c.notes.joinToString(prefix = "[", postfix = "]") {
         "ChartNote(timeMs=${it.timeMs}, lane=${it.lane}, lengthMs=${it.lengthMs}, isSustain=${it.isSustain})"
     }
-    return hashChartText("ChartDraft(songFolder=${c.songFolder}, difficulty=${c.difficulty}, notes=$notes, events=${c.events}, sections=${c.sections}, scrollSpeed=${c.scrollSpeed}, bpm=${c.bpm}, offsetMs=${c.offsetMs}, needsVoices=${c.needsVoices}, player1=${c.player1}, player2=${c.player2}, gfVersion=${c.gfVersion}, stage=${c.stage})")
+    return hashChartText("ChartDraft(songFolder=${c.songFolder}, difficulty=${c.difficulty}, notes=$notes, events=${c.events}, sections=${c.sections}, scrollSpeed=${c.scrollSpeed}, bpm=${if (c.bpm % 1.0 == 0.0) c.bpm.toLong().toString() else c.bpm.toString()}, offsetMs=${c.offsetMs}, needsVoices=${c.needsVoices}, player1=${c.player1}, player2=${c.player2}, gfVersion=${c.gfVersion}, stage=${c.stage})")
 }
 private fun fingerprintMatches(chart: ChartDraft?, hash: String): Boolean {
     if (chartFingerprint(chart) == hash) return true
     val c = normalizedChart(chart) ?: return false
+    // Before BPM became Double, integral BPMs were rendered without ".0" in history hashes.
+    if (c.bpm.isFinite() && c.bpm % 1.0 == 0.0) {
+        val old = c.toString().replace(", bpm=${c.bpm}, offsetMs=", ", bpm=${c.bpm.toLong()}, offsetMs=")
+        if (hashChartText(old) == hash) return true
+        if (c.psychLayout.isEmpty() && c.psychSongExtras.isEmpty()) {
+            val withoutLayout = old.removeSuffix(", psychLayout=[], psychSongExtras=)") + ")"
+            if (hashChartText(withoutLayout) == hash) return true
+            if (c.psychEventsJson.isEmpty() && hashChartText(withoutLayout.removeSuffix(", psychEventsJson=)") + ")") == hash) return true
+        }
+    }
     if (c.psychLayout.isNotEmpty() || c.psychSongExtras.isNotEmpty()) return false
     val oldChart = c.toString().removeSuffix(", psychLayout=[], psychSongExtras=)") + ")"
     if (hashChartText(oldChart) == hash) return true

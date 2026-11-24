@@ -18,7 +18,7 @@ internal fun readVSliceJson(text: String, label: String): JSONObject {
 }
 
 /** V-Slice schema 2.0: ordinary notes on the first two strumlines are editable in ms. */
-internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty: String, bpm: Int, speed: Float): ChartDraft {
+internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty: String, bpm: Double, speed: Float): ChartDraft {
     val notes = chart.optJSONObject("notes")?.optJSONArray(difficulty) ?: error("Falta la dificultad $difficulty.")
     require(notes.length() <= 100_000) { "Demasiadas notas en $difficulty." }
     fun number(obj: JSONObject, key: String, default: Double): Double {
@@ -87,3 +87,5 @@ internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>,
     }
     return chart.toString()
 }
+
+internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty: String, bpm: Int, speed: Float) = readVSliceDifficulty(chart, folder, difficulty, bpm.toDouble(), speed)

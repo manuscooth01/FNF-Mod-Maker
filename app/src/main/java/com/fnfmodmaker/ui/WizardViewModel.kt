@@ -502,7 +502,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val before = liveVSliceTempo()
         val edited = com.fnfmodmaker.mod.validateVSliceTempo(text)
         if (before == edited) return
-        val bpm = com.google.gson.JsonParser.parseString(edited).asJsonArray[0].asJsonObject.get("bpm").asInt
+        val bpm = com.google.gson.JsonParser.parseString(edited).asJsonArray[0].asJsonObject.get("bpm").asString
         val songs = config.songs.toMutableList()
         val independent = song.vSliceIndependentInitialBpm || config.engine == TargetEngine.BOTH
         songs[liveSongIndex] = song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = edited, vSliceTempoUndo = (song.vSliceTempoUndo + before).takeLast(10), vSliceTempoRedo = emptyList())
@@ -513,7 +513,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val song = liveSong ?: error("Selecciona una canción.")
         val previous = (if (redo) song.vSliceTempoRedo else song.vSliceTempoUndo).lastOrNull() ?: error("No hay cambio de tempo que restaurar.")
         val checked = com.fnfmodmaker.mod.validateVSliceTempo(previous)
-        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asInt
+        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
         val current = liveVSliceTempo()
         val independent = song.vSliceIndependentInitialBpm || config.engine == TargetEngine.BOTH
         val songs = config.songs.toMutableList()
@@ -707,7 +707,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun startLivePlayback(record: Boolean) {
         if (busy || liveLoading || livePlaying) return
         if (!liveCanPlay) { liveError = "Elige una instrumental disponible y comprueba el nombre y la dificultad de la canción."; return }
-        if (record && liveSnap != com.fnfmodmaker.model.RecordingSnap.FREE && (liveSong?.bpmValue ?: 0) !in 1..400) {
+        if (record && liveSnap != com.fnfmodmaker.model.RecordingSnap.FREE && (liveSong?.bpmValue ?: 0.0) !in 1.0..400.0) {
             liveError = "Indica un BPM válido para usar el ajuste a la cuadrícula."; return
         }
         liveRecordingGrid = if (record) try { recordingTempoGrid() } catch (e: Exception) {
@@ -2165,7 +2165,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun setActiveSongBpm(value: String) {
-        updateActiveSong { it.copy(bpm = value.filter { c -> c.isDigit() }.take(3), vSliceTempoUndo = emptyList(), vSliceTempoRedo = emptyList()) }
+        updateActiveSong { it.copy(bpm = value.filter { c -> c.isDigit() || c == '.' || c == ',' }.replace(',', '.').take(16), vSliceTempoUndo = emptyList(), vSliceTempoRedo = emptyList()) }
     }
 
     internal fun setActiveSongSpeed(value: String) {

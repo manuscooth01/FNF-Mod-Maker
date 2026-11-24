@@ -6,7 +6,7 @@ import org.junit.Test
 
 class ChartSerializationTest {
     @Test fun psychIncludesNoteExactlyAtSectionBoundaryAndDurationInMilliseconds() {
-        val draft = ChartDraft(bpm = 150, notes = listOf(ChartNote(0, 4), ChartNote(1600, 0, 350)))
+        val draft = ChartDraft(bpm = 150.0, notes = listOf(ChartNote(0, 4), ChartNote(1600, 0, 350)))
         val json = JSONObject(draft.toPsychJson())
         val sections = json.getJSONArray("notes")
         assertEquals(2, sections.length())

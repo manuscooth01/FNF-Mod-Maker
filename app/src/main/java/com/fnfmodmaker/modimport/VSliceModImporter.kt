@@ -85,7 +85,7 @@ internal class VSliceModImporter(
                 val supported = declared.filter { isValidDifficulty(it) && sourceNotes.has(it) }.sorted()
                 require(supported.size <= 64) { "$chartPath: demasiadas dificultades." }
                 for (difficulty in supported) {
-                    try { perSong[difficulty] = readVSliceDifficulty(chart, folder, difficulty, bpm.toInt(), speedFor(difficulty)) }
+                    try { perSong[difficulty] = readVSliceDifficulty(chart, folder, difficulty, bpm, speedFor(difficulty)) }
                     catch (e: Exception) { warnings.add("$chartPath · $difficulty: no editable (${e.message}); se conservará sin modificar mientras no se elimine.") }
                 }
                 val uneditable = (declared + sourceNotes.keys().asSequence().toSet()) - perSong.keys

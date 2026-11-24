@@ -7,10 +7,10 @@ enum class RecordingSnap(val label: String, val divisionsPerBeat: Int) {
 }
 
 /** Timestamp from the audio player's clock, corrected and optionally quantized. */
-fun recordedNoteTime(positionMs: Long, correctionMs: Int, bpm: Int, snap: RecordingSnap, durationMs: Long, tempoGrid: TouchGrid? = null): Long {
+fun recordedNoteTime(positionMs: Long, correctionMs: Int, bpm: Double, snap: RecordingSnap, durationMs: Long, tempoGrid: TouchGrid? = null): Long {
     val maximum = if (durationMs > 0) durationMs - 1 else Long.MAX_VALUE
     val time = (positionMs.coerceAtLeast(0L) + correctionMs.toLong()).coerceIn(0L, maximum)
-    if (snap == RecordingSnap.FREE || bpm !in 1..400) return time
+    if (snap == RecordingSnap.FREE || bpm !in 1.0..400.0) return time
     if (tempoGrid != null) {
         val beat = tempoGrid.beatAt(time.toDouble())
         val snappedBeat = (beat * snap.divisionsPerBeat).roundToLong().toDouble() / snap.divisionsPerBeat
@@ -38,7 +38,7 @@ fun removeRecordedNote(notes: List<ChartNote>, note: ChartNote): List<ChartNote>
 
 /** Audio-clock press/release; brief touches remain taps even when quantized. */
 fun recordedHoldLength(note: ChartNote, pressMs: Long, releaseMs: Long, correctionMs: Int,
-    bpm: Int, snap: RecordingSnap, durationMs: Long, notes: List<ChartNote>, tempoGrid: TouchGrid? = null): Long {
+    bpm: Double, snap: RecordingSnap, durationMs: Long, notes: List<ChartNote>, tempoGrid: TouchGrid? = null): Long {
     if (releaseMs - pressMs < 120L) return 0L
     val end = recordedNoteTime(releaseMs, correctionMs, bpm, snap, durationMs, tempoGrid)
     return safeHoldLength(note, (end - note.timeMs).coerceAtLeast(0L), durationMs, notes)
@@ -51,3 +51,6 @@ fun safeHoldLength(note: ChartNote, desiredMs: Long, durationMs: Long, notes: Li
         .minOfOrNull { it.timeMs - note.timeMs } ?: Long.MAX_VALUE
     return desiredMs.coerceAtLeast(0L).coerceAtMost(minOf(songLimit, next))
 }
+
+fun recordedNoteTime(positionMs: Long, correctionMs: Int, bpm: Int, snap: RecordingSnap, durationMs: Long, tempoGrid: TouchGrid? = null): Long = recordedNoteTime(positionMs, correctionMs, bpm.toDouble(), snap, durationMs, tempoGrid)
+fun recordedHoldLength(note: ChartNote, pressMs: Long, releaseMs: Long, correctionMs: Int, bpm: Int, snap: RecordingSnap, durationMs: Long, notes: List<ChartNote>, tempoGrid: TouchGrid? = null): Long = recordedHoldLength(note, pressMs, releaseMs, correctionMs, bpm.toDouble(), snap, durationMs, notes, tempoGrid)

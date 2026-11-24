@@ -55,4 +55,31 @@ class PsychSectionsTest {
         assertThrows(IllegalArgumentException::class.java) { draft.copy(psychLayout = listOf(draft.psychLayout[0].copy(sourceJson = """{"sectionBeats":"invalid"}"""))).toPsychJson() }
         assertThrows(IllegalArgumentException::class.java) { draft.copy(psychSongExtras = """{"song":[1]}""").toPsychJson() }
     }
+    @Test fun fractionalInitialBpmAndSectionChangesSurviveBothFormats() {
+        val source = """{"song":{"song":"decimal","bpm":120.5,"speed":1,"events":[[99,[["Custom","x","y"]]]],"extra":{"preserve":true},"notes":[
+          {"sectionBeats":1.25,"lengthInSteps":5,"mustHitSection":true,"sectionNotes":[[622,0,20]]},
+          {"sectionBeats":2.5,"lengthInSteps":10,"mustHitSection":false,"changeBPM":true,"bpm":140.25,"altAnim":true,"sectionNotes":[[623,0,100],[1691,7,2]]},
+          {"sectionBeats":3.25,"mustHitSection":true,"changeBPM":true,"bpm":99.75,"gfSection":true,"custom":"keep","sectionNotes":[[1692,5,300]]}]}}"""
+        val draft = readPsychChart(source, "decimal", "normal")
+        val spans = psychSectionSpans(draft.psychLayout, draft.bpm)
+        assertEquals(120.5, draft.bpm, 0.0)
+        assertEquals(1.25 * 60000.0 / 120.5, spans[1].startMs, 1e-9)
+        assertEquals(spans[1].startMs + 2.5 * 60000.0 / 140.25, spans[2].startMs, 1e-9)
+        val grid = TouchGrid(120.5, 4, 8000, psychGridTempos(draft.psychLayout, draft.bpm))
+        assertEquals(spans[1].startMs, grid.timeAtBeat(1.25), 1e-9)
+        assertEquals(spans[2].startMs, grid.timeAtBeat(3.75), 1e-9)
+        val restored = com.google.gson.Gson().fromJson(com.google.gson.Gson().toJson(draft), ChartDraft::class.java)
+        assertEquals(draft, restored)
+        for (encoded in listOf(restored.toPsychJson(), JsonBuilders.psych073Chart(restored.toPsychJson()))) {
+            val reimport = readPsychChart(encoded, "decimal", "normal")
+            assertEquals(draft.bpm, reimport.bpm, 0.0)
+            assertEquals(draft.notes, reimport.notes)
+            assertEquals(draft.psychEventsJson, reimport.psychEventsJson)
+            assertEquals(140.25, reimport.psychLayout[1].bpm, 0.0)
+            assertEquals(99.75, reimport.psychLayout[2].bpm, 0.0)
+            assertTrue(reimport.psychLayout[1].altAnim && reimport.psychLayout[2].gfSection)
+            assertEquals("keep", JsonParser.parseString(reimport.psychLayout[2].sourceJson).asJsonObject.get("custom").asString)
+        }
+    }
+
 }

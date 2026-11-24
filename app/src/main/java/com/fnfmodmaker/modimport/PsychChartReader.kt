@@ -28,7 +28,7 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
     val absoluteLanes = format == "psych_v1"
     require(format.isEmpty() || absoluteLanes) { "Formato de chart no reconocido: $format" }
     val bpmDouble = song.optDouble("bpm", Double.NaN)
-    require(bpmDouble.isFinite() && bpmDouble in 1.0..400.0 && bpmDouble % 1.0 == 0.0) { "El editor necesita BPM entero entre 1 y 400." }
+    require(bpmDouble.isFinite() && bpmDouble in 1.0..400.0) { "El editor necesita BPM entre 1 y 400." }
     val speed = song.optDouble("speed", 1.0)
     require(speed.isFinite() && speed > 0 && speed <= Float.MAX_VALUE) { "Velocidad inválida." }
     val offset = song.optDouble("offset", 0.0)
@@ -42,6 +42,11 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
         require(value.isJsonPrimitive && value.asJsonPrimitive.isNumber &&
             value.asBigDecimal.compareTo(java.math.BigDecimal(speed.toFloat().toString())) == 0) {
             "La velocidad Psych tiene una precisión que no se puede conservar sin pérdida."
+        }
+    }
+    body.get("bpm")?.let { value ->
+        require(value.isJsonPrimitive && value.asJsonPrimitive.isNumber && value.asBigDecimal.compareTo(java.math.BigDecimal.valueOf(bpmDouble)) == 0) {
+            "La precisión del BPM inicial no se puede conservar sin pérdida."
         }
     }
     val originalName = body.get("song")
@@ -93,14 +98,14 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
             notes.add(ChartNote(t.roundToLong(), lane, duration.roundToLong(), kind = kind)); notesBySection.add(i)
         }
     }
-    val spans = com.fnfmodmaker.model.psychSectionSpans(layout, bpmDouble.toInt())
+    val spans = com.fnfmodmaker.model.psychSectionSpans(layout, bpmDouble)
     notes.forEachIndexed { i, note -> require(com.fnfmodmaker.model.psychSectionIndex(spans, note.timeMs) == notesBySection[i]) {
         "La nota en ${note.timeMs} ms pertenece a otra sección en el archivo; no se puede reagrupar sin pérdida."
     } }
     val extras = body.deepCopy()
     listOf("notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format").forEach { extras.remove(it) }
     com.fnfmodmaker.model.psychObject(extras.toString(), "propiedades Psych")
-    return ChartDraft(songFolder = folder, difficulty = difficulty, notes = notes, scrollSpeed = speed.toFloat(), bpm = bpmDouble.toInt(),
+    return ChartDraft(songFolder = folder, difficulty = difficulty, notes = notes, scrollSpeed = speed.toFloat(), bpm = bpmDouble,
         offsetMs = offset.toInt(), needsVoices = song.optBoolean("needsVoices", true), player1 = song.optString("player1", "bf"),
         player2 = song.optString("player2", "dad"), gfVersion = song.optString("gfVersion", song.optString("player3", "gf")), stage = song.optString("stage", "stage"), psychEventsJson = if (eventJson == "[]") "" else eventJson,
         psychLayout = layout, psychSongExtras = if (extras.size() == 0) "" else extras.toString())

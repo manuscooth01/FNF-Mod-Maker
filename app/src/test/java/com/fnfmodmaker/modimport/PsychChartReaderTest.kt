@@ -14,7 +14,7 @@ class PsychChartReaderTest {
         for (mustHit in listOf(true, false)) {
             val draft = readPsychChart(chart("\"format\":\"psych_v1\",", mustHit), "test", "normal")
             assertEquals(listOf(ChartNote(100, 0), ChartNote(500, 6, 250)), draft.notes)
-            assertEquals("bf", draft.player1); assertEquals("dad", draft.player2); assertEquals(120, draft.bpm)
+            assertEquals("bf", draft.player1); assertEquals("dad", draft.player2); assertEquals(120.0, draft.bpm, 0.0)
         }
     }
     @Test fun legacyFlipsLanesWhenOpponentSection() {
@@ -31,7 +31,7 @@ class PsychChartReaderTest {
     }
     @Test fun psych073ExportUsesSectionRelativeLanesAndWrappedSong() {
         val song = com.fnfmodmaker.model.SongConfig(songName = "test", bpm = "150", difficulties = setOf("normal"), practiceNotes = false)
-        val draft = com.fnfmodmaker.model.ChartDraft(songFolder = "test", difficulty = "normal", bpm = 150,
+        val draft = com.fnfmodmaker.model.ChartDraft(songFolder = "test", difficulty = "normal", bpm = 150.0,
             notes = listOf(ChartNote(0, 0), ChartNote(2000, 0), ChartNote(2100, 4)))
         val config = com.fnfmodmaker.model.ModConfig(engine = com.fnfmodmaker.model.TargetEngine.PSYCH,
             psychChartFormat = com.fnfmodmaker.model.PsychChartFormat.PSYCH_073, songs = listOf(song)).withChart("test", "normal", draft)

@@ -108,7 +108,7 @@ data class SongConfig(
     val vSliceIndependentInitialBpm: Boolean = false
 ) {
     val songFolder: String get() = psychSongPath(songName)
-    val bpmValue: Int get() = bpm.toIntOrNull() ?: 0
+    val bpmValue: Double get() = bpm.toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
     val speedValue: Float get() = speed.toFloatOrNull() ?: 0f
     val offsetValue: Int get() = offsetMs.toIntOrNull() ?: 0
 

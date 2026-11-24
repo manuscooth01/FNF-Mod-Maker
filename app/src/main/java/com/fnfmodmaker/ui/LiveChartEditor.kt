@@ -217,9 +217,9 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         text = { Text("Al guardar la primera nota se dejarán de generar las notas de práctica para esta dificultad. Las demás dificultades no cambian. Puedes deshacer la nota o borrar el chart personalizado.") },
         confirmButton = { TextButton(onClick = { confirmPractice = false; vm.startLivePlayback(true) }) { Text("Entendido") } },
         dismissButton = { TextButton(onClick = { confirmPractice = false }) { Text("Cancelar") } })
-    OutlinedButton(onClick = onOpenGrid, enabled = !vm.livePlaying && !vm.liveLoading && !vm.busy && vm.liveCanPlay && vm.liveDurationMs > 0 && (vm.liveSong?.bpmValue ?: 0) in 1..400) { Text("▦ Abrir cuadrícula táctil") }
+    OutlinedButton(onClick = onOpenGrid, enabled = !vm.livePlaying && !vm.liveLoading && !vm.busy && vm.liveCanPlay && vm.liveDurationMs > 0 && (vm.liveSong?.bpmValue ?: 0.0) in 1.0..400.0) { Text("▦ Abrir cuadrícula táctil") }
     if (vm.liveCanPlay && vm.liveDurationMs <= 0) Text("Escucha y pausa la instrumental para detectar su duración antes de abrir la cuadrícula.", style = MaterialTheme.typography.labelSmall)
-    if (vm.liveCanPlay && (vm.liveSong?.bpmValue ?: 0) !in 1..400) Text("Para la cuadrícula, indica un BPM entre 1 y 400 en Canciones.", style = MaterialTheme.typography.labelSmall)
+    if (vm.liveCanPlay && (vm.liveSong?.bpmValue ?: 0.0) !in 1.0..400.0) Text("Para la cuadrícula, indica un BPM entre 1 y 400 en Canciones.", style = MaterialTheme.typography.labelSmall)
     val chart = vm.liveChart
     Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.liveDifficulty in (vm.liveSong?.vSliceOrigin?.uneditableDifficulties ?: emptySet())) "Chart original conservado sin edición." else if (vm.config.importedModResources.isNotEmpty()) "Sin chart personalizado: esta dificultad no se exportará hasta crear un chart." else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
     val eventTimes = remember(vm.config, vm.liveSongIndex, vm.liveDifficulty) {

@@ -487,7 +487,7 @@ class VSliceImportCycleTest {
         assertTrue(meta.getAsJsonObject("extraMetadata").get("keep").asBoolean)
         assertTrue(files.containsKey("data/songs/test/test-chart.json"))
         val importedAgain = prepare(output.toByteArray(), store)
-        assertEquals(120, importedAgain.config.firstSong.bpmValue)
+        assertEquals(120.0, importedAgain.config.firstSong.bpmValue, 0.0)
     }
 
     @Test fun duplicateDifficultyPreservesNotesAndExportedMetadata() {

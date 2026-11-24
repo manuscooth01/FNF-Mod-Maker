@@ -87,7 +87,7 @@ class LiveRecordingTest {
     @Test fun heldNotesPersistAndExportAsDurationsNotExtraNotes() {
         val note = ChartNote(300, 7)
         val hold = note.copy(lengthMs = recordedHoldLength(note, 300, 1050, 0, 120, RecordingSnap.FREE, 5000, listOf(note)))
-        val chart = ChartDraft(bpm = 120, notes = listOf(hold))
+        val chart = ChartDraft(bpm = 120.0, notes = listOf(hold))
         val gson = com.google.gson.Gson()
         val restored = gson.fromJson(gson.toJson(chart), ChartDraft::class.java)
         assertEquals(750L, restored.notes.single().lengthMs)

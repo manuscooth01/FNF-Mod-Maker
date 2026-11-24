@@ -71,7 +71,7 @@ data class ChartDraft(
     val events: List<ChartEvent> = emptyList(),
     val sections: List<ChartSection> = emptyList(),
     val scrollSpeed: Float = 2.0f,
-    val bpm: Int = 150,
+    val bpm: Double = 150.0,
     val offsetMs: Int = 0,
     val needsVoices: Boolean = false,
     val player1: String = "bf",

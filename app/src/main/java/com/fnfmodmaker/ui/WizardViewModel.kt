@@ -449,7 +449,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val before = liveVSliceEvents()
         if (edited == before) return
         val songs = config.songs.toMutableList()
-        songs[liveSongIndex] = song.copy(vSliceEventsJson = edited, vSliceEventsUndo = (song.vSliceEventsUndo + before).takeLast(10))
+        songs[liveSongIndex] = song.copy(vSliceEventsJson = edited, vSliceEventsUndo = (song.vSliceEventsUndo + before).takeLast(10), vSliceEventsRedo = emptyList())
         config = config.copy(songs = songs)
         scheduleAutoSave(); forceAutoSave()
     }
@@ -459,7 +459,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val previous = song.vSliceEventsUndo.lastOrNull() ?: error("No hay cambios de eventos para deshacer.")
         com.fnfmodmaker.mod.validateVSliceEvents(previous)
         val songs = config.songs.toMutableList()
-        songs[liveSongIndex] = song.copy(vSliceEventsJson = previous, vSliceEventsUndo = song.vSliceEventsUndo.dropLast(1))
+        songs[liveSongIndex] = song.copy(vSliceEventsJson = previous, vSliceEventsUndo = song.vSliceEventsUndo.dropLast(1), vSliceEventsRedo = (song.vSliceEventsRedo + liveVSliceEvents()).takeLast(10))
+        config = config.copy(songs = songs)
+        scheduleAutoSave(); forceAutoSave()
+    }
+
+    internal fun redoLiveVSliceEvents() {
+        check(config.engine.includesVSlice && !livePlaying && !liveLoading && !busy) { "Pausa el editor antes de rehacer." }
+        val song = liveSong ?: error("Selecciona una canción.")
+        val next = song.vSliceEventsRedo.lastOrNull() ?: error("No hay cambios de eventos para rehacer.")
+        com.fnfmodmaker.mod.validateVSliceEvents(next)
+        val songs = config.songs.toMutableList()
+        songs[liveSongIndex] = song.copy(vSliceEventsJson = next, vSliceEventsRedo = song.vSliceEventsRedo.dropLast(1), vSliceEventsUndo = (song.vSliceEventsUndo + liveVSliceEvents()).takeLast(10))
         config = config.copy(songs = songs)
         scheduleAutoSave(); forceAutoSave()
     }

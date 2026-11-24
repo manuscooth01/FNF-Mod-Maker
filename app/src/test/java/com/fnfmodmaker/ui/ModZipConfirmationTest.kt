@@ -166,6 +166,9 @@ class ModZipConfirmationTest {
         vm.closeLiveChart(); vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
         vm.openLiveChart(); vm.undoLiveVSliceEvents()
         assertEquals("""[{"t":100,"e":"FocusCamera","v":1}]""", vm.liveVSliceEvents())
+        vm.redoLiveVSliceEvents()
+        assertEquals("""[{"t":200,"e":"FocusCamera","v":0}]""", vm.liveVSliceEvents())
+        vm.undoLiveVSliceEvents()
         vm.closeLiveChart()
         val output = File(app.cacheDir, "events-export.zip")
         vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)

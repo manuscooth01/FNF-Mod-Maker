@@ -222,8 +222,14 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
     if (vm.liveCanPlay && (vm.liveSong?.bpmValue ?: 0) !in 1..400) Text("Para la cuadrícula, indica un BPM entre 1 y 400 en Canciones.", style = MaterialTheme.typography.labelSmall)
     val chart = vm.liveChart
     Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.liveDifficulty in (vm.liveSong?.vSliceOrigin?.uneditableDifficulties ?: emptySet())) "Chart original conservado sin edición." else if (vm.config.importedModResources.isNotEmpty()) "Sin chart personalizado: esta dificultad no se exportará hasta crear un chart." else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
-    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs)
-    Text("La línea indica el momento actual; arriba: jugador, abajo: rival. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
+    val eventTimes = remember(vm.config, vm.liveSongIndex, vm.liveDifficulty) {
+        runCatching {
+            if (vm.config.engine.includesVSlice) com.google.gson.JsonParser.parseString(vm.liveVSliceEvents()).asJsonArray.map { it.asJsonObject.get("t").asDouble }
+            else com.fnfmodmaker.mod.psychEventRefs(vm.livePsychEvents()).map { it.time.toDouble() }
+        }.getOrDefault(emptyList())
+    }
+    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs, eventTimes)
+    Text("La línea indica el momento actual; arriba: jugador, abajo: rival. Marcas doradas: eventos. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = vm::undoLiveNote, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveUndoCount > 0) { Text("Deshacer último toque") }
         if (chart != null) TextButton(onClick = { confirmDelete = true }, enabled = !vm.livePlaying && !vm.liveLoading) { Text("Borrar chart propio") }
@@ -281,6 +287,9 @@ private fun VSliceEventsEditor(vm: WizardViewModel) {
     TextButton(onClick = {
         runCatching { vm.undoLiveVSliceEvents() }.onSuccess { error = null }.onFailure { error = it.message }
     }, enabled = enabled && (vm.liveSong?.vSliceEventsUndo?.isNotEmpty() == true)) { Text("Deshacer eventos") }
+    TextButton(onClick = {
+        runCatching { vm.redoLiveVSliceEvents() }.onSuccess { error = null }.onFailure { error = it.message }
+    }, enabled = enabled && (vm.liveSong?.vSliceEventsRedo?.isNotEmpty() == true)) { Text("Rehacer eventos") }
     if (!open) error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Eventos V-Slice") },
         text = { Column {
@@ -336,12 +345,16 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
 }
 
 @Composable
-private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long) {
+private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long, events: List<Double>) {
     Canvas(Modifier.fillMaxWidth().height(100.dp).semantics { contentDescription = "Línea de tiempo de notas alrededor del momento de reproducción" }) {
         drawRect(Color(0xFF201A29))
         val laneHeight = size.height / 8f
         for (lane in 0..8) drawLine(Color.White.copy(alpha = .13f), Offset(0f, lane * laneHeight), Offset(size.width, lane * laneHeight), 1f)
         val windowMs = 6000f
+        for (event in events) {
+            val x = size.width / 2f + ((event - positionMs) / windowMs * size.width).toFloat()
+            if (x in 0f..size.width) drawLine(Color(0xFFFFC247), Offset(x, 0f), Offset(x, size.height), 2f)
+        }
         for (note in notes) {
             val x = size.width / 2f + (note.timeMs - positionMs) / windowMs * size.width
             val endX = x + note.lengthMs / windowMs * size.width

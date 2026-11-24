@@ -21,6 +21,25 @@ class ChartPersistentHistoryTest {
         assertEquals(second, restoreChartHistory(redone.history, first, true)!!.chart)
         assertNull(restoreChartHistory(history, second.copy(bpm = 180), false))
     }
+    @Test fun oldUntypedProjectAndHistoryStillRestore() {
+        val gson = Gson()
+        val old = """{"songFolder":"song","difficulty":"normal","notes":[{"timeMs":100,"lane":0,"lengthMs":0,"isSustain":false}]}"""
+        val chart = gson.fromJson(old, ChartDraft::class.java)
+        assertEquals("", chart.notes.single().kind)
+        val legacyText = "ChartDraft(songFolder=song, difficulty=normal, notes=[ChartNote(timeMs=100, lane=0, lengthMs=0, isSustain=false)], events=[], sections=[], scrollSpeed=2.0, bpm=150, offsetMs=0, needsVoices=false, player1=bf, player2=dad, gfVersion=gf, stage=stage)"
+        val legacyHash = java.security.MessageDigest.getInstance("SHA-256").digest(legacyText.toByteArray()).joinToString("") { "%02x".format(it) }
+        val absentHash = java.security.MessageDigest.getInstance("SHA-256").digest("<absent>".toByteArray()).joinToString("") { "%02x".format(it) }
+        val entry = ChartHistoryEntry(added = chart.notes, beforeHash = absentHash, afterHash = legacyHash, afterTemplate = chart.copy(notes = emptyList()))
+        val result = restoreChartHistory(ChartPersistentHistory(undo = listOf(entry)), chart, false)!!
+        assertNull(result.chart)
+        assertEquals(chart, restoreChartHistory(result.history, null, true)!!.chart)
+        assertNull(restoreChartHistory(ChartPersistentHistory(undo = listOf(entry)), chart.copy(notes = chart.notes.map { it.copy(kind = "mine") }), false))
+        val config = gson.fromJson("{}", ModConfig::class.java)
+        assertEquals(PsychChartFormat.PSYCH_V1, config.psychChartFormat)
+        assertNull(config.firstSong.vSliceEventsJson)
+        assertTrue(config.firstSong.vSliceEventsUndo.isEmpty())
+    }
+
     @Test fun historiesAreSeparateAndBounded() {
         var history = ChartPersistentHistory()
         var chart = ChartDraft()

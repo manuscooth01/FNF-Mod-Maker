@@ -101,6 +101,10 @@ class PsychSectionsTest {
     @Test fun rejectsInitialBpmWhosePrecisionWouldBeLost() {
         val source = chart.replace("\"bpm\":120,", "\"bpm\":120.1234567890123456789,")
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(source, "test", "normal") }
+        val sectionBpm = chart.replace("\"bpm\":180,", "\"bpm\":180.1234567890123456789,")
+        assertThrows(IllegalArgumentException::class.java) { readPsychChart(sectionBpm, "test", "normal") }
+        val beats = chart.replace("\"sectionBeats\":3,", "\"sectionBeats\":3.1234567890123456789,")
+        assertThrows(IllegalArgumentException::class.java) { readPsychChart(beats, "test", "normal") }
         assertEquals(0.0, SongConfig(bpm = "120.1234567890123456789").bpmValue, 0.0)
         assertThrows(IllegalArgumentException::class.java) { ChartDraft(bpm = 0.0).toPsychJson() }
     }

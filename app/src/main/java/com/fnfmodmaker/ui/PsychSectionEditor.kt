@@ -99,8 +99,16 @@ internal fun PsychSectionEditor(vm: WizardViewModel) {
         }, confirmButton = { TextButton(onClick = {
             runCatching {
                 check(vm.liveChart == base) { "El chart cambió; vuelve a abrir el editor de sección." }
-                val b = beats.replace(',', '.').toDoubleOrNull() ?: error("Duración inválida.")
-                val p = bpm.replace(',', '.').toDoubleOrNull() ?: error("BPM inválido.")
+                fun exactDecimal(text: String, label: String): Double {
+                    val input = text.replace(',', '.')
+                    val value = input.toDoubleOrNull() ?: error("$label inválido.")
+                    require(value.isFinite() && runCatching { java.math.BigDecimal(input).compareTo(java.math.BigDecimal.valueOf(value)) == 0 }.getOrDefault(false)) {
+                        "$label tiene más precisión de la que se puede conservar."
+                    }
+                    return value
+                }
+                val b = exactDecimal(beats, "Duración")
+                val p = exactDecimal(bpm, "BPM")
                 val changed = layout.toMutableList().apply { this[selected] = section.copy(beats = b, bpm = p, mustHit = mustHit, altAnim = alt, gfSection = gf, changeBpm = change) }
                 vm.saveLivePsychSections(changed)
             }.onSuccess { edit = false; error = null }.onFailure { error = it.message ?: "Sección inválida." }

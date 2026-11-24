@@ -77,6 +77,12 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
         require(!changed || sec.has("bpm") && !sec.isNull("bpm")) { "Sección $i: falta BPM para changeBPM." }
         val sectionBpm = number("bpm", bpmDouble)
         val raw = sourceSections[i].asJsonObject.deepCopy().apply { remove("sectionNotes") }
+        listOf("sectionBeats", "bpm").forEach { key -> raw.get(key)?.takeUnless { it.isJsonNull }?.let { value ->
+            require(value.isJsonPrimitive && value.asJsonPrimitive.isNumber && value.asDouble.isFinite() &&
+                value.asBigDecimal.compareTo(java.math.BigDecimal.valueOf(value.asDouble)) == 0) {
+                "Sección $i: la precisión de $key no se puede conservar sin pérdida."
+            }
+        } }
         layout.add(com.fnfmodmaker.model.PsychSectionData(beats, mustHit, flag("altAnim"), flag("gfSection"), sectionBpm, changed, raw.toString()))
         val rows = sec.optJSONArray("sectionNotes") ?: error("Faltan notas en la sección $i.")
         require(rows.length() <= 100_000 - notes.size) { "Demasiadas notas." }

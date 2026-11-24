@@ -108,7 +108,11 @@ data class SongConfig(
     val vSliceIndependentInitialBpm: Boolean = false
 ) {
     val songFolder: String get() = psychSongPath(songName)
-    val bpmValue: Double get() = bpm.toDoubleOrNull()?.takeIf { it.isFinite() } ?: 0.0
+    val bpmValue: Double get() = runCatching {
+        val parsed = bpm.toDouble()
+        require(parsed.isFinite() && java.math.BigDecimal(bpm).compareTo(java.math.BigDecimal.valueOf(parsed)) == 0)
+        parsed
+    }.getOrDefault(0.0)
     val speedValue: Float get() = speed.toFloatOrNull() ?: 0f
     val offsetValue: Int get() = offsetMs.toIntOrNull() ?: 0
 

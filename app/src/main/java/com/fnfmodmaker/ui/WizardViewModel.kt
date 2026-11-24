@@ -2165,7 +2165,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun setActiveSongBpm(value: String) {
-        updateActiveSong { it.copy(bpm = value.filter { c -> c.isDigit() || c == '.' || c == ',' }.replace(',', '.').take(16), vSliceTempoUndo = emptyList(), vSliceTempoRedo = emptyList()) }
+        updateActiveSong { song ->
+            val bpm = value.filter { c -> c.isDigit() || c == '.' || c == ',' }.replace(',', '.').take(16)
+            if (song.vSliceIndependentInitialBpm) song.copy(bpm = bpm)
+            else song.copy(bpm = bpm, vSliceTempoUndo = emptyList(), vSliceTempoRedo = emptyList())
+        }
     }
 
     internal fun setActiveSongSpeed(value: String) {

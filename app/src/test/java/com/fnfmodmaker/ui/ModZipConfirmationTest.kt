@@ -87,7 +87,7 @@ class ModZipConfirmationTest {
     }
     private fun psychZip(advanced: Boolean = false): Uri {
         val file = File(app.cacheDir, "psych-events-test.zip")
-        val chart = if (!advanced) """{"song":{"song":"test","bpm":120,"speed":1,"player1":"bf","player2":"dad","stage":"stage","events":[[100,[["Hey!","0",""]]]],"notes":[{"sectionBeats":4,"mustHitSection":true,"sectionNotes":[[100,0,0]]}]}}""" else """{"song":{"song":"test","bpm":120,"speed":1,"player1":"bf","player2":"dad","stage":"stage","customSong":{"huge":123456789012345678901234567890},"events":[[100,[["Hey!","0",""]]]],"notes":[{"lengthInSteps":16,"mustHitSection":true,"sectionNotes":[[100,0,500,"Hurt Note"]],"customSection":{"keep":true}},{"sectionBeats":3,"lengthInSteps":12,"mustHitSection":false,"altAnim":true,"gfSection":true,"changeBPM":true,"bpm":180,"sectionNotes":[[2200,0,300]]},{"sectionBeats":4,"mustHitSection":true,"changeBPM":true,"bpm":90,"sectionNotes":[[3100,5,100]]}]}}"""
+        val chart = if (!advanced) """{"song":{"song":"test","bpm":120,"speed":1,"player1":"bf","player2":"dad","stage":"stage","events":[[100,[["Hey!","0",""]]]],"notes":[{"sectionBeats":4,"mustHitSection":true,"sectionNotes":[[100,0,0]]}]}}""" else """{"song":{"song":"test","bpm":120.5,"speed":1,"player1":"bf","player2":"dad","stage":"stage","customSong":{"huge":123456789012345678901234567890},"events":[[100,[["Hey!","0",""]]]],"notes":[{"lengthInSteps":16,"mustHitSection":true,"sectionNotes":[[100,0,500,"Hurt Note"]],"customSection":{"keep":true}},{"sectionBeats":3,"lengthInSteps":12,"mustHitSection":false,"altAnim":true,"gfSection":true,"changeBPM":true,"bpm":180,"sectionNotes":[[2200,0,300]]},{"sectionBeats":4,"mustHitSection":true,"changeBPM":true,"bpm":90,"sectionNotes":[[3100,5,100]]}]}}"""
         ZipOutputStream(file.outputStream()).use { out ->
             fun entry(name: String, bytes: ByteArray) { out.putNextEntry(ZipEntry(name)); out.write(bytes); out.closeEntry() }
             entry("pack.json", """{"name":"Test","description":"Test"}""".toByteArray())
@@ -136,10 +136,11 @@ class ModZipConfirmationTest {
         assertEquals(3, original.psychLayout.size)
         assertTrue(original.psychLayout[1].altAnim && original.psychLayout[1].gfSection)
         assertEquals(4, original.notes[1].lane) // 0.7.3 relative to opponent section
-        val spans = com.fnfmodmaker.model.psychSectionSpans(original.psychLayout, 120)
-        assertEquals(2000.0, spans[1].startMs, 0.0001)
-        assertEquals(3000.0, spans[2].startMs, 0.0001)
-        val sections = original.psychLayout.toMutableList().apply { this[1] = this[1].copy(beats = 2.5, bpm = 240.0, mustHit = true, altAnim = false) }
+        val spans = com.fnfmodmaker.model.psychSectionSpans(original.psychLayout, 120.5)
+        assertEquals(4 * 60000.0 / 120.5, spans[1].startMs, 0.0001)
+        assertEquals(spans[1].startMs + 1000.0, spans[2].startMs, 0.0001)
+        assertEquals(120.5, original.bpm, 0.0)
+        val sections = original.psychLayout.toMutableList().apply { this[1] = this[1].copy(beats = 2.5, bpm = 240.5, mustHit = true, altAnim = false) }
         val editedNotes = original.notes.toMutableList().apply { this[1] = this[1].copy(timeMs = 2300, lengthMs = 400, kind = "Hurt Note") }
         vm.saveLivePsychSections(sections, editedNotes)
         assertEquals(editedNotes, vm.liveChart!!.notes)
@@ -166,6 +167,7 @@ class ModZipConfirmationTest {
         val restored = vm.projects.single { it.id !in knownIds }.id
         vm.switchProject(restored); await { !vm.busy }; vm.openLiveChart()
         assertEquals(sections, vm.liveChart!!.psychLayout)
+        assertEquals(120.5, vm.liveChart!!.bpm, 0.0)
         vm.undoLiveChartEdit(); assertEquals(4, vm.liveChart!!.psychLayout.size)
         vm.redoLiveChartEdit(); assertEquals(sections, vm.liveChart!!.psychLayout)
         assertEquals(hard, vm.config.getChart("test", "hard"))
@@ -180,7 +182,8 @@ class ModZipConfirmationTest {
             val roundTrip = vm.liveChart!!
             assertEquals(editedNotes.sortedBy { it.timeMs }, roundTrip.notes.sortedBy { it.timeMs })
             assertEquals(original.psychEventsJson, roundTrip.psychEventsJson)
-            assertEquals(240.0, roundTrip.psychLayout[1].bpm, 0.0)
+            assertEquals(240.5, roundTrip.psychLayout[1].bpm, 0.0)
+            assertEquals(120.5, roundTrip.bpm, 0.0)
             assertEquals(2.5, roundTrip.psychLayout[1].beats, 0.0)
             assertEquals(10, com.google.gson.JsonParser.parseString(roundTrip.psychLayout[1].sourceJson).asJsonObject.get("lengthInSteps").asInt)
             assertTrue(roundTrip.psychLayout[1].mustHit && roundTrip.psychLayout[1].gfSection)

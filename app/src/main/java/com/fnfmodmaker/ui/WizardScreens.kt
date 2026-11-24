@@ -263,8 +263,8 @@ private fun WizardSongsStep(vm: WizardViewModel) {
     Spacer(Modifier.height(10.dp))
     Field("Artista", song.artist, vm::setActiveSongArtist, hint = "Opcional", enabled = !vm.busy)
     Spacer(Modifier.height(10.dp))
-    Field("BPM", song.bpm, vm::setActiveSongBpm, hint = "Pulsos por minuto; de 1 a 400.",
-        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number, enabled = !vm.busy)
+    Field("BPM", song.bpm, vm::setActiveSongBpm, hint = "Pulsos por minuto; de 1 a 400, admite decimales.",
+        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal, enabled = !vm.busy)
     SectionTitle("Dificultades")
     var removeDifficulty by remember(vm.activeSongIndex) { mutableStateOf<String?>(null) }
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

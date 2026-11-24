@@ -171,7 +171,7 @@ private fun LiveSetup(vm: WizardViewModel) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         RecordingSnap.entries.forEach { snap -> FilterChip(vm.liveSnap == snap, { vm.selectLiveSnap(snap) }, enabled = !locked, label = { Text(snap.label) }) }
     }
-    Text(if (vm.config.engine.includesVSlice) "Libre guarda el momento exacto. El ajuste sigue el mapa de tempo V-Slice." else "Libre guarda el momento exacto. El ajuste sigue los cambios BPM de las secciones Psych.", style = MaterialTheme.typography.labelSmall)
+    Text(when { vm.config.engine == com.fnfmodmaker.model.TargetEngine.BOTH -> "Libre guarda el momento exacto. En BOTH, el ajuste de grabación y cuadrícula sigue V-Slice; el mapa Psych se edita y exporta por separado."; vm.config.engine.includesVSlice -> "Libre guarda el momento exacto. El ajuste sigue el mapa de tempo V-Slice."; else -> "Libre guarda el momento exacto. El ajuste sigue los cambios BPM de las secciones Psych." }, style = MaterialTheme.typography.labelSmall)
     Text("Corrección de toque: ${if (vm.liveCorrectionMs > 0) "+" else ""}${vm.liveCorrectionMs} ms", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = { vm.setLiveCorrection(vm.liveCorrectionMs - 10) }, enabled = !locked) { Text("−10 ms") }

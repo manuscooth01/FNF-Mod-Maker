@@ -75,7 +75,10 @@ internal fun psychSectionsToJson(chart: ChartDraft): String {
     chart.psychLayout.forEachIndexed { index, section ->
         val obj = psychObject(section.sourceJson, "sección Psych")
         val oldBeats = obj.get("sectionBeats")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }?.asDouble ?: 4.0
-        if (obj.has("lengthInSteps") && oldBeats != section.beats) obj.addProperty("lengthInSteps", floor(section.beats * 4 + 0.5).toInt())
+        if (obj.has("lengthInSteps") && oldBeats != section.beats) {
+            require(section.beats * 4.0 % 1.0 == 0.0) { "La duración no tiene un lengthInSteps entero equivalente; no se sobrescribió la propiedad original." }
+            obj.addProperty("lengthInSteps", (section.beats * 4.0).toInt())
+        }
         if (!obj.has("sectionBeats") || oldBeats != section.beats) obj.addProperty("sectionBeats", section.beats)
         obj.addProperty("mustHitSection", section.mustHit)
         obj.addProperty("altAnim", section.altAnim)

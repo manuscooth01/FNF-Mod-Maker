@@ -70,7 +70,7 @@ fun stageLayoutProblems(stage: StageDraft, engine: TargetEngine): List<String> =
     fun check(layout: StageLayout, name: String, psych: Boolean) {
         StageRole.entries.forEach { role ->
             val actor = layout.actor(role)
-            if (listOf(actor.x, actor.y, actor.cameraX, actor.cameraY, actor.scale, actor.scrollX, actor.scrollY).any { !it.isFinite() } || actor.scale <= 0f || actor.scale > 100f || listOf(actor.x, actor.y, actor.cameraX, actor.cameraY).any { kotlin.math.abs(it) > 100000f })
+            if (listOf(actor.x, actor.y, actor.cameraX, actor.cameraY, actor.scale, actor.scrollX, actor.scrollY).any { !it.isFinite() } || actor.scale <= 0f || actor.scale > 100f || actor.zIndex !in -1000000..1000000 || listOf(actor.x, actor.y, actor.cameraX, actor.cameraY).any { kotlin.math.abs(it) > 100000f })
                 add("$name · ${role.label}: posición, cámara o escala inválida.")
             if (psych && (actor.scale != 1f || actor.zIndex != 0 || actor.scrollX != 1f || actor.scrollY != 1f))
                 add("Psych · ${role.label}: escala, Z y scroll de personaje no se representan en el JSON de escenario.")

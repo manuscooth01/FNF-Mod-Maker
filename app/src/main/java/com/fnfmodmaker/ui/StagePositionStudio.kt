@@ -3,6 +3,7 @@ package com.fnfmodmaker.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -44,6 +45,16 @@ internal fun StagePositionStudio(vm: WizardViewModel) {
     val colors = listOf(Color(0xFF54C8F4), Color(0xFFFF7588), Color(0xFFE0A3F5))
     Canvas(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF171322))
         .pointerInput(camera, vSlice, vm.busy) {
+            if (!vm.busy) detectTapGestures { point ->
+                val current = if (vSlice) vm.config.stageDraft.vSliceLayout else vm.config.stageDraft.psychLayout
+                StageRole.entries.minByOrNull { r ->
+                    val p = current.actor(r)
+                    val x = ((p.x + if (camera) p.cameraX else 0f) + 600f) / 2000f * size.width
+                    val y = ((p.y + if (camera) p.cameraY else 0f) + 200f) / 1200f * size.height
+                    (x - point.x) * (x - point.x) + (y - point.y) * (y - point.y)
+                }?.let { role = it }
+            }
+        }.pointerInput(camera, vSlice, vm.busy) {
             if (!vm.busy) detectDragGestures(onDragStart = { point ->
                 val currentLayout = if (vSlice) vm.config.stageDraft.vSliceLayout else vm.config.stageDraft.psychLayout
                 val nearest = StageRole.entries.minByOrNull { r ->
@@ -97,4 +108,9 @@ private fun StudioNumber(label: String, value: Float, onChange: (Float) -> Unit)
         text = input.take(16)
         input.toFloatOrNull()?.takeIf { it.isFinite() }?.let(onChange)
     }, keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+    val step = if (label.contains("Escala") || label.contains("Scroll") || label.contains("Velocidad")) .1f else 10f
+    Row {
+        TextButton(onClick = { onChange(value - step) }) { Text("− $step") }
+        TextButton(onClick = { onChange(value + step) }) { Text("+ $step") }
+    }
 }

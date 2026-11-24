@@ -240,10 +240,10 @@ object ProjectProposalPlanner {
                     if (previous == null && diff in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet())) fail("el chart original contiene datos no editables; elimina y vuelve a añadir la dificultad para descartarlos conscientemente")
                     if (previous != null && previous.notes.size > 1000) fail("el chart existente tiene demasiadas notas para revisarlo en este lote")
                     if (previous != null && (previous.events.isNotEmpty() || previous.sections.isNotEmpty())) fail("el chart contiene eventos o secciones que no se pueden preservar")
-                    val chart = ChartDraft(songFolder = song.songFolder, difficulty = diff, notes = notes, bpm = song.bpmValue,
+                    val chart = previous?.copy(notes = notes) ?: ChartDraft(songFolder = song.songFolder, difficulty = diff, notes = notes, bpm = song.bpmValue,
                         scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
-                        player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych,
-                        psychEventsJson = previous?.psychEventsJson.orEmpty())
+                        player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych)
+                    if (chart.psychLayout.isNotEmpty()) try { chart.copy(bpm = song.bpmValue).toPsychJson() } catch (e: Exception) { fail("las notas no caben en las secciones Psych conservadas: ${e.message}") }
                     val history = current.chartHistories[song.songFolder]?.get(diff) ?: ChartPersistentHistory()
                     val recorded = recordChartHistory(history, previous, chart)
                     current = current.withChart(song.songFolder, diff, chart).copy(chartHistories = current.chartHistories +
@@ -255,7 +255,7 @@ object ProjectProposalPlanner {
                 }
                 "psych_events" -> {
                     keys(change, setOf("type", "songIndex", "difficulty", "eventsJson"))
-                    if (current.engine != TargetEngine.PSYCH) fail("los eventos Psych no se traducen automáticamente a V-Slice")
+                    if (!current.engine.includesPsych) fail("los eventos Psych requieren un destino Psych")
                     val (index, song) = song(current, change)
                     val diff = requiredString(change, "difficulty", 32).lowercase()
                     val previous = current.getChart(song.songFolder, diff) ?: fail("crea primero el chart de esa dificultad")

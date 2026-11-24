@@ -139,9 +139,11 @@ class ModZipConfirmationTest {
         val spans = com.fnfmodmaker.model.psychSectionSpans(original.psychLayout, 120)
         assertEquals(2000.0, spans[1].startMs, 0.0001)
         assertEquals(3000.0, spans[2].startMs, 0.0001)
-        val sections = original.psychLayout.toMutableList().apply { this[1] = this[1].copy(beats = 3.0, bpm = 240.0, mustHit = true, altAnim = false) }
-        vm.saveLivePsychSections(sections)
-        assertEquals(original.notes, vm.liveChart!!.notes)
+        val sections = original.psychLayout.toMutableList().apply { this[1] = this[1].copy(beats = 2.5, bpm = 240.0, mustHit = true, altAnim = false) }
+        val editedNotes = original.notes.toMutableList().apply { this[1] = this[1].copy(timeMs = 2300, lengthMs = 400, kind = "Hurt Note") }
+        vm.saveLivePsychSections(sections, editedNotes)
+        assertEquals(editedNotes, vm.liveChart!!.notes)
+        assertEquals(original.notes[0], vm.liveChart!!.notes[0])
         assertEquals(hard, vm.config.getChart("test", "hard"))
         vm.closeLiveChart(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
         vm.openLiveChart(); assertEquals(sections, vm.liveChart!!.psychLayout)
@@ -172,9 +174,11 @@ class ModZipConfirmationTest {
             vm.confirmModZipImport(); await { !vm.busy }; assertNull(vm.modZipImportError)
             vm.openLiveChart()
             val roundTrip = vm.liveChart!!
-            assertEquals(original.notes.sortedBy { it.timeMs }, roundTrip.notes.sortedBy { it.timeMs })
+            assertEquals(editedNotes.sortedBy { it.timeMs }, roundTrip.notes.sortedBy { it.timeMs })
             assertEquals(original.psychEventsJson, roundTrip.psychEventsJson)
             assertEquals(240.0, roundTrip.psychLayout[1].bpm, 0.0)
+            assertEquals(2.5, roundTrip.psychLayout[1].beats, 0.0)
+            assertEquals(10, com.google.gson.JsonParser.parseString(roundTrip.psychLayout[1].sourceJson).asJsonObject.get("lengthInSteps").asInt)
             assertTrue(roundTrip.psychLayout[1].mustHit && roundTrip.psychLayout[1].gfSection)
             assertTrue(roundTrip.psychLayout[0].sourceJson.contains("customSection"))
             assertTrue(roundTrip.psychSongExtras.contains("123456789012345678901234567890"))
@@ -295,6 +299,7 @@ class ModZipConfirmationTest {
         val chartBefore = com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceChart(vm.config, song, 0))
         val changed = vm.liveChart!!.psychLayout + com.fnfmodmaker.model.PsychSectionData(beats = 3.0, bpm = 240.0, changeBpm = true, gfSection = true)
         vm.saveLivePsychSections(changed)
+        vm.saveLivePsychEvents("""[[123,[["Hey!","1",""]]]]""")
         assertEquals(tempo, vm.liveVSliceTempo())
         assertEquals(metaBefore, com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceMetadata(vm.liveSong!!, 0)))
         assertEquals(chartBefore, com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceChart(vm.config, vm.liveSong!!, 0)))
@@ -305,6 +310,7 @@ class ModZipConfirmationTest {
         java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
         val psych = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/shared/shared.json").toString(Charsets.UTF_8)).asJsonObject
         assertEquals(240.0, psych.getAsJsonArray("notes")[1].asJsonObject.get("bpm").asDouble, 0.0)
+        assertEquals("""[[123,[["Hey!","1",""]]]]""", psych.get("events").toString())
         val metadata = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/songs/shared/shared-metadata.json").toString(Charsets.UTF_8)).asJsonObject
         assertEquals(com.google.gson.JsonParser.parseString(tempo), metadata.get("timeChanges"))
     }

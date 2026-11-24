@@ -548,7 +548,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     internal fun livePsychEvents(): String = liveChart?.psychEventsJson?.ifBlank { "[]" } ?: "[]"
     internal fun saveLivePsychEvents(text: String) {
-        check(config.engine == TargetEngine.PSYCH && !livePlaying && !liveLoading && !busy && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
+        check(config.engine.includesPsych && !livePlaying && !liveLoading && !busy && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
         val chart = liveChart ?: error("Crea primero un chart para esta dificultad; así no se sustituyen las notas de práctica.")
         val edited = com.fnfmodmaker.mod.validatePsychEvents(text).let { if (it == "[]") "" else it }
         if (chart.psychEventsJson == edited) return

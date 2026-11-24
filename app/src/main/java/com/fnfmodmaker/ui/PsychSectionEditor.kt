@@ -29,7 +29,10 @@ internal fun PsychSectionEditor(vm: WizardViewModel) {
     var error by remember { mutableStateOf<String?>(null) }
     val enabled = !vm.busy && !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable
     TextButton(onClick = {
-        if (vm.liveChart == null) confirmCreate = true else { selected = 0; error = null; open = true }
+        if (vm.liveChart == null) confirmCreate = true else runCatching {
+            val song = vm.liveSong ?: error("Selecciona una canción.")
+            psychSectionSpans(materializePsychLayout(vm.liveChart!!, song.bpmValue), song.bpmValue)
+        }.onSuccess { selected = 0; error = null; open = true }.onFailure { error = it.message ?: "No se pueden abrir las secciones." }
     }, enabled = enabled) { Text("Secciones Psych") }
     if (confirmCreate) AlertDialog(onDismissRequest = { confirmCreate = false }, title = { Text("Crear chart Psych") },
         text = { Text("Se creará un chart vacío para esta dificultad. Si había notas de práctica automáticas, dejarán de generarse para ella. Puedes deshacer la creación.") },

@@ -52,7 +52,18 @@ class ProjectProposalTest {
         assertEquals(existing.notes, afterUndoNotes.chart!!.notes)
         val afterUndoEvents = restoreChartHistory(afterUndoNotes.history, afterUndoNotes.chart, false)!!
         assertEquals(existing, afterUndoEvents.chart)
-        assertTrue(runCatching { ProjectProposalPlanner.plan(original.copy(engine = TargetEngine.BOTH), args) }.isFailure)
+        val both = ProjectProposalPlanner.plan(original.copy(engine = TargetEngine.BOTH), args).result
+        assertEquals(changed.psychEventsJson, both.getChart("first", "normal")!!.psychEventsJson)
+    }
+
+    @Test fun aiNoteReplacementPreservesPsychSectionsAndRejectsUncoveredTimes() {
+        val layout = listOf(PsychSectionData(beats = 4.0, bpm = 150.0, sourceJson = """{"unknown":{"keep":true}}"""))
+        val old = ChartDraft(songFolder = "first", notes = listOf(ChartNote(10, 1)), psychLayout = layout, psychSongExtras = """{"custom":true}""", scrollSpeed = 1.5f)
+        val config = base.withChart("first", "normal", old)
+        val args = """{"summary":"x","changes":[{"type":"chart","songIndex":0,"difficulty":"normal","notes":[{"timeMs":300,"lane":2}]}]}"""
+        val result = ProjectProposalPlanner.plan(config, args).result.getChart("first", "normal")!!
+        assertEquals(layout, result.psychLayout); assertEquals(old.psychSongExtras, result.psychSongExtras); assertEquals(1.5f, result.scrollSpeed, 0f)
+        assertTrue(runCatching { ProjectProposalPlanner.plan(config, args.replace("300", "5000")) }.isFailure)
     }
 
     @Test fun rejectsInvalidBatchWithoutPartialMutation() {

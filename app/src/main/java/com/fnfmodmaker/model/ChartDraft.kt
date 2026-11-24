@@ -175,7 +175,7 @@ data class ChartDraft(
     /** Convierte a JSON V-Slice (esquema 2.0.0). */
     fun toVSliceJson(): String {
         requireExportable()
-        require(psychEventsJson.isBlank() || psychEventsJson == "[]") { "Los eventos Psych no se traducen automáticamente a V-Slice." }
+        require(psychLayout.isEmpty() && psychSongExtras.isBlank() && (psychEventsJson.isBlank() || psychEventsJson == "[]")) { "Los datos Psych no se traducen automáticamente a V-Slice." }
         val scrollSpeed = JSONObject().put(difficulty, scrollSpeed)
         val notesJson = JSONObject()
         val notesArray = JSONArray()
@@ -201,9 +201,9 @@ data class ChartDraft(
     }
 
     /** Convierte solo las notas a JSONArray para V-Slice (una dificultad). */
-    fun toVSliceNotes(): JSONArray {
+    fun toVSliceNotes(preservePsychSeparately: Boolean = false): JSONArray {
         requireExportable()
-        require(psychEventsJson.isBlank() || psychEventsJson == "[]") { "Los eventos Psych no se traducen automáticamente a V-Slice." }
+        require(preservePsychSeparately || (psychLayout.isEmpty() && psychSongExtras.isBlank() && (psychEventsJson.isBlank() || psychEventsJson == "[]"))) { "Los datos Psych no se traducen automáticamente a V-Slice." }
         val notesArray = JSONArray()
         for (note in notes) {
             val data = note.lane

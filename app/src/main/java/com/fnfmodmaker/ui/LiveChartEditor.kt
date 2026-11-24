@@ -223,10 +223,9 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
     val chart = vm.liveChart
     Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.liveDifficulty in (vm.liveSong?.vSliceOrigin?.uneditableDifficulties ?: emptySet())) "Chart original conservado sin edición." else if (vm.config.importedModResources.isNotEmpty()) "Sin chart personalizado: esta dificultad no se exportará hasta crear un chart." else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
     val eventTimes = remember(vm.config, vm.liveSongIndex, vm.liveDifficulty) {
-        runCatching {
-            if (vm.config.engine.includesVSlice) com.google.gson.JsonParser.parseString(vm.liveVSliceEvents()).asJsonArray.map { it.asJsonObject.get("t").asDouble }
-            else com.fnfmodmaker.mod.psychEventRefs(vm.livePsychEvents()).map { it.time.toDouble() }
-        }.getOrDefault(emptyList())
+        val vslice = if (vm.config.engine.includesVSlice) runCatching { com.google.gson.JsonParser.parseString(vm.liveVSliceEvents()).asJsonArray.map { it.asJsonObject.get("t").asDouble } }.getOrDefault(emptyList()) else emptyList()
+        val psych = if (vm.config.engine.includesPsych) runCatching { com.fnfmodmaker.mod.psychEventRefs(vm.livePsychEvents()).map { it.time.toDouble() } }.getOrDefault(emptyList()) else emptyList()
+        vslice + psych
     }
     val tempoTimes = remember(vm.config, vm.liveSongIndex) {
         if (vm.config.engine.includesVSlice)
@@ -253,7 +252,7 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         VSliceVisualEvents(vm)
         VSliceEventsEditor(vm)
     }
-    if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) {
+    if (vm.config.engine.includesPsych) {
         PsychVisualEvents(vm)
         PsychEventsEditor(vm)
     }

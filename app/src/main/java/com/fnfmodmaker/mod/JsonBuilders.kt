@@ -81,7 +81,7 @@ object JsonBuilders {
             scrollSpeed.put(difficulty, song.speedValue)
             val customChart = config.getChart(song.songFolder, difficulty)
             notes.put(difficulty, if (customChart != null) {
-                customChart.toVSliceNotes()
+                customChart.toVSliceNotes(preservePsychSeparately = config.engine.includesPsych)
             } else {
                 vsliceNotes(song, durationMs)
             })

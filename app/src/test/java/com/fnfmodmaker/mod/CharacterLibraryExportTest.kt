@@ -43,7 +43,7 @@ class CharacterLibraryExportTest {
         assertFalse(files.containsKey("characters/unused.json"))
         val meta = JSONObject(files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8)).getJSONObject("playData").getJSONObject("characters")
         assertEquals("hero", meta.getString("player")); assertEquals("rival", meta.getString("opponent")); assertEquals("hero", meta.getString("girlfriend"))
-        val psych = JSONObject(files.getValue("data/test/test.json").toString(Charsets.UTF_8)).getJSONObject("song")
+        val psych = JSONObject(files.getValue("data/test/test.json").toString(Charsets.UTF_8))
         assertEquals("hero", psych.getString("player1")); assertEquals("rival", psych.getString("player2")); assertEquals("hero", psych.getString("gfVersion"))
     }
 }

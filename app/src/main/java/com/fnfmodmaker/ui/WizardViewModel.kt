@@ -2115,10 +2115,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal var characterJsonPreview by mutableStateOf<com.fnfmodmaker.model.CharacterJsonPreview?>(null)
         private set
     private var characterJsonBase: CharacterDraft? = null
+    private var characterJsonBaseId: String? = null
     internal fun previewCharacterJson(uri: Uri) {
         if (busy) return
-        val base = config.character; val app = getApplication<Application>()
-        characterJsonPreview = null; characterJsonBase = null; error = null; busy = true; status = "Leyendo JSON del personaje…"
+        val base = config.character; val baseId = config.selectedCharacterId; val app = getApplication<Application>()
+        characterJsonPreview = null; characterJsonBase = null; characterJsonBaseId = null; error = null; busy = true; status = "Leyendo JSON del personaje…"
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching {
                 val bytes = java.io.ByteArrayOutputStream()
@@ -2131,15 +2132,15 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 com.fnfmodmaker.model.parseCharacterJson(bytes.toString("UTF-8"), MediaTools.displayName(app, uri), base.side)
             } }
-            result.onSuccess { characterJsonBase = base; characterJsonPreview = it }
+            result.onSuccess { characterJsonBase = base; characterJsonBaseId = baseId; characterJsonPreview = it }
                 .onFailure { error = "No se pudo leer el personaje: ${it.message}" }
             status = ""; busy = false
         }
     }
-    internal fun cancelCharacterJson() { characterJsonPreview = null; characterJsonBase = null }
+    internal fun cancelCharacterJson() { characterJsonPreview = null; characterJsonBase = null; characterJsonBaseId = null }
     internal fun applyCharacterJson() {
         val preview = characterJsonPreview ?: return
-        if (busy || config.character != characterJsonBase) { error = "El personaje cambió; vuelve a elegir el JSON."; cancelCharacterJson(); return }
+        if (busy || config.selectedCharacterId != characterJsonBaseId || config.character != characterJsonBase) { error = "El personaje cambió; vuelve a elegir el JSON."; cancelCharacterJson(); return }
         updateCharacter { com.fnfmodmaker.model.applyCharacterJson(it, preview) }
         warnings = preview.warnings; cancelCharacterJson(); forceAutoSave()
     }

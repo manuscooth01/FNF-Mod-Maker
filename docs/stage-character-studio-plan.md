@@ -9,7 +9,7 @@
 
 ## Pendiente antes de considerar terminado el estudio
 
-1. Migración versionada y biblioteca de varios `CharacterDraft` independientes; selección, asignación a cada rol, duplicación y exportación sin colisiones. `CharacterVariation` sigue siendo una variación, no un personaje independiente.
+1. Conversión editable de múltiples personajes desde ZIP importados, ampliando los adaptadores con preservación comprobada de los originales.
 2. Edición de objetos estáticos y animados con recursos, jerarquía y adaptadores seguros; los datos de `StageSprite` existentes siguen preservados y bloquean exportaciones con pérdida.
 3. Renderizado real de los personajes y elementos, escalado y gestos, enfoque y zoom; disposición adaptable con dos paneles en tabletas.
 4. Cámara global, límites y seguimiento solo cuando exista una implementación comprobada para el motor elegido; personajes adicionales con adaptador específico o bloqueo explícito.

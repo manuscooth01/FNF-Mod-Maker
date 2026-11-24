@@ -142,6 +142,25 @@ class ModZipConfirmationTest {
         assertEquals("Hero editado", character.getString("name")); assertEquals("kept", character.getString("unknown"))
         assertTrue(prefix + "images/characters/Hero_Day.png" in files)
     }
+    @Test fun libraryEditsAndRolesSurviveProjectSwitching() {
+        val original = vm.currentProjectId!!
+        vm.setCharacterEnabled(true); vm.setCharId("hero"); vm.setCharName("Hero")
+        val hero = vm.config.selectedCharacterId
+        vm.createLibraryCharacter(); val rival = vm.config.selectedCharacterId
+        vm.setCharId("rival"); vm.setCharName("Rival")
+        vm.assignLibraryCharacter(com.fnfmodmaker.model.CharacterRole.PLAYER, hero)
+        vm.assignLibraryCharacter(com.fnfmodmaker.model.CharacterRole.OPPONENT, rival)
+        vm.assignLibraryCharacter(com.fnfmodmaker.model.CharacterRole.GIRLFRIEND, hero)
+        vm.selectLibraryCharacter(hero); vm.addCharacterVariation()
+        vm.switchProject(); await { !vm.busy }
+        vm.switchProject(original); await { !vm.busy }
+        assertEquals(listOf("hero", "rival"), vm.config.characterLibrary.map { it.draft.charFolder })
+        assertEquals("Hero", vm.config.characterLibrary.first().draft.displayName)
+        assertEquals(1, vm.config.characterLibrary.first().draft.variations.size)
+        assertEquals(hero, vm.config.resolvedAssignments().player)
+        assertEquals(rival, vm.config.resolvedAssignments().opponent)
+        assertEquals(hero, vm.config.resolvedAssignments().girlfriend)
+    }
     @Test fun publicationFailureShowsErrorRetainsReviewAndCanRetry() {
         val previous = vm.currentProjectId
         val previousConfig = vm.config

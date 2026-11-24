@@ -234,6 +234,18 @@ class VSliceImportCycleTest {
         assertTrue(File(built.rootDir, "data/characters/new-enemy.json").isFile)
     }
 
+    @Test fun explicitAssignmentCannotRewriteImportedMetadata() {
+        val store = ProjectStore(File(temp.root, "projects-roles"), temp.root)
+        val p = prepare(zip(), store)
+        val other = p.config.character.copy(charId = "other", importedVSliceCharacterId = "", importedSourceFormat = "", importedSourceJson = "")
+        val config = p.config.copy(characterLibrary = p.config.characterLibrary + CharacterEntry("other", other),
+            characterAssignments = CharacterAssignments(opponent = "other"))
+        assertEquals("other", config.effectiveExportConfig().firstSong.opponent)
+        assertTrue(validateWizard(config).any { it.message.contains("rival") && it.message.contains("hero") && it.message.contains("other") })
+        val error = assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(config, File(temp.root, "blocked-roles"), temp.root, {}, services()) }
+        assertTrue(error.message!!.contains("rival"))
+    }
+
     @Test fun eachChangedMetadataFieldIsReportedAndBlockedByWizardAndBuilder() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val p = prepare(zip(), store)

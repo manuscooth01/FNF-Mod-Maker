@@ -157,7 +157,8 @@ private fun CharacterIdentity(vm: WizardViewModel, draft: CharacterDraft, onPick
     if (vm.config.songs.any { it.vSliceOrigin != null }) Text(
         "Las canciones V-Slice importadas conservan sus personajes originales; cambiar el lado aquí no modifica su metadata.",
         style = MaterialTheme.typography.labelSmall)
-    SectionTitle("Lado en la canción")
+    SectionTitle("Referencia de cámara del personaje")
+    Text(if (vm.config.characterAssignments == null) "En proyectos antiguos, esta referencia también determina la asignación automática. Usa los selectores de la biblioteca para asignar roles explícitos." else "Esta referencia no cambia las asignaciones BF, DAD o GF de la biblioteca; Psych la usa para la dirección horizontal de cámara.", style = MaterialTheme.typography.labelSmall)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         CharacterSide.entries.forEach { side -> FilterChip(side == draft.side, { vm.setCharSide(side) }, enabled = !vm.busy, label = { Text(side.label) }) }
     }

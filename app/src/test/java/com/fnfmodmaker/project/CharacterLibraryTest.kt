@@ -54,6 +54,14 @@ class CharacterLibraryTest {
         assertTrue(characterLibraryProblems(invalid).any { it.contains("no existe") })
         assertThrows(IllegalArgumentException::class.java) { ProjectConfigValidator(gson).validate(gson.toJsonTree(invalid).asJsonObject) }
     }
+    @Test fun psychCameraMismatchIsBlockedButZeroCanBeReused() {
+        val entry = CharacterEntry("hero", CharacterDraft(enabled = true, charId = "hero", side = CharacterSide.PLAYER, cameraX = "10"))
+        val config = ModConfig(engine = TargetEngine.PSYCH, characterLibrary = listOf(entry), selectedCharacterId = "hero",
+            characterAssignments = CharacterAssignments(player = "hero", opponent = "hero"))
+        assertTrue(characterLibraryProblems(config) { true }.any { it.contains("invierte") })
+        val neutral = config.copy(characterLibrary = listOf(entry.copy(draft = entry.draft.copy(cameraX = "0"))))
+        assertFalse(characterLibraryProblems(neutral) { true }.any { it.contains("invierte") })
+    }
     @Test fun variationIdsCannotCollideWithAnotherCharacter() {
         val a = CharacterEntry("a", CharacterDraft(enabled = true, charId = "hero", variations = listOf(CharacterVariation(variationId = "night"))))
         val b = CharacterEntry("b", CharacterDraft(enabled = true, charId = "hero-night"))

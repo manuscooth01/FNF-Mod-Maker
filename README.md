@@ -493,7 +493,7 @@ migración. La duplicación hace copias independientes de los recursos disponibl
 falta alguno. El indicador de guardado y los errores aparecen en el asistente.
 
 Los proyectos permanecen en esta instalación de la app: desinstalarla o borrar sus datos puede
-eliminarlos. Ya se pueden crear copias portables `.fnfproject`; las copias ZIP de mods no se convierten en proyectos editables. Los formatos
+eliminarlos. Ya se pueden crear copias portables `.fnfproject`; existe una conversión inicial de un subconjunto de ZIP Psych. Los formatos
 V-Slice y Psych continúan necesitando pruebas reales en sus motores. No hay prueba en dispositivo
 para la migración ni garantía ante una interrupción forzada durante un guardado pendiente.
 
@@ -515,8 +515,8 @@ rutas peligrosas, duplicados, recursos faltantes o dañados y versiones no compa
 son 4096 entradas, 256 MiB por recurso y 1 GiB total y de paquete. La importación se prepara en un
 directorio temporal y se publica con un identificador nuevo tras la confirmación. Si falta un recurso
 antiguo de la caché, vuelve a elegirlo antes de exportar. La exportación de mods para el juego es
-una operación distinta: `.fnfproject` no es un mod instalable, y la importación de ZIP de mods
-externos como proyectos editables sigue pendiente.
+una operación distinta: `.fnfproject` no es un mod instalable. La importación editable Psych es
+limitada; consulta la sección V1.2 más abajo.
 
 ### Apariencia con imágenes propias (opcional)
 

@@ -1030,7 +1030,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     val context = kotlin.coroutines.coroutineContext
                     val source = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el archivo.")
                     ModZipInspector(File(app.cacheDir, "mod-zip-inspection")).withExtracted(source, { context.ensureActive() }) { root, names ->
-                        PsychModImporter(MediaTools::imageSize, { file -> MediaTools.readDurationMs(file.absolutePath) }).prepare(root, names, stage) { context.ensureActive() }
+                        PsychModImporter({ file -> if (MediaTools.isPng(file)) MediaTools.imageSize(file) else null }, { file -> MediaTools.readDurationMs(file.absolutePath) }).prepare(root, names, stage) { context.ensureActive() }
                     }
                 }
                 preparedPsych = prepared

@@ -36,8 +36,17 @@ class PsychImportCycleTest {
             "characters/dad.json" to """{"image":"characters/dad","animations":[{"anim":"idle","name":"idle","fps":24,"loop":false,"offsets":[0,0]}]}""",
             "images/characters/dad.png" to "fake-png-for-unit-test", "images/characters/dad.xml" to """<TextureAtlas imagePath="dad.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>""",
             "scripts/custom.lua" to "print('hello')", "unknown/config.json" to "{\"opaque\":true}")
+        val realFiles = mapOf(
+            "songs/test/Inst.ogg" to "/psych-fixture/Inst.ogg",
+            "songs/test/Voices.ogg" to "/psych-fixture/Voices.ogg",
+            "images/characters/dad.png" to "/psych-fixture/dad.png"
+        )
         val bytes = ByteArrayOutputStream()
-        ZipOutputStream(bytes).use { zip -> files.forEach { (path, contents) -> zip.putNextEntry(ZipEntry("wrapper/$path")); zip.write(contents.toByteArray()); zip.closeEntry() } }
+        ZipOutputStream(bytes).use { zip -> files.forEach { (path, contents) ->
+            zip.putNextEntry(ZipEntry("wrapper/$path"))
+            val bytesToWrite = realFiles[path]?.let { javaClass.getResourceAsStream(it)!!.use { source -> source.readBytes() } } ?: contents.toByteArray()
+            zip.write(bytesToWrite); zip.closeEntry()
+        } }
         return bytes.toByteArray()
     }
     @Test fun extractedPsychProjectCanBeSavedReopenedPackagedAndOpaqueAssetsSurvive() {
@@ -74,6 +83,9 @@ class PsychImportCycleTest {
         java.util.zip.ZipInputStream(zipped.toByteArray().inputStream()).use { zip -> while (true) { val e = zip.nextEntry ?: break; entries[e.name] = zip.readBytes() } }
         assertEquals("print('hello')", entries.getValue("scripts/custom.lua").toString(Charsets.UTF_8))
         assertEquals("{\"opaque\":true}", entries.getValue("unknown/config.json").toString(Charsets.UTF_8))
+        assertArrayEquals(javaClass.getResourceAsStream("/psych-fixture/Inst.ogg")!!.use { it.readBytes() }, entries.getValue("songs/test/Inst.ogg"))
+        assertArrayEquals(javaClass.getResourceAsStream("/psych-fixture/Voices.ogg")!!.use { it.readBytes() }, entries.getValue("songs/test/Voices.ogg"))
+        assertArrayEquals(javaClass.getResourceAsStream("/psych-fixture/dad.png")!!.use { it.readBytes() }, entries.getValue("images/characters/dad.png"))
         assertEquals(edited.notes, readPsychChart(entries.getValue("data/test/test.json").toString(Charsets.UTF_8), "test", "normal").notes)
     }
 }

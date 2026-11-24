@@ -128,6 +128,10 @@ class VSliceImportCycleTest {
         val disabled = p.config.copy(songs = listOf(p.config.firstSong.copy(difficulties = emptySet())))
         assertTrue(com.fnfmodmaker.mod.vSliceImportProblems(disabled.firstSong).isNotEmpty())
     }
+    @Test fun fractionalNotesThatBecomeAmbiguousAreKeptUneditable() {
+        val source = JSONObject("""{"notes":{"normal":[{"t":100.1,"d":0},{"t":100.2,"d":0}]}}""")
+        assertThrows(IllegalArgumentException::class.java) { readVSliceDifficulty(source, "test", "normal", 120, 1f) }
+    }
     @Test fun rejectsUnsupportedVersionsAndBothWithoutPublishing() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         assertThrows(IllegalArgumentException::class.java) { prepare(zip(meta = metadata.replace("2.2.4", "3.0.0")), store) }

@@ -28,6 +28,7 @@ internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty:
         require(v.isFinite() && v >= 0 && v <= 86_400_000) { "$difficulty: $key está fuera de rango." }
         return v
     }
+    val projected = mutableMapOf<ChartNote, Pair<Double, Double>>()
     val result = (0 until notes.length()).map { i ->
         val note = notes.optJSONObject(i) ?: error("$difficulty: nota $i inválida.")
         val allowed = setOf("t", "d", "l", "k", "p")
@@ -38,7 +39,11 @@ internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty:
         require(!note.has("k") || note.isNull("k") || note.optString("k") == "") { "$difficulty: contiene tipos de nota especiales." }
         val params = note.optJSONArray("p")
         require(!note.has("p") || note.isNull("p") || (params != null && params.length() == 0)) { "$difficulty: contiene parámetros de nota." }
-        ChartNote(time.roundToLong(), lane.toInt(), length.roundToLong())
+        val result = ChartNote(time.roundToLong(), lane.toInt(), length.roundToLong())
+        val exact = time to length
+        val prior = projected.putIfAbsent(result, exact)
+        require(prior == null || prior == exact) { "$difficulty: notas distintas coinciden al redondear; se conserva la dificultad original." }
+        result
     }
     return ChartDraft(songFolder = folder, difficulty = difficulty, notes = result, bpm = bpm, scrollSpeed = speed)
 }

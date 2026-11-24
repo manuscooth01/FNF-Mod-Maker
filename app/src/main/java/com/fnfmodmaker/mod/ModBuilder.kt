@@ -145,19 +145,19 @@ object ModBuilder {
             }
 
             if (config.importedModResources.none { it.originalPath.startsWith("data/levels/", true) && it.originalPath.endsWith(".json", true) }) {
-            // Una entrada por canción, todas comparten la imagen de título del mod.
-            for ((index, entry) in songEntries.withIndex()) {
-                val levelName = if (songEntries.size == 1) modFolder else "$modFolder-${index + 1}"
-                writeText(root, "data/levels/$levelName.json", JsonBuilders.vsliceLevel(
-                    entry.song, modFolder, config.modTitle, config.showInStoryMode
-                ))
-            }
+                // Una entrada por canción, todas comparten la imagen de título del mod.
+                for ((index, entry) in songEntries.withIndex()) {
+                    val levelName = if (songEntries.size == 1) modFolder else "$modFolder-${index + 1}"
+                    writeText(root, "data/levels/$levelName.json", JsonBuilders.vsliceLevel(
+                        entry.song, modFolder, config.modTitle, config.showInStoryMode
+                    ))
+                }
 
-            onProgress("Generando el título de la semana…")
-            val titleFile = File(root, "images/storymenu/titles/$modFolder.png")
-            if (!services.title(config.modTitle, config.weekColor, titleFile)) {
-                warnings.add("No se pudo generar la imagen del título de la semana.")
-            }
+                onProgress("Generando el título de la semana…")
+                val titleFile = File(root, "images/storymenu/titles/$modFolder.png")
+                if (!services.title(config.modTitle, config.weekColor, titleFile)) {
+                    warnings.add("No se pudo generar la imagen del título de la semana.")
+                }
             }
         }
 

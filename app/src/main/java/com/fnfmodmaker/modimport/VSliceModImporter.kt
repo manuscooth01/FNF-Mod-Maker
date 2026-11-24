@@ -44,6 +44,9 @@ internal class VSliceModImporter(
                 return readVSliceJson(file.readText(), path)
             }
             val polymod = if ("_polymod_meta.json" in index) json("_polymod_meta.json") else JSONObject()
+            for (field in listOf("title", "description")) {
+                require(!polymod.has(field) || polymod.isNull(field) || polymod.opt(field) is String) { "_polymod_meta.json: $field no es texto; no se puede modificar sin pérdida." }
+            }
             val title = polymod.optString("title", "").take(100).ifBlank { prefix.trimEnd('/').substringAfterLast('/').ifBlank { "Mod V-Slice importado" } }
             val converted = mutableSetOf<String>()
             if ("_polymod_meta.json" in index) converted.add("_polymod_meta.json")

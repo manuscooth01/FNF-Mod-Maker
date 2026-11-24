@@ -38,6 +38,9 @@ class ChartPersistentHistoryTest {
         assertEquals(PsychChartFormat.PSYCH_V1, config.psychChartFormat)
         assertNull(config.firstSong.vSliceEventsJson)
         assertTrue(config.firstSong.vSliceEventsUndo.isEmpty())
+        assertNull(config.firstSong.vSliceTempoJson)
+        assertTrue(config.firstSong.vSliceTempoUndo.isEmpty())
+        assertTrue(config.firstSong.vSliceTempoRedo.isEmpty())
     }
 
     @Test fun historiesAreSeparateAndBounded() {

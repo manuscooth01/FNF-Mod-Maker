@@ -61,6 +61,7 @@ object ModBuilder {
         val warnings = mutableListOf<String>()
         val importedVSlice = rawConfig.songs.any { it.vSliceOrigin != null } || rawConfig.importedModResources.any { it.originalPath.startsWith("data/songs/") && it.originalPath.endsWith("-metadata.json") }
         require(rawConfig.deletedImportedSongFolders.all { it.matches(Regex("[a-z0-9_-]{1,80}")) }) { "Origen de canción eliminada inválido." }
+        require(rawConfig.deletedImportedCharacterIds.all { it.matches(Regex("[A-Za-z0-9_-]{1,64}")) }) { "Origen de personaje eliminado inválido." }
         require(rawConfig.importedModResources.isEmpty() || rawConfig.engine == if (importedVSlice) com.fnfmodmaker.model.TargetEngine.VSLICE else com.fnfmodmaker.model.TargetEngine.PSYCH) {
             "Los proyectos importados solo se exportan para su motor original; BOTH aún no está soportado."
         }
@@ -109,15 +110,16 @@ object ModBuilder {
                 val path = "data/characters/${draft.charFolder}.json"
                 val generated = File(root, path)
                 require(generated.isFile) { "No se generó el personaje importado: $path" }
-                val original = originalVSliceText(config, path, appRoot, true)
+                val original = if (draft.importedVSliceCharacterId.isNotEmpty()) originalVSliceText(config, "data/characters/${draft.importedVSliceCharacterId}.json", appRoot, true) else draft.importedSourceJson
                 generated.writeText(patchVSliceCharacter(original, generated.readText(), draft.icon != null))
             }
             if (config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH && draft.importedSourceFormat == "Psych") {
                 val path = "characters/${draft.charFolder}.json"
-                if (config.importedModResources.any { it.converted && it.originalPath == path }) {
+                val originalPath = "characters/${draft.importedPsychCharacterId.ifEmpty { draft.charFolder }}.json"
+                if (config.importedModResources.any { it.converted && it.originalPath == originalPath }) {
                     val generated = File(root, path)
                     require(generated.isFile) { "No se generó el personaje importado: $path" }
-                    val original = originalVSliceText(config, path, appRoot, true)
+                    val original = originalVSliceText(config, originalPath, appRoot, true)
                     generated.writeText(patchPsychCharacter(original, generated.readText(), draft.icon != null))
                 }
             }
@@ -270,6 +272,16 @@ object ModBuilder {
         if (config.importedModResources.isNotEmpty()) {
             onProgress("Conservando recursos originales…")
             val omitted = mutableSetOf<String>()
+            val renamedCharacterSources = config.characterLibrary.mapNotNull { entry ->
+                val draft = entry.draft
+                val source = if (config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) draft.importedPsychCharacterId else draft.importedVSliceCharacterId
+                source.takeIf { it.isNotEmpty() && it != draft.charFolder }
+            }.toSet()
+            (config.deletedImportedCharacterIds + renamedCharacterSources).forEach { id ->
+                require(id.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "Origen de personaje inválido." }
+                val paths = setOf("data/characters/$id.json", "characters/$id.json", "images/characters/$id.png", "images/characters/$id.xml", "images/icons/icon-$id.png")
+                config.importedModResources.filter { it.converted && it.originalPath in paths }.forEach { omitted.add(it.originalPath) }
+            }
             config.deletedImportedSongFolders.forEach { folder ->
                 val data = if (config.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) "data/songs/$folder/" else "data/$folder/"
                 config.importedModResources.filter { it.originalPath.startsWith(data) || it.originalPath.startsWith("songs/$folder/") }

@@ -180,6 +180,30 @@ class VSliceImportCycleTest {
         assertEquals("{\"variation\":true}", text("data/songs/test/test-chart-remix.json"))
         for (p in listOf("songs/test/Inst.ogg", "songs/test/Voices-bf.ogg", "songs/test/Voices-hero.ogg", "songs/test/Voices-gf.ogg", "data/stages/custom.json", "data/levels/old.json")) assertTrue(p, p in files)
     }
+    @Test fun importedCharacterRenameAndRemovalUpdateZipAndKeepBackup() {
+        val store = ProjectStore(File(temp.root, "vs-character-rename"), temp.root)
+        val prepared = prepare(zip(), store)
+        val changed = renameImportedCharacter(prepared.config, prepared.config.selectedCharacterId, "metza")
+        assertEquals("metza", changed.firstSong.opponent)
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(changed).asJsonObject) { }
+        var reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        var built = ModBuilder.buildInternal(reopened, File(temp.root, "vs-character-renamed"), temp.root, {}, services())
+        assertTrue(File(built.rootDir, "data/characters/metza.json").isFile)
+        assertTrue(File(built.rootDir, "images/characters/metza.png").isFile)
+        assertFalse(File(built.rootDir, "data/characters/hero.json").exists())
+        assertFalse(File(built.rootDir, "images/characters/hero.xml").exists())
+        assertEquals("metza", JSONObject(File(built.rootDir, "data/songs/test/test-metadata.json").readText()).getJSONObject("playData").getJSONObject("characters").getString("opponent"))
+        assertEquals(123, JSONObject(File(built.rootDir, "data/characters/metza.json").readText()).getInt("unknownCharacter"))
+        reopened = removeLibraryCharacter(reopened, reopened.selectedCharacterId)
+        store.save(id, gson.toJsonTree(reopened).asJsonObject)
+        reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        built = ModBuilder.buildInternal(reopened, File(temp.root, "vs-character-removed"), temp.root, {}, services())
+        assertFalse(File(built.rootDir, "data/characters/hero.json").exists())
+        assertFalse(File(built.rootDir, "data/characters/metza.json").exists())
+        assertEquals("dad", JSONObject(File(built.rootDir, "data/songs/test/test-metadata.json").readText()).getJSONObject("playData").getJSONObject("characters").getString("opponent"))
+        assertTrue(File(reopened.importedModResources.single { it.originalPath == "data/characters/hero.json" }.asset!!.path).isFile)
+    }
+
     @Test fun renamedSongMovesVariationsAudioAndLevelReference() {
         val store = ProjectStore(File(temp.root, "rename-vslice"), temp.root)
         val prepared = prepare(zip(extra = mapOf("data/levels/old.json" to """{"songs":["test"],"unknown":true}""")), store)

@@ -148,12 +148,21 @@ private fun CharacterIdentity(vm: WizardViewModel, draft: CharacterDraft, onPick
     Text("Tu personaje", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Field("Nombre visible", draft.displayName, vm::setCharName, hint = "Opcional; ID de salida: ${draft.charFolder}", enabled = !vm.busy)
     Spacer(Modifier.height(8.dp))
-    Field("ID de archivo", draft.charId, vm::setCharId,
-        hint = if (draft.importedVSliceCharacterId.isNotEmpty()) "ID original V-Slice: no se puede cambiar sin modificar la metadata." else "Opcional. Se usa en los archivos exportados.",
-        enabled = !vm.busy && draft.importedVSliceCharacterId.isEmpty())
-    if (draft.importedVSliceCharacterId.isNotEmpty() && draft.charId != draft.importedVSliceCharacterId) {
-        TextButton(onClick = vm::restoreImportedCharId, enabled = !vm.busy) { Text("Restaurar ID original") }
-    }
+    val imported = draft.importedVSliceCharacterId.isNotEmpty() || draft.importedPsychCharacterId.isNotEmpty() ||
+        (draft.importedSourceFormat == "Psych" && vm.config.importedModResources.any { it.converted && it.originalPath == "characters/${draft.charFolder}.json" })
+    if (imported) {
+        var rename by remember(vm.config.selectedCharacterId) { mutableStateOf(false) }
+        var value by remember(vm.config.selectedCharacterId) { mutableStateOf("") }
+        Text("ID de archivo: ${draft.charFolder}")
+        OutlinedButton(onClick = { value = draft.charFolder.lowercase(); rename = true }, enabled = !vm.busy) { Text("Cambiar ID") }
+        if (rename) AlertDialog(onDismissRequest = { rename = false }, title = { Text("Cambiar ID del personaje") },
+            text = { Column {
+                Field("Nuevo ID", value, { value = it.lowercase().take(64) }, hint = "Se actualizarán las referencias de las canciones.")
+                vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            } },
+            confirmButton = { TextButton(onClick = { vm.setCharId(value); if (vm.error == null) rename = false }) { Text("Aplicar") } },
+            dismissButton = { TextButton(onClick = { rename = false }) { Text("Cancelar") } })
+    } else Field("ID de archivo", draft.charId, vm::setCharId, hint = "Opcional. Se usa en los archivos exportados.", enabled = !vm.busy)
     if (vm.config.songs.any { it.vSliceOrigin != null }) Text(
         "Las canciones V-Slice importadas conservan sus personajes originales; cambiar el lado aquí no modifica su metadata.",
         style = MaterialTheme.typography.labelSmall)

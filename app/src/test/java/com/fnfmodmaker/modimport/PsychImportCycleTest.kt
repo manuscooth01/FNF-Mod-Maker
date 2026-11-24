@@ -148,6 +148,37 @@ class PsychImportCycleTest {
         assertEquals(0, character.getJSONArray("animations").getJSONObject(0).getJSONArray("indices").getInt(0))
     }
 
+    @Test fun psychCharacterRenameAndRemovalReachChartAndZip() {
+        val store = ProjectStore(File(temp.root, "psych-character-rename"), temp.root)
+        val prepared = ModZipInspector(File(temp.root, "psych-character-cache")).withExtracted(fixture().inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, store.newImportStage())
+        }
+        val changed = renameImportedCharacter(prepared.config, prepared.config.selectedCharacterId, "metza")
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(changed).asJsonObject) { }
+        var reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val services = ModBuildServices(object : AudioEncoder {
+            override fun convert(input: File, output: File): String? = error("OGG")
+            override fun mix(first: File, second: File, output: File): String? = error("Una voz")
+        }, { root, cfg, _, _ ->
+            val c = cfg.character
+            File(root, "characters/${c.charFolder}.json").apply { parentFile.mkdirs(); writeText("""{"image":"characters/${c.charFolder}","scale":1,"animations":[{"anim":"idle","name":"idle","fps":24}]}""") }
+            File(root, "images/characters/${c.charFolder}.png").apply { parentFile.mkdirs(); File(c.atlasSheet!!.path).copyTo(this) }
+            File(root, "images/characters/${c.charFolder}.xml").apply { File(c.atlasXml!!.path).copyTo(this) }
+        }, { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        var built = ModBuilder.buildInternal(reopened, File(temp.root, "psych-character-renamed"), temp.root, {}, services)
+        assertTrue(File(built.rootDir, "characters/metza.json").isFile)
+        assertFalse(File(built.rootDir, "characters/dad.json").exists())
+        assertEquals("metza", org.json.JSONObject(File(built.rootDir, "data/test/test.json").readText()).getString("player2"))
+        reopened = removeLibraryCharacter(reopened, reopened.selectedCharacterId)
+        store.save(id, gson.toJsonTree(reopened).asJsonObject)
+        reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        built = ModBuilder.buildInternal(reopened, File(temp.root, "psych-character-removed"), temp.root, {}, services)
+        assertFalse(File(built.rootDir, "characters/dad.json").exists())
+        assertFalse(File(built.rootDir, "characters/metza.json").exists())
+        assertEquals("dad", org.json.JSONObject(File(built.rootDir, "data/test/test.json").readText()).getString("player2"))
+        assertTrue(File(reopened.importedModResources.single { it.originalPath == "characters/dad.json" }.asset!!.path).isFile)
+    }
+
     @Test fun psychRenameUpdatesChartAudioAndWeekReferences() {
         val store = ProjectStore(File(temp.root, "psych-rename"), temp.root)
         val prepared = ModZipInspector(File(temp.root, "psych-rename-cache")).withExtracted(fixture(withWeek = true).inputStream()) { dir, names ->

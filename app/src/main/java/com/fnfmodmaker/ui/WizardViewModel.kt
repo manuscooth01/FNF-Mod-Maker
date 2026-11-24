@@ -2107,11 +2107,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         activeVariationIndex = null; error = null; scheduleAutoSave()
     }
     internal fun removeLibraryCharacter(id: String) {
-        if (busy || config.characterLibrary.size <= 1 || config.characterLibrary.none { it.id == id }) return
-        val a = config.resolvedAssignments()
-        val rest = config.characterLibrary.filterNot { it.id == id }
-        config = config.copy(characterLibrary = rest, selectedCharacterId = if (config.selectedCharacterId == id) rest.first().id else config.selectedCharacterId,
-            characterAssignments = a.copy(player = a.player.takeUnless { it == id } ?: "", opponent = a.opponent.takeUnless { it == id } ?: "", girlfriend = a.girlfriend.takeUnless { it == id } ?: ""))
+        if (busy || config.characterLibrary.none { it.id == id }) return
+        config = com.fnfmodmaker.model.removeLibraryCharacter(config, id)
         activeVariationIndex = null; scheduleAutoSave()
     }
     internal fun assignLibraryCharacter(role: com.fnfmodmaker.model.CharacterRole, id: String) {
@@ -2166,13 +2163,20 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     internal fun setCharacterEnabled(enabled: Boolean) = updateCharacter { it.copy(enabled = enabled) }
 
-    internal fun setCharId(value: String) = updateCharacter {
-        if (it.importedVSliceCharacterId.isNotEmpty()) return@updateCharacter it
-        it.copy(charId = value.lowercase().filter { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' || c == '_' }.take(64))
+    internal fun setCharId(value: String) {
+        if (busy) return
+        val draft = config.character
+        if (draft.importedVSliceCharacterId.isNotEmpty() || draft.importedPsychCharacterId.isNotEmpty() ||
+            (draft.importedSourceFormat == "Psych" && config.importedModResources.any { it.converted && it.originalPath == "characters/${draft.charFolder}.json" })) {
+            runCatching { com.fnfmodmaker.model.renameImportedCharacter(config, config.selectedCharacterId, value.lowercase()) }
+                .onSuccess { config = it; error = null; scheduleAutoSave() }
+                .onFailure { error = it.message ?: "No se pudo cambiar el ID." }
+        } else updateCharacter { it.copy(charId = value.lowercase().filter { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' || c == '_' }.take(64)) }
     }
 
-    internal fun restoreImportedCharId() = updateCharacter {
-        if (it.importedVSliceCharacterId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) it.copy(charId = it.importedVSliceCharacterId) else it
+    internal fun restoreImportedCharId() {
+        val original = config.character.importedVSliceCharacterId.ifEmpty { config.character.importedPsychCharacterId }
+        if (original.matches(Regex("[a-z0-9][a-z0-9_-]{0,63}"))) setCharId(original)
     }
 
     internal fun setCharName(value: String) = updateCharacter { it.copy(displayName = value) }

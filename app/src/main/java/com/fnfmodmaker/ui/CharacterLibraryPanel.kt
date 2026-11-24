@@ -24,7 +24,7 @@ internal fun CharacterLibraryPanel(vm: WizardViewModel) {
                     Text(entry.draft.displayName.ifBlank { "Sin nombre" }, fontWeight = FontWeight.SemiBold)
                     Text("Archivo: ${entry.draft.charFolder}", style = MaterialTheme.typography.labelSmall)
                     TextButton(onClick = { vm.selectLibraryCharacter(entry.id) }, enabled = !vm.busy && entry.id != config.selectedCharacterId) { Text(if (entry.id == config.selectedCharacterId) "Seleccionado" else "Editar") }
-                    if (config.characterLibrary.size > 1) TextButton(onClick = { removeId = entry.id }, enabled = !vm.busy) { Text("Eliminar") }
+                    if (entry.draft.enabled || config.characterLibrary.size > 1) TextButton(onClick = { removeId = entry.id }, enabled = !vm.busy) { Text("Eliminar") }
                 }
             }
         }
@@ -33,7 +33,7 @@ internal fun CharacterLibraryPanel(vm: WizardViewModel) {
         OutlinedButton(onClick = { vm.createLibraryCharacter() }, enabled = !vm.busy && config.characterLibrary.size < 64) { Text("Crear personaje") }
         TextButton(onClick = { vm.createLibraryCharacter(duplicate = true) }, enabled = !vm.busy && config.characterLibrary.size < 64) { Text("Duplicar seleccionado") }
     }
-    Text("Asigna por ID estable; una selección puede ocupar varios roles. El personaje sin asignar queda guardado, pero no se exporta.", style = MaterialTheme.typography.bodySmall)
+    Text("Asigna por ID estable; una selección puede ocupar varios roles. Los personajes importados compatibles también se exportan sin una asignación global.", style = MaterialTheme.typography.bodySmall)
     if (config.songs.any { it.vSliceOrigin != null }) Text("Las asignaciones actualizan los personajes de la metadata exportada; los originales se conservan en el proyecto.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
     val assignment = config.resolvedAssignments()
     CharacterRole.entries.forEach { role ->
@@ -47,7 +47,7 @@ internal fun CharacterLibraryPanel(vm: WizardViewModel) {
         }
     }
     removeId?.let { id -> AlertDialog(onDismissRequest = { removeId = null }, title = { Text("¿Eliminar personaje?") },
-        text = { Text("Se quitará de la biblioteca y de sus asignaciones. Los recursos originales del mod importado se conservan.") },
+        text = { Text("Se quitará de la biblioteca y de sus asignaciones; las referencias directas volverán a BF, DAD o GF. Sus originales importados se conservan en el proyecto, pero se omiten del ZIP.") },
         confirmButton = { TextButton(onClick = { vm.removeLibraryCharacter(id); removeId = null }) { Text("Eliminar") } },
         dismissButton = { TextButton(onClick = { removeId = null }) { Text("Cancelar") } }) }
 }

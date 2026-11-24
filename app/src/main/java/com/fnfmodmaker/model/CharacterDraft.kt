@@ -210,12 +210,13 @@ data class CharacterDraft(
     val importedSourceJson: String = "",
     val importedSourceFormat: String = "",
     // Exact identifier of an editable character imported as part of a V-Slice mod.
-    val importedVSliceCharacterId: String = ""
+    val importedVSliceCharacterId: String = "",
+    val importedPsychCharacterId: String = ""
 ) {
     /** Carpeta/ID del personaje (minúsculas y guiones). */
     val charFolder: String
         get() {
-            if (importedVSliceCharacterId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return importedVSliceCharacterId
+            if ((importedVSliceCharacterId.isNotEmpty() || importedPsychCharacterId.isNotEmpty()) && charId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return charId
             val fromId = slugify(charId)
             if (fromId.isNotEmpty()) return fromId
             val fromName = slugify(displayName)

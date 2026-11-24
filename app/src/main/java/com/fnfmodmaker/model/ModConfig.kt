@@ -152,7 +152,8 @@ data class ModConfig(
     val psychScripts: Map<String, String> = emptyMap(),
     val importedModResources: List<ImportedModResource> = emptyList(),
     // Source song folders explicitly removed from this editable project; originals stay in assets.
-    val deletedImportedSongFolders: Set<String> = emptySet()
+    val deletedImportedSongFolders: Set<String> = emptySet(),
+    val deletedImportedCharacterIds: Set<String> = emptySet()
 ) {
     val character: CharacterDraft get() = characterLibrary.firstOrNull { it.id == selectedCharacterId }?.draft
         ?: characterLibrary.firstOrNull()?.draft ?: CharacterDraft()
@@ -174,7 +175,7 @@ data class ModConfig(
         // Imported independent characters remain editable and exportable even when not assigned globally.
         val imported = characterLibrary.filter { entry -> entry.draft.enabled && entry.draft.importedSourceFormat.isNotEmpty() &&
             importedModResources.any { resource -> resource.converted && resource.originalPath ==
-                (if (engine == TargetEngine.VSLICE) "data/characters/${entry.draft.importedVSliceCharacterId}.json" else "characters/${entry.draft.charFolder}.json") } }
+                (if (engine == TargetEngine.VSLICE) "data/characters/${entry.draft.importedVSliceCharacterId}.json" else "characters/${entry.draft.importedPsychCharacterId.ifEmpty { entry.draft.charFolder }}.json") } }
         return (selected + imported).distinctBy { it.id }
     }
     fun assignedCharacters(): List<CharacterEntry> {

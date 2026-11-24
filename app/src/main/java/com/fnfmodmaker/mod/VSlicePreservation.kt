@@ -95,14 +95,12 @@ internal fun patchImportedVSliceMetadata(original: String, raw: SongConfig, effe
 /** An editable imported character must still target the exact original JSON. */
 internal fun vSliceCharacterProblems(config: ModConfig): List<String> {
     val character = config.character
-    if (!character.enabled || character.importedSourceFormat != "V-Slice" || config.songs.none { it.vSliceOrigin != null }) return emptyList()
+    if (!character.enabled || character.importedSourceFormat != "V-Slice" || character.importedVSliceCharacterId.isEmpty() || config.songs.none { it.vSliceOrigin != null }) return emptyList()
     val savedId = character.importedVSliceCharacterId
     val expected = "data/characters/$savedId.json"
     return buildList {
         if (!savedId.matches(Regex("[A-Za-z0-9_-]{1,64}")) || config.importedModResources.count { it.converted && it.originalPath == expected } != 1)
             add("Personaje V-Slice: no se encontró un único JSON original editable para ${JSONObject.quote(savedId)}.")
-        if (character.charId != savedId || character.charFolder != savedId)
-            add("Personaje V-Slice: el ID original es ${JSONObject.quote(savedId)}. Restaura el ID original.")
     }
 }
 

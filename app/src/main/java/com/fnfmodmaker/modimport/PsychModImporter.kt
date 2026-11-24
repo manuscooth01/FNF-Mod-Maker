@@ -109,7 +109,7 @@ internal class PsychModImporter(
                     val iconId = JSONObject(f.readText()).optString("healthicon", "")
                     val iconPath = "images/icons/icon-$iconId.png"
                     val icon = index[iconPath]?.let { image(it, iconPath.substringAfterLast('/')) }
-                    val character = applyCharacterJson(CharacterDraft(side = side), preview).copy(atlasSheet = image(png, pngPath.substringAfterLast('/')),
+                    val character = applyCharacterJson(CharacterDraft(side = side), preview).copy(importedPsychCharacterId = id, atlasSheet = image(png, pngPath.substringAfterLast('/')),
                         atlasXml = image(xml, xmlPath.substringAfterLast('/')), atlasSheetWidth = size.first, atlasSheetHeight = size.second, atlasFrames = frames, icon = icon)
                     require(character.problems.isEmpty()) { character.problems.joinToString() }
                     converted.add(path)

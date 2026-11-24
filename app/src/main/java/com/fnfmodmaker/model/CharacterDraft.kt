@@ -205,7 +205,10 @@ data class CharacterDraft(
     val atlasFrames: List<SparrowFrame> = emptyList(),
     val atlasPrefixes: Map<String, String> = emptyMap(),
     val customAnimations: List<String> = emptyList(),
-    val customFrameCounts: Map<String, String> = emptyMap()
+    val customFrameCounts: Map<String, String> = emptyMap(),
+    // Original import is retained in editable projects; engine JSON is regenerated on export.
+    val importedSourceJson: String = "",
+    val importedSourceFormat: String = ""
 ) {
     /** Carpeta/ID del personaje (minúsculas y guiones). */
     val charFolder: String

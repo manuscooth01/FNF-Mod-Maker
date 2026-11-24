@@ -1,5 +1,8 @@
 package com.fnfmodmaker.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -51,6 +54,17 @@ internal fun CharacterWorkspace(
     var previewFullscreen by rememberSaveable { mutableStateOf(false) }
     if (selected !in draft.animationNames) selected = "idle"
 
+    val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.previewCharacterJson(uri) }
+    vm.characterJsonPreview?.let { preview -> AlertDialog(onDismissRequest = vm::cancelCharacterJson,
+        title = { Text("Revisar JSON de personaje · ${preview.format}") },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text("${preview.name} · ${preview.prefixes.size} animaciones")
+            preview.warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+            Text("Se reemplazarán los ajustes del personaje actual. Las imágenes elegidas permanecen; comprueba que correspondan a este JSON.", style = MaterialTheme.typography.bodySmall)
+        } },
+        confirmButton = { TextButton(onClick = vm::applyCharacterJson) { Text("Aplicar datos") } },
+        dismissButton = { TextButton(onClick = vm::cancelCharacterJson) { Text("Cancelar") } }) }
+
     BoxWithConstraints(modifier.fillMaxSize()) {
         val landscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val wide = maxWidth >= 650.dp || (landscape && maxWidth >= 480.dp)
@@ -87,6 +101,8 @@ internal fun CharacterWorkspace(
         }
         @Composable fun Controls(mod: Modifier) {
             Column(mod) {
+                OutlinedButton(onClick = { jsonPicker.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, enabled = !vm.busy) { Text("Importar JSON de personaje") }
+                if (draft.importedSourceJson.isNotEmpty()) Text("JSON ${draft.importedSourceFormat} conservado en el proyecto. Al exportar se genera un JSON nuevo con los campos editables; revisa los datos no compatibles.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     characterSections.forEach { label ->
                         FilterChip(selected = section == label, onClick = { section = label },

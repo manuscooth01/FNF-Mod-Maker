@@ -43,6 +43,7 @@ object CharacterBuilder {
     ) {
         val draft = config.character
         if (!draft.enabled) return
+        if (draft.importedSourceJson.isNotEmpty()) warnings.add("El personaje se generó desde datos editables de un JSON ${draft.importedSourceFormat}: índices y campos específicos no representados pueden perderse. El original se conserva en el proyecto editable.")
         require(draft.problems.isEmpty()) { draft.problems.joinToString(" ") }
 
         val id = draft.charFolder

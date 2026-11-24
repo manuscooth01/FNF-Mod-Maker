@@ -2024,6 +2024,38 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         scheduleAutoSave()
     }
 
+    internal var characterJsonPreview by mutableStateOf<com.fnfmodmaker.model.CharacterJsonPreview?>(null)
+        private set
+    private var characterJsonBase: CharacterDraft? = null
+    internal fun previewCharacterJson(uri: Uri) {
+        if (busy) return
+        val base = config.character; val app = getApplication<Application>()
+        characterJsonPreview = null; characterJsonBase = null; error = null; busy = true; status = "Leyendo JSON del personaje…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val bytes = java.io.ByteArrayOutputStream()
+                val input = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el JSON.")
+                input.use { stream ->
+                    val buffer = ByteArray(8192)
+                    while (true) { val n = stream.read(buffer); if (n < 0) break; if (n == 0) continue
+                        require(bytes.size().toLong() + n <= 512_000L) { "El JSON supera 512 KB." }; bytes.write(buffer, 0, n)
+                    }
+                }
+                com.fnfmodmaker.model.parseCharacterJson(bytes.toString("UTF-8"), MediaTools.displayName(app, uri), base.side)
+            } }
+            result.onSuccess { characterJsonBase = base; characterJsonPreview = it }
+                .onFailure { error = "No se pudo leer el personaje: ${it.message}" }
+            status = ""; busy = false
+        }
+    }
+    internal fun cancelCharacterJson() { characterJsonPreview = null; characterJsonBase = null }
+    internal fun applyCharacterJson() {
+        val preview = characterJsonPreview ?: return
+        if (busy || config.character != characterJsonBase) { error = "El personaje cambió; vuelve a elegir el JSON."; cancelCharacterJson(); return }
+        updateCharacter { com.fnfmodmaker.model.applyCharacterJson(it, preview) }
+        warnings = preview.warnings; cancelCharacterJson(); forceAutoSave()
+    }
+
     internal fun setCharacterEnabled(enabled: Boolean) = updateCharacter { it.copy(enabled = enabled) }
 
     internal fun setCharId(value: String) = updateCharacter {

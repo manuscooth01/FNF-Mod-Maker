@@ -31,7 +31,7 @@ class VSliceImportCycleTest {
     private fun image(f: File, name: String): PickedImage = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null}""", PickedImage::class.java)
     private fun audio(f: File, name: String, ms: Long): PickedAudio = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null,"durationMs":$ms}""", PickedAudio::class.java)
     private val metadata = """{"version":"2.2.4","songName":"Test","artist":"Example","playData":{"songVariations":["remix"],"difficulties":["normal","hard"],"characters":{"player":"bf","opponent":"hero","girlfriend":"gf","playerVocals":["bf","gf"],"opponentVocals":["hero"]},"stage":"mainStage","noteStyle":"funkin"},"timeChanges":[{"t":0,"bpm":120},{"t":4000,"bpm":180}],"extraMetadata":{"keep":true,"largeInteger":123456789012345678901234567890,"precise":0.12345678901234567890123456789}}"""
-    private val chart = """{"version":"2.0.0","scrollSpeed":{"normal":1.3,"hard":1.5},"events":[{"t":10,"e":"FocusCamera","v":1}],"notes":{"normal":[{"t":100.25,"d":0,"l":0},{"t":500,"d":6,"l":200}],"hard":[{"t":300,"d":1,"k":"mine"}]},"unknownChart":"retained"}"""
+    private val chart = """{"version":"2.0.0","scrollSpeed":{"normal":1.3,"hard":1.5},"events":[{"t":10,"e":"FocusCamera","v":1}],"notes":{"normal":[{"t":100.25,"d":0,"l":0},{"t":500,"d":6,"l":200}],"hard":[{"t":300,"d":1,"k":"mine"}]},"unknownChart":"retained","preciseChartNumber":0.12345678901234567890123456789,"bigChartNumber":123456789012345678901234567890}"""
     private val character = """{"version":"1.0.2","name":"Hero","assetPath":"characters/hero","renderType":"sparrow","scale":1,"singTime":6,"healthIcon":{"id":"hero","custom":true},"unknownCharacter":123,"animations":[{"name":"idle","prefix":"idle","frameRate":24,"looped":false,"frameIndices":[0],"offsets":[0,0],"extraAnim":"retained"}]}"""
     private fun zip(meta: String = metadata, chartText: String = chart, extra: Map<String, String> = emptyMap(), characterId: String = "hero", side: CharacterSide = CharacterSide.OPPONENT): ByteArray {
         val adjustedMeta = if (side == CharacterSide.OPPONENT) meta.replace("\"opponent\":\"hero\"", "\"opponent\":\"$characterId\"")
@@ -169,6 +169,9 @@ class VSliceImportCycleTest {
         assertEquals("normal", JSONObject(text("data/songs/test/test-metadata.json")).getJSONObject("playData").getJSONArray("difficulties").getString(0))
         val exported = JSONObject(text("data/songs/test/test-chart.json"))
         assertEquals("retained", exported.getString("unknownChart")); assertEquals(1, exported.getJSONArray("events").length())
+        val tree = com.google.gson.JsonParser.parseString(text("data/songs/test/test-chart.json")).asJsonObject
+        assertEquals("0.12345678901234567890123456789", tree.get("preciseChartNumber").asString)
+        assertEquals("123456789012345678901234567890", tree.get("bigChartNumber").asString)
         assertEquals("mine", exported.getJSONObject("notes").getJSONArray("hard").getJSONObject(0).getString("k"))
         assertEquals(100.25, exported.getJSONObject("notes").getJSONArray("normal").getJSONObject(0).getDouble("t"), 0.0)
         assertEquals(800, exported.getJSONObject("notes").getJSONArray("normal").getJSONObject(1).getInt("t"))

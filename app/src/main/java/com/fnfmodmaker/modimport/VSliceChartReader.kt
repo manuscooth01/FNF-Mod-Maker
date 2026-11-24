@@ -2,7 +2,6 @@ package com.fnfmodmaker.modimport
 
 import com.fnfmodmaker.model.ChartDraft
 import com.fnfmodmaker.model.ChartNote
-import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToLong
 
@@ -52,31 +51,39 @@ internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty:
 
 /** Patch only explicitly editable difficulties, preserving events, extra difficulties and unknown fields. */
 internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>, editable: Set<String>, speed: Float? = null, retained: Set<String> = emptySet()): String {
-    val chart = readVSliceJson(original, "chart")
-    val notes = chart.optJSONObject("notes") ?: JSONObject().also { chart.put("notes", it) }
-    val removed = notes.keys().asSequence().filter { it !in drafts.keys && it !in retained }.toList()
-    removed.forEach { notes.remove(it) }
-    val speeds = chart.optJSONObject("scrollSpeed") ?: JSONObject().also { chart.put("scrollSpeed", it) }
-    speeds.keys().asSequence().filter { it != "default" && it !in drafts.keys && it !in retained }.toList().forEach { speeds.remove(it) }
-    if (speed != null) retained.forEach { speeds.put(it, speed) }
+    // JSONObject is useful for decoding known notes but may round unknown JSON numbers.
+    // Apply patches to a Gson tree instead, retaining the source token values.
+    val projection = readVSliceJson(original, "chart")
+    com.fnfmodmaker.mod.rejectDuplicateJsonKeys(original)
+    val chart = com.google.gson.JsonParser.parseString(original).asJsonObject
+    val notes = chart.get("notes")?.takeIf { it.isJsonObject }?.asJsonObject
+        ?: com.google.gson.JsonObject().also { chart.add("notes", it) }
+    notes.keySet().toList().filter { it !in drafts.keys && it !in retained }.forEach { notes.remove(it) }
+    val speeds = chart.get("scrollSpeed")?.takeIf { it.isJsonObject }?.asJsonObject
+        ?: com.google.gson.JsonObject().also { chart.add("scrollSpeed", it) }
+    speeds.keySet().toList().filter { it != "default" && it !in drafts.keys && it !in retained }.forEach { speeds.remove(it) }
+    if (speed != null) retained.forEach { speeds.addProperty(it, speed) }
     drafts.forEach { (difficulty, draft) ->
-        val previous = if (difficulty in editable && notes.has(difficulty)) runCatching { readVSliceDifficulty(chart, draft.songFolder, difficulty, draft.bpm, draft.scrollSpeed) }.getOrNull() else null
+        val previous = if (difficulty in editable && notes.has(difficulty)) runCatching { readVSliceDifficulty(projection, draft.songFolder, difficulty, draft.bpm, draft.scrollSpeed) }.getOrNull() else null
         if (previous == null || previous.notes != draft.notes) {
             draft.requireExportable()
-            if (previous == null) notes.put(difficulty, draft.toVSliceNotes()) else {
-                val originals = notes.getJSONArray(difficulty)
+            if (previous == null) notes.add(difficulty, com.google.gson.JsonParser.parseString(draft.toVSliceNotes().toString())) else {
+                val originals = notes.getAsJsonArray(difficulty)
                 val unmatched = mutableMapOf<ChartNote, java.util.ArrayDeque<Int>>()
                 previous.notes.forEachIndexed { i, note -> unmatched.getOrPut(note) { java.util.ArrayDeque() }.addLast(i) }
-                val updated = JSONArray()
+                val updated = com.google.gson.JsonArray()
                 for (note in draft.notes) {
                     val originalIndex = unmatched[note]?.pollFirst()
-                    if (originalIndex != null) updated.put(originals.getJSONObject(originalIndex))
-                    else updated.put(JSONObject().put("t", note.timeMs).put("d", note.lane).put("l", note.lengthMs).apply { if (note.kind.isNotEmpty()) put("k", note.kind) })
+                    if (originalIndex != null) updated.add(originals[originalIndex].deepCopy())
+                    else updated.add(com.google.gson.JsonObject().apply {
+                        addProperty("t", note.timeMs); addProperty("d", note.lane); addProperty("l", note.lengthMs)
+                        if (note.kind.isNotEmpty()) addProperty("k", note.kind)
+                    })
                 }
-                notes.put(difficulty, updated)
+                notes.add(difficulty, updated)
             }
         }
-        if (speed != null || !speeds.has(difficulty)) speeds.put(difficulty, speed ?: draft.scrollSpeed)
+        if (speed != null || !speeds.has(difficulty)) speeds.addProperty(difficulty, speed ?: draft.scrollSpeed)
     }
-    return chart.toString(2)
+    return chart.toString()
 }

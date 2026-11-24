@@ -77,11 +77,14 @@ data class ChartDraft(
     val player1: String = "bf",
     val player2: String = "dad",
     val gfVersion: String = "gf",
-    val stage: String = "stage"
+    val stage: String = "stage",
+    /** Exact Psych event groups. Empty string denotes an empty list in older projects. */
+    val psychEventsJson: String = ""
 ) {
     /** Current exporters have no mapping for these fields; never discard them silently. */
     fun exportProblems(): List<String> = buildList {
         if (events.isNotEmpty()) add("eventos")
+        if (psychEventsJson.isNotBlank() && runCatching { com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson) }.isFailure) add("eventos Psych inválidos")
         if (sections.isNotEmpty()) add("secciones personalizadas")
         if (notes.any { it.kind.length > 128 || it.kind.any(Char::isISOControl) }) add("tipos de nota inválidos")
         if (notes.any { it.isSustain }) add("notas de cola independientes")
@@ -145,7 +148,7 @@ data class ChartDraft(
         return JSONObject()
             .put("song", songFolder)
             .put("notes", sections)
-            .put("events", JSONArray())
+            .put("events", JSONArray(if (psychEventsJson.isBlank()) "[]" else com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson)))
             .put("bpm", if (bpm > 0) bpm else 150)
             .put("needsVoices", needsVoices)
             .put("speed", scrollSpeed)
@@ -161,6 +164,7 @@ data class ChartDraft(
     /** Convierte a JSON V-Slice (esquema 2.0.0). */
     fun toVSliceJson(): String {
         requireExportable()
+        require(psychEventsJson.isBlank() || psychEventsJson == "[]") { "Los eventos Psych no se traducen automáticamente a V-Slice." }
         val scrollSpeed = JSONObject().put(difficulty, scrollSpeed)
         val notesJson = JSONObject()
         val notesArray = JSONArray()
@@ -188,6 +192,7 @@ data class ChartDraft(
     /** Convierte solo las notas a JSONArray para V-Slice (una dificultad). */
     fun toVSliceNotes(): JSONArray {
         requireExportable()
+        require(psychEventsJson.isBlank() || psychEventsJson == "[]") { "Los eventos Psych no se traducen automáticamente a V-Slice." }
         val notesArray = JSONArray()
         for (note in notes) {
             val data = note.lane

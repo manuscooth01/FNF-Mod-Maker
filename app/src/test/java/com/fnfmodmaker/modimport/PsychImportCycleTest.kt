@@ -31,7 +31,7 @@ class PsychImportCycleTest {
     }).create()
     private fun image(f: File, name: String): PickedImage = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null}""", PickedImage::class.java)
     private fun audio(f: File, name: String, ms: Long): PickedAudio = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null,"durationMs":$ms}""", PickedAudio::class.java)
-    private fun fixture(allDifficulties: Boolean = false, withoutNormal: Boolean = false, multiCharacter: Boolean = false, withWeek: Boolean = false, withInsane: Boolean = false, official073: Boolean = false): ByteArray {
+    private fun fixture(allDifficulties: Boolean = false, withoutNormal: Boolean = false, multiCharacter: Boolean = false, withWeek: Boolean = false, withInsane: Boolean = false, official073: Boolean = false, withEvents: Boolean = false): ByteArray {
         val files = linkedMapOf(
             "pack.json" to """{"name":"Psych Fixture","description":"example"}""",
             "data/test/test.json" to """{"song":{"song":"test","format":"psych_v1","bpm":120,"speed":2,"player1":"bf","player2":"dad","stage":"stage","events":[],"notes":[{"mustHitSection":false,"sectionNotes":[[100,0,0],[500,6,200]]}]}}""",
@@ -39,6 +39,7 @@ class PsychImportCycleTest {
             "characters/dad.json" to """{"image":"characters/dad","animations":[{"anim":"idle","name":"idle","fps":24,"loop":false,"offsets":[0,0]}]}""",
             "images/characters/dad.png" to "fake-png-for-unit-test", "images/characters/dad.xml" to """<TextureAtlas imagePath="dad.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>""",
             "scripts/custom.lua" to "print('hello')", "unknown/config.json" to "{\"opaque\":true}")
+        if (withEvents) files["data/test/test.json"] = files.getValue("data/test/test.json").replace("\"events\":[]", "\"events\":[[100,[[\"Hey!\",\"0\",\"\"]]]]")
         if (official073) files["data/test/test.json"] = javaClass.getResourceAsStream("/psych-official-073/bopeebo.json")!!.bufferedReader().use { it.readText() }
         if (allDifficulties) {
             files["data/test/test-easy.json"] = files.getValue("data/test/test.json")
@@ -92,6 +93,38 @@ class PsychImportCycleTest {
         val order = compareBy<ChartNote> { it.timeMs }.thenBy { it.lane }.thenBy { it.lengthMs }
         assertEquals(original.notes.sortedWith(order), reimport.notes.sortedWith(order))
         assertTrue(files.containsKey("songs/test/Inst.ogg"))
+    }
+
+    @Test fun psychEventsImportEditPortableRestoreAndExportBothFormats() {
+        val store = ProjectStore(File(temp.root, "psych-events"), temp.root)
+        val prepared = ModZipInspector(File(temp.root, "psych-events-cache")).withExtracted(fixture(withEvents = true).inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, store.newImportStage())
+        }
+        val chart = prepared.config.getChart("test", "normal")!!
+        assertEquals("""[[100,[["Hey!","0",""]]]]""", chart.psychEventsJson)
+        val editedEvents = """[[200,[["Hey!","1","0.5"],["custom","v1","v2"]]]]"""
+        val edited = prepared.config.withChart("test", "normal", chart.copy(psychEventsJson = editedEvents))
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(edited).asJsonObject) { }
+        val portable = PortableProject(temp.root); val backup = File(temp.root, "psych-events.fnfproject")
+        portable.export(store.load(id).config, store.assets(id), backup)
+        val restored = store.publishImport(portable.prepare(backup, store.newImportStage()), portable) { }
+        val reopened = gson.fromJson(store.load(restored).config, ModConfig::class.java)
+        assertEquals(editedEvents, reopened.getChart("test", "normal")!!.psychEventsJson)
+        val services = ModBuildServices(object : AudioEncoder {
+            override fun convert(input: File, output: File): String? = error("OGG")
+            override fun mix(first: File, second: File, output: File): String? = error("Una voz")
+        }, { root, cfg, _, _ -> File(root, "characters/${cfg.character.charFolder}.json").apply { parentFile.mkdirs(); writeText("{}") } },
+            { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        for (format in PsychChartFormat.entries) {
+            val config = reopened.copy(psychChartFormat = format)
+            val built = ModBuilder.buildInternal(config, File(temp.root, "psych-events-${format.name}"), temp.root, {}, services)
+            val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+            val files = mutableMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+            val reimport = readPsychChart(files.getValue("data/test/test.json").toString(Charsets.UTF_8), "test", "normal")
+            assertEquals(editedEvents, reimport.psychEventsJson)
+            assertEquals(chart.notes.sortedBy { it.timeMs }, reimport.notes.sortedBy { it.timeMs })
+        }
     }
 
     @Test fun confirmationAlsoOpensPsychProject() {

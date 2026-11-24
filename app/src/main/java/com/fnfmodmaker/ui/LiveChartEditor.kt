@@ -233,7 +233,28 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         confirmButton = { TextButton(onClick = { vm.deleteLiveCustomChart(); confirmDelete = false }) { Text("Borrar") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } })
     if (vm.config.engine.includesVSlice) VSliceEventsEditor(vm)
+    if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) PsychEventsEditor(vm)
     if (chart != null && chart.notes.isNotEmpty()) RecentNotes(vm, chart.notes)
+}
+
+@Composable
+private fun PsychEventsEditor(vm: WizardViewModel) {
+    var open by remember { mutableStateOf(false) }
+    var value by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val enabled = !vm.livePlaying && !vm.liveLoading && !vm.busy && vm.liveChartAvailable
+    TextButton(onClick = { value = vm.livePsychEvents(); error = null; open = true }, enabled = enabled && vm.liveChart != null) { Text("Eventos Psych (JSON)") }
+    TextButton(onClick = vm::undoLiveChartEdit, enabled = enabled && vm.gridUndoCount > 0) { Text("Deshacer cambio del chart") }
+    if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Eventos Psych · ${vm.liveDifficulty}") },
+        text = { Column {
+            Text("Eventos por dificultad: [tiempo en ms, [[nombre, valor 1, valor 2], …]]. Ejemplo: [[1000,[[\"Hey!\",\"0\",\"\"]]]]. Los valores son texto y dependen del evento del motor o mod.")
+            OutlinedTextField(value = value, onValueChange = { value = it; error = null }, label = { Text("Lista JSON") }, modifier = Modifier.fillMaxWidth().height(220.dp))
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } },
+        confirmButton = { TextButton(onClick = {
+            runCatching { vm.saveLivePsychEvents(value) }.onSuccess { open = false }.onFailure { error = it.message ?: "Eventos inválidos." }
+        }) { Text("Guardar") } },
+        dismissButton = { TextButton(onClick = { open = false }) { Text("Cancelar") } })
 }
 
 @Composable

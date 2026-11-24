@@ -32,8 +32,13 @@ private fun legacyChartFingerprint(chart: ChartDraft?): String? {
     }
     return hashChartText("ChartDraft(songFolder=${c.songFolder}, difficulty=${c.difficulty}, notes=$notes, events=${c.events}, sections=${c.sections}, scrollSpeed=${c.scrollSpeed}, bpm=${c.bpm}, offsetMs=${c.offsetMs}, needsVoices=${c.needsVoices}, player1=${c.player1}, player2=${c.player2}, gfVersion=${c.gfVersion}, stage=${c.stage})")
 }
-private fun fingerprintMatches(chart: ChartDraft?, hash: String): Boolean =
-    chartFingerprint(chart) == hash || legacyChartFingerprint(chart) == hash
+private fun fingerprintMatches(chart: ChartDraft?, hash: String): Boolean {
+    if (chartFingerprint(chart) == hash) return true
+    val c = normalizedChart(chart) ?: return false
+    if (c.psychEventsJson.isNotEmpty()) return false
+    val previous = c.toString().removeSuffix(", psychEventsJson=)") + ")"
+    return hashChartText(previous) == hash || legacyChartFingerprint(c) == hash
+}
 private fun difference(a: List<ChartNote>, b: List<ChartNote>): List<ChartNote> {
     val counts = b.groupingBy { it }.eachCount().toMutableMap()
     return a.filter { note -> val count = counts[note] ?: 0; if (count > 0) { counts[note] = count - 1; false } else true }

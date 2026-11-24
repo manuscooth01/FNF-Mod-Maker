@@ -26,8 +26,12 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
     require(speed.isFinite() && speed > 0 && speed <= Float.MAX_VALUE) { "Velocidad inválida." }
     val offset = song.optDouble("offset", 0.0)
     require(offset.isFinite() && offset % 1 == 0.0 && offset in Int.MIN_VALUE.toDouble()..Int.MAX_VALUE.toDouble()) { "Offset no compatible." }
-    val events = song.optJSONArray("events")
-    require(events == null || events.length() == 0) { "El chart contiene eventos que todavía no se pueden editar sin pérdida." }
+    require(!song.has("events") || song.isNull("events") || song.optJSONArray("events") != null) { "Eventos Psych inválidos." }
+    com.fnfmodmaker.mod.rejectDuplicateJsonKeys(text)
+    val tree = com.google.gson.JsonParser.parseString(text).asJsonObject
+    val body = tree.get("song")?.takeIf { it.isJsonObject }?.asJsonObject ?: tree
+    val events = body.get("events")?.takeUnless { it.isJsonNull }?.toString() ?: "[]"
+    val eventJson = com.fnfmodmaker.mod.validatePsychEvents(events)
     val sections = song.optJSONArray("notes") ?: error("Faltan secciones del chart.")
     require(sections.length() <= 10_000) { "Demasiadas secciones." }
     val notes = mutableListOf<ChartNote>()
@@ -57,5 +61,5 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
     }
     return ChartDraft(songFolder = folder, difficulty = difficulty, notes = notes, scrollSpeed = speed.toFloat(), bpm = bpmDouble.toInt(),
         offsetMs = offset.toInt(), needsVoices = song.optBoolean("needsVoices", true), player1 = song.optString("player1", "bf"),
-        player2 = song.optString("player2", "dad"), gfVersion = song.optString("gfVersion", song.optString("player3", "gf")), stage = song.optString("stage", "stage"))
+        player2 = song.optString("player2", "dad"), gfVersion = song.optString("gfVersion", song.optString("player3", "gf")), stage = song.optString("stage", "stage"), psychEventsJson = if (eventJson == "[]") "" else eventJson)
 }

@@ -54,9 +54,18 @@ class PsychChartReaderTest {
         assertEquals("Hurt Note", readPsychChart(encoded, "test", "normal").notes.single { it.timeMs == 300L }.kind)
     }
 
+    @Test fun psychEventsRoundTripForBothFormats() {
+        val input = chart("", false).replace("\"events\":[]", "\"events\":[[100,[[\"Hey!\",\"0\",\"\"],[\"Custom\",\"one\",\"two\"]]]]")
+        val draft = readPsychChart(input, "test", "normal")
+        assertEquals("""[[100,[["Hey!","0",""],["Custom","one","two"]]]]""", draft.psychEventsJson)
+        val v1 = draft.toPsychJson()
+        assertEquals(draft.psychEventsJson, readPsychChart(v1, "test", "normal").psychEventsJson)
+        val legacy = com.fnfmodmaker.mod.JsonBuilders.psych073Chart(v1)
+        assertEquals(draft.psychEventsJson, readPsychChart(legacy, "test", "normal").psychEventsJson)
+        assertThrows(IllegalArgumentException::class.java) { draft.toVSliceNotes() }
+    }
+
     @Test fun unsupportedGameplayFailsExplicitly() {
-        val events = chart("", true).replace("\"events\":[]", "\"events\":[[100,[]]]")
-        assertThrows(IllegalArgumentException::class.java) { readPsychChart(events, "test", "normal") }
         val tempo = chart("", true).replace("\"sectionBeats\":4", "\"sectionBeats\":4,\"changeBPM\":true")
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(tempo, "test", "normal") }
     }

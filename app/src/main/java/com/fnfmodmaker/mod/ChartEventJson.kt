@@ -28,3 +28,25 @@ internal fun validateVSliceEvents(text: String): String {
     return events.toString()
 }
 
+
+/** Psych 0.7.3 and psych_v1 store events as [time, [[name, value1, value2], ...]]. */
+internal fun validatePsychEvents(text: String): String {
+    require(text.toByteArray(Charsets.UTF_8).size <= 64_000) { "Los eventos superan 64 KB." }
+    val wrapped = "{\"events\":$text}"
+    readVSliceJson(wrapped, "eventos Psych")
+    rejectDuplicateJsonKeys(wrapped)
+    val events = JsonParser.parseString(wrapped).asJsonObject.get("events")
+    require(events != null && events.isJsonArray && events.asJsonArray.size() <= 1000) { "Lista de eventos Psych inválida o demasiado larga." }
+    events.asJsonArray.forEach { row ->
+        require(row.isJsonArray && row.asJsonArray.size() == 2) { "Evento Psych debe tener tiempo y lista de acciones." }
+        val r = row.asJsonArray; val t = r[0]
+        require(t.isJsonPrimitive && t.asJsonPrimitive.isNumber && t.asDouble.isFinite() && t.asDouble in 0.0..86_400_000.0) { "Tiempo de evento Psych inválido." }
+        require(r[1].isJsonArray && r[1].asJsonArray.size() <= 100) { "Acciones Psych inválidas." }
+        r[1].asJsonArray.forEach { action ->
+            require(action.isJsonArray && action.asJsonArray.size() == 3 && action.asJsonArray.all { it.isJsonNull || it.isJsonPrimitive && it.asJsonPrimitive.isString }) { "Acción Psych debe tener nombre y dos valores de texto." }
+            val name = action.asJsonArray[0]
+            require(!name.isJsonNull && name.asString.isNotBlank() && name.asString.length <= 128) { "Nombre de evento Psych inválido." }
+        }
+    }
+    return events.toString()
+}

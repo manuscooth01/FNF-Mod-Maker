@@ -464,6 +464,28 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         scheduleAutoSave(); forceAutoSave()
     }
 
+    internal fun livePsychEvents(): String = liveChart?.psychEventsJson?.ifBlank { "[]" } ?: "[]"
+    internal fun saveLivePsychEvents(text: String) {
+        check(config.engine == TargetEngine.PSYCH && !livePlaying && !liveLoading && !busy && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
+        val chart = liveChart ?: error("Crea primero un chart para esta dificultad; así no se sustituyen las notas de práctica.")
+        val edited = com.fnfmodmaker.mod.validatePsychEvents(text).let { if (it == "[]") "" else it }
+        if (chart.psychEventsJson == edited) return
+        storeLiveChartTransition(chart, chart.copy(psychEventsJson = edited))
+        liveUndo.clear(); liveUndoCount = 0
+        scheduleAutoSave(); forceAutoSave()
+    }
+    internal fun undoLiveChartEdit() {
+        if (busy || livePlaying || liveLoading || !liveChartAvailable) return
+        val song = liveSong ?: return
+        val result = com.fnfmodmaker.model.restoreChartHistory(currentGridHistory(), liveChart, false)
+        if (result == null) { liveNotice = "No se pudo deshacer: el chart cambió fuera del historial."; return }
+        val updated = if (result.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
+            else config.withChart(song.songFolder, liveDifficulty, result.chart)
+        config = withHistory(updated, song.songFolder, liveDifficulty, result.history)
+        liveUndo.clear(); liveUndoCount = 0
+        scheduleAutoSave(); forceAutoSave()
+    }
+
     internal fun openLiveChart() {
         closeLiveChart()
         liveSongIndex = activeSongIndex.coerceIn(0, (config.songs.size - 1).coerceAtLeast(0))

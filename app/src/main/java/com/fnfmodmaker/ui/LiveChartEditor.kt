@@ -236,7 +236,10 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         VSliceVisualEvents(vm)
         VSliceEventsEditor(vm)
     }
-    if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) PsychEventsEditor(vm)
+    if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) {
+        PsychVisualEvents(vm)
+        PsychEventsEditor(vm)
+    }
     if (chart != null && chart.notes.isNotEmpty()) RecentNotes(vm, chart.notes)
 }
 
@@ -249,6 +252,7 @@ private fun PsychEventsEditor(vm: WizardViewModel) {
     val enabled = !vm.livePlaying && !vm.liveLoading && !vm.busy && vm.liveChartAvailable
     TextButton(onClick = { value = vm.livePsychEvents(); original = value; error = null; open = true }, enabled = enabled && vm.liveChart != null) { Text("Eventos Psych (JSON)") }
     TextButton(onClick = vm::undoLiveChartEdit, enabled = enabled && vm.gridUndoCount > 0) { Text("Deshacer cambio del chart") }
+    TextButton(onClick = vm::redoLiveChartEdit, enabled = enabled && vm.gridRedoCount > 0) { Text("Rehacer cambio del chart") }
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Eventos Psych · ${vm.liveDifficulty}") },
         text = { Column {
             Text("Eventos por dificultad: [tiempo en ms, [[nombre, valor 1, valor 2], …]]. Ejemplo: [[1000,[[\"Hey!\",\"0\",\"\"]]]]. Los valores son texto y dependen del evento del motor o mod.")

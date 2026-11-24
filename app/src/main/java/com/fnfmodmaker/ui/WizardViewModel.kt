@@ -474,10 +474,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         liveUndo.clear(); liveUndoCount = 0
         scheduleAutoSave(); forceAutoSave()
     }
-    internal fun undoLiveChartEdit() {
+    internal fun undoLiveChartEdit() = restoreLiveChartEdit(false)
+    internal fun redoLiveChartEdit() = restoreLiveChartEdit(true)
+    private fun restoreLiveChartEdit(redo: Boolean) {
         if (busy || livePlaying || liveLoading || !liveChartAvailable) return
         val song = liveSong ?: return
-        val result = com.fnfmodmaker.model.restoreChartHistory(currentGridHistory(), liveChart, false)
+        val result = com.fnfmodmaker.model.restoreChartHistory(currentGridHistory(), liveChart, redo)
         if (result == null) { liveNotice = "No se pudo deshacer: el chart cambió fuera del historial."; return }
         val updated = if (result.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
             else config.withChart(song.songFolder, liveDifficulty, result.chart)

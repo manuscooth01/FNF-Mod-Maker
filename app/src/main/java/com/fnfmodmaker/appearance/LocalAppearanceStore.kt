@@ -16,12 +16,16 @@ internal class LocalAppearanceStore(private val context: Context) {
 
     fun replace(slot: AppearanceSlot, uri: Uri) {
         require(uri.scheme == "content") { "Selecciona una imagen desde el selector del dispositivo." }
+        val input = context.contentResolver.openInputStream(uri) ?: error("No se pudo abrir la imagen elegida.")
+        input.use { replaceFromStream(slot, it) }
+    }
+
+    fun replaceFromStream(slot: AppearanceSlot, input: java.io.InputStream) {
         check(directory.isDirectory || directory.mkdirs()) { "No se pudo crear la carpeta local." }
         // Temporary input is disposable cache; only the bounded, decoded PNG is kept.
         val temporary = File.createTempFile("appearance-", ".tmp", context.cacheDir)
         try {
-            val input = context.contentResolver.openInputStream(uri) ?: error("No se pudo abrir la imagen elegida.")
-            input.use { stream -> temporary.outputStream().use { copyAppearanceInput(stream, it) } }
+            temporary.outputStream().use { copyAppearanceInput(input, it) }
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(temporary.path, bounds)
             require(bounds.outMimeType in setOf("image/png", "image/jpeg", "image/webp")) { "Selecciona un PNG, JPG o WebP válido." }
@@ -37,6 +41,10 @@ internal class LocalAppearanceStore(private val context: Context) {
                 } catch (e: Exception) { output.failWrite(stream); throw e }
             } finally { bitmap.recycle() }
         } finally { temporary.delete() }
+    }
+
+    fun discardAbandonedArchives() {
+        context.cacheDir.listFiles().orEmpty().filter { it.isFile && it.name.startsWith("appearance-archive-") && it.name.endsWith(".zip") }.forEach { it.delete() }
     }
 
     fun read(slot: AppearanceSlot): Bitmap? {

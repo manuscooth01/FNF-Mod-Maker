@@ -18,6 +18,8 @@ data class ChartPersistentHistory(
 
 private const val HISTORY_LIMIT = 50
 private const val HISTORY_NOTE_BUDGET = 20000
+// Templates now include section metadata; constrain history growth in portable projects.
+private const val HISTORY_TEMPLATE_BUDGET = 1_500_000L
 private fun hashChartText(text: String): String = MessageDigest.getInstance("SHA-256")
     .digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 private fun normalizedChart(chart: ChartDraft?): ChartDraft? =
@@ -48,9 +50,15 @@ private fun difference(a: List<ChartNote>, b: List<ChartNote>): List<ChartNote> 
 }
 private fun trimHistory(entries: List<ChartHistoryEntry>): List<ChartHistoryEntry> {
     var count = 0
+    var bytes = 0L
+    fun templateCost(chart: ChartDraft?): Long = chart?.let {
+        // JSON escaping can expand strings; leave room for braces and scalar fields.
+        6L * (it.psychSongExtras.length + it.psychEventsJson.length + it.psychLayout.sumOf { section -> section.sourceJson.length.toLong() }) + it.psychLayout.size * 200L
+    } ?: 0L
     return entries.asReversed().take(HISTORY_LIMIT).takeWhile {
         count += it.removed.size + it.added.size
-        count <= HISTORY_NOTE_BUDGET
+        bytes += templateCost(it.beforeTemplate) + templateCost(it.afterTemplate)
+        count <= HISTORY_NOTE_BUDGET && (bytes <= HISTORY_TEMPLATE_BUDGET || it === entries.lastOrNull())
     }.asReversed()
 }
 fun recordChartHistory(history: ChartPersistentHistory, before: ChartDraft?, after: ChartDraft?): ChartPersistentHistory {

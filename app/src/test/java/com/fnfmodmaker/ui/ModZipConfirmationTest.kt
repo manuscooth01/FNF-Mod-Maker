@@ -129,8 +129,10 @@ class ModZipConfirmationTest {
         vm.inspectModZip(psychZip(advanced = true)); await { !vm.busy }; assertNotNull(vm.portableMessage, vm.modZipReview)
         vm.confirmModZipImport(); await { !vm.busy }; assertNull(vm.modZipImportError)
         val imported = vm.currentProjectId!!
+        assertTrue(vm.duplicateActiveDifficulty("normal", "hard"))
         vm.openLiveChart()
         val original = vm.liveChart!!
+        val hard = vm.config.getChart("test", "hard")!!
         assertEquals(3, original.psychLayout.size)
         assertTrue(original.psychLayout[1].altAnim && original.psychLayout[1].gfSection)
         assertEquals(4, original.notes[1].lane) // 0.7.3 relative to opponent section
@@ -140,6 +142,7 @@ class ModZipConfirmationTest {
         val sections = original.psychLayout.toMutableList().apply { this[1] = this[1].copy(beats = 3.0, bpm = 240.0, mustHit = true, altAnim = false) }
         vm.saveLivePsychSections(sections)
         assertEquals(original.notes, vm.liveChart!!.notes)
+        assertEquals(hard, vm.config.getChart("test", "hard"))
         vm.closeLiveChart(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
         vm.openLiveChart(); assertEquals(sections, vm.liveChart!!.psychLayout)
         vm.undoLiveChartEdit(); assertEquals(original.psychLayout, vm.liveChart!!.psychLayout)
@@ -147,6 +150,20 @@ class ModZipConfirmationTest {
         val extra = sections + com.fnfmodmaker.model.PsychSectionData(bpm = 90.0)
         vm.saveLivePsychSections(extra); assertEquals(4, vm.liveChart!!.psychLayout.size)
         vm.saveLivePsychSections(sections); assertEquals(3, vm.liveChart!!.psychLayout.size)
+        vm.closeLiveChart()
+        vm.preparePortableExport(imported); await { !vm.busy }; assertNotNull(vm.portableMessage, vm.portableExportName)
+        val portable = File(app.cacheDir, "sections.fnfproject")
+        vm.savePortableExport(Uri.fromFile(portable)); await { !vm.busy }; assertTrue(portable.isFile)
+        val knownIds = vm.projects.map { it.id }.toSet()
+        vm.preparePortableImport(Uri.fromFile(portable)); await { !vm.busy }; assertNotNull(vm.portableMessage, vm.portableImportSummary)
+        vm.confirmPortableImport(); await { !vm.busy }
+        val restored = vm.projects.single { it.id !in knownIds }.id
+        vm.switchProject(restored); await { !vm.busy }; vm.openLiveChart()
+        assertEquals(sections, vm.liveChart!!.psychLayout)
+        vm.undoLiveChartEdit(); assertEquals(4, vm.liveChart!!.psychLayout.size)
+        vm.redoLiveChartEdit(); assertEquals(sections, vm.liveChart!!.psychLayout)
+        assertEquals(hard, vm.config.getChart("test", "hard"))
+        vm.closeLiveChart(); vm.switchProject(imported); await { !vm.busy }; vm.openLiveChart()
         for (format in com.fnfmodmaker.model.PsychChartFormat.entries) {
             vm.setPsychChartFormat(format); vm.closeLiveChart()
             val out = File(app.cacheDir, "sections-${format.name}.zip")
@@ -262,6 +279,34 @@ class ModZipConfirmationTest {
         assertEquals(com.google.gson.JsonParser.parseString(changed), metadata.get("timeChanges"))
         val psych = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/shared/shared.json").toString(Charsets.UTF_8))
         assertEquals(before, psych)
+    }
+    @Test fun bothPsychSectionsDoNotChangeVSliceTempoOrChart() {
+        vm.setEngine(TargetEngine.BOTH); vm.setModTitle("Both Sections")
+        assertTrue(vm.setActiveSongName("Shared")); vm.setActiveSongBpm("120")
+        val source = File(app.cacheDir, "both-sections.ogg")
+        javaClass.getResourceAsStream("/psych-fixture/Inst.ogg")!!.use { source.writeBytes(it.readBytes()) }
+        vm.pickActiveSongAudio(Uri.fromFile(source), com.fnfmodmaker.model.AudioSlot.INSTRUMENTAL)
+        await { !vm.busy }; assertNull(vm.error)
+        vm.openLiveChart()
+        val tempo = com.fnfmodmaker.mod.changeVSliceTempo(vm.liveVSliceTempo(), null, "1000", "180", "3", "8")
+        vm.saveLiveVSliceTempo(tempo); vm.createLivePsychChart()
+        val song = vm.liveSong!!
+        val metaBefore = com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceMetadata(song, 0))
+        val chartBefore = com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceChart(vm.config, song, 0))
+        val changed = vm.liveChart!!.psychLayout + com.fnfmodmaker.model.PsychSectionData(beats = 3.0, bpm = 240.0, changeBpm = true, gfSection = true)
+        vm.saveLivePsychSections(changed)
+        assertEquals(tempo, vm.liveVSliceTempo())
+        assertEquals(metaBefore, com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceMetadata(vm.liveSong!!, 0)))
+        assertEquals(chartBefore, com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceChart(vm.config, vm.liveSong!!, 0)))
+        vm.closeLiveChart()
+        val output = File(app.cacheDir, "both-psych-sections.zip")
+        vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val psych = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/shared/shared.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals(240.0, psych.getAsJsonArray("notes")[1].asJsonObject.get("bpm").asDouble, 0.0)
+        val metadata = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/songs/shared/shared-metadata.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals(com.google.gson.JsonParser.parseString(tempo), metadata.get("timeChanges"))
     }
     @Test fun vSliceEventEditsPersistUndoAndExport() {
         val previous = vm.currentProjectId!!

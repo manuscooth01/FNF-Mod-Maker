@@ -111,6 +111,27 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
         objectArray(value.getAsJsonObject("stageDraft"), "sprites", autoSaveGson.toJsonTree(com.fnfmodmaker.model.StageSprite()).asJsonObject) { sprite ->
             sprite.get("layer")?.let { require(it.asString in com.fnfmodmaker.model.StageSprite.Layer.entries.map { layer -> layer.name }) { "Capa inválida." } }
         }
+        fun validatePsychFields(chart: com.google.gson.JsonObject) {
+            chart.get("psychLayout")?.let { layout ->
+                require(layout.isJsonArray && layout.asJsonArray.size() <= 1000) { "Secciones Psych inválidas." }
+                layout.asJsonArray.forEach { entry ->
+                    require(entry.isJsonObject) { "Sección Psych inválida." }
+                    compare(entry.asJsonObject, autoSaveGson.toJsonTree(com.fnfmodmaker.model.PsychSectionData()).asJsonObject)
+                }
+                if (layout.asJsonArray.size() > 0) {
+                    val parsed = autoSaveGson.fromJson(chart, ChartDraft::class.java)
+                    com.fnfmodmaker.model.psychSectionSpans(parsed.psychLayout, parsed.bpm)
+                }
+            }
+            chart.get("psychSongExtras")?.let { extras ->
+                require(extras.isJsonPrimitive && extras.asJsonPrimitive.isString) { "Propiedades Psych inválidas." }
+                if (extras.asString.isNotBlank()) {
+                    require((chart.get("psychLayout")?.takeIf { it.isJsonArray }?.asJsonArray?.size() ?: 0) > 0) { "Propiedades Psych sin secciones." }
+                    val obj = com.fnfmodmaker.model.psychObject(extras.asString, "propiedades Psych")
+                    require(obj.keySet().none { it in setOf("song", "notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format") }) { "Propiedades Psych ambiguas." }
+                }
+            }
+        }
         value.getAsJsonObject("charts").entrySet().forEach { (_, perSong) ->
             require(perSong.isJsonObject) { "Charts inválidos." }
             perSong.asJsonObject.entrySet().forEach { (_, chart) ->
@@ -120,21 +141,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                     require(events.isJsonPrimitive && events.asJsonPrimitive.isString) { "Eventos Psych inválidos." }
                     if (events.asString.isNotBlank()) com.fnfmodmaker.mod.validatePsychEvents(events.asString)
                 }
-                chart.asJsonObject.get("psychLayout")?.let { layout ->
-                    require(layout.isJsonArray && layout.asJsonArray.size() <= 1000) { "Secciones Psych inválidas." }
-                    layout.asJsonArray.forEach { entry ->
-                        require(entry.isJsonObject) { "Sección Psych inválida." }
-                        compare(entry.asJsonObject, autoSaveGson.toJsonTree(com.fnfmodmaker.model.PsychSectionData()).asJsonObject)
-                    }
-                    if (layout.asJsonArray.size() > 0) {
-                        val parsed = autoSaveGson.fromJson(chart, ChartDraft::class.java)
-                        com.fnfmodmaker.model.psychSectionSpans(parsed.psychLayout, parsed.bpm)
-                    }
-                }
-                chart.asJsonObject.get("psychSongExtras")?.let { extras ->
-                    require(extras.isJsonPrimitive && extras.asJsonPrimitive.isString) { "Propiedades Psych inválidas." }
-                    if (extras.asString.isNotBlank()) com.fnfmodmaker.model.psychObject(extras.asString, "propiedades Psych")
-                }
+                validatePsychFields(chart.asJsonObject)
                 objectArray(chart.asJsonObject, "events", autoSaveGson.toJsonTree(com.fnfmodmaker.model.ChartEvent()).asJsonObject) { event ->
                     event.get("type")?.let { require(it.asString in com.fnfmodmaker.model.ChartEvent.EventType.entries.map { type -> type.name }) { "Evento inválido." } }
                 }
@@ -167,6 +174,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                             listOf("beforeTemplate", "afterTemplate").forEach { t -> e.get(t)?.let { template ->
                                 require(template.isJsonObject) { "Plantilla de historial inválida." }
                                 compare(template.asJsonObject, configJsonChartTemplate())
+                                validatePsychFields(template.asJsonObject)
                                 require(template.asJsonObject.get("notes")?.asJsonArray?.size() == 0) { "Plantilla de historial inválida." }
                             } }
                         }

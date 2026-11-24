@@ -31,9 +31,12 @@ internal fun psychSectionSpans(sections: List<PsychSectionData>, initialBpm: Int
     require(sections.sumOf { it.sourceJson.length.toLong() } <= 256_000) { "Propiedades de secciones demasiado grandes." }
     var time = 0.0; var beat = 0.0; var tempo = initialBpm.toDouble()
     return sections.map { section ->
-        require(section.beats.isFinite() && section.beats in 0.25..128.0 && section.bpm.isFinite() && section.bpm > 0.0 && section.bpm <= 10_000.0) { "Duración o BPM Psych inválidos." }
+        require(section.beats.isFinite() && section.beats in 0.25..128.0 && section.bpm.isFinite() && section.bpm >= 0.0 && section.bpm <= 10_000.0 && (!section.changeBpm || section.bpm > 0.0)) { "Duración o BPM Psych inválidos." }
         val source = psychObject(section.sourceJson, "propiedades de sección")
         require(!source.has("sectionNotes")) { "La sección contiene notas duplicadas." }
+        source.get("lengthInSteps")?.let { steps ->
+            require(steps.isJsonNull || steps.isJsonPrimitive && steps.asJsonPrimitive.isNumber && steps.asDouble.isFinite()) { "lengthInSteps no es numérico y no se puede preservar al editar la duración." }
+        }
         if (section.changeBpm) tempo = section.bpm
         val effectiveBeats = floor(section.beats * 4.0 + 0.5) / 4.0
         val next = time + effectiveBeats * 60_000.0 / tempo
@@ -41,8 +44,15 @@ internal fun psychSectionSpans(sections: List<PsychSectionData>, initialBpm: Int
         PsychSectionSpan(time, next, beat, tempo).also { time = next; beat += effectiveBeats }
     }
 }
-internal fun psychSectionIndex(spans: List<PsychSectionSpan>, time: Long): Int =
-    spans.indexOfLast { it.startMs <= time.toDouble() }.takeIf { it >= 0 && time.toDouble() < spans[it].endMs } ?: -1
+internal fun psychSectionIndex(spans: List<PsychSectionSpan>, time: Long): Int {
+    if (spans.isEmpty() || time < 0) return -1
+    var low = 0; var high = spans.lastIndex
+    while (low < high) {
+        val mid = (low + high + 1) ushr 1
+        if (spans[mid].startMs <= time.toDouble()) low = mid else high = mid - 1
+    }
+    return if (time.toDouble() >= spans[low].startMs && time.toDouble() < spans[low].endMs) low else -1
+}
 
 /** Round-trip section metadata and notes; unknown properties are retained verbatim as JSON tokens. */
 internal fun psychSectionsToJson(chart: ChartDraft): String {

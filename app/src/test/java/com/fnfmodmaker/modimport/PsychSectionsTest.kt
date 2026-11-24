@@ -30,6 +30,20 @@ class PsychSectionsTest {
             assertEquals(12, body.getAsJsonArray("notes")[1].asJsonObject.get("lengthInSteps").asInt)
         }
     }
+    @Test fun importedDifficultyMetadataIsNotSilentlyReplacedBySharedSongDefaults() {
+        val normal = readPsychChart(chart, "test", "normal").copy(scrollSpeed = 1.0f, offsetMs = 0, needsVoices = true)
+        val hard = normal.copy(difficulty = "hard", scrollSpeed = 1.5f, offsetMs = 12, needsVoices = false)
+        val song = SongConfig(songName = "test", bpm = "120", speed = "1.0", offsetMs = "0", importedPsychFolder = "test", difficulties = setOf("normal", "hard"))
+        val config = ModConfig(engine = TargetEngine.PSYCH, songs = listOf(song)).withChart("test", "normal", normal).withChart("test", "hard", hard)
+        val out = JsonParser.parseString(JsonBuilders.psychChart(config, song, 6000, "hard")).asJsonObject
+        assertEquals(1.5, out.get("speed").asDouble, 0.0)
+        assertEquals(12, out.get("offset").asInt)
+        assertFalse(out.get("needsVoices").asBoolean)
+        val changed = song.copy(speed = "2", offsetMs = "30")
+        val changedOut = JsonParser.parseString(JsonBuilders.psychChart(config, changed, 6000, "hard")).asJsonObject
+        assertEquals(2.0, changedOut.get("speed").asDouble, 0.0)
+        assertEquals(30, changedOut.get("offset").asInt)
+    }
     @Test fun rejectsAnythingThatCannotBeRepresentedInsteadOfLosingIt() {
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(chart.replace("[100,0,500", "[100.25,0,500"), "test", "normal") }
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(chart.replace("[2200,0,300]", "[1200,0,300]"), "test", "normal") }

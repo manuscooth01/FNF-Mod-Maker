@@ -18,7 +18,7 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
     val outer = JSONObject(text)
     val song = outer.optJSONObject("song") ?: outer
     val format = song.optString("format", "")
-    val absoluteLanes = format.startsWith("psych_v1")
+    val absoluteLanes = format == "psych_v1"
     require(format.isEmpty() || absoluteLanes) { "Formato de chart no reconocido: $format" }
     val bpmDouble = song.optDouble("bpm", Double.NaN)
     require(bpmDouble.isFinite() && bpmDouble in 1.0..400.0 && bpmDouble % 1.0 == 0.0) { "El editor necesita BPM entero entre 1 y 400." }
@@ -31,6 +31,12 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
     val tree = com.google.gson.JsonParser.parseString(text).asJsonObject
     val body = tree.get("song")?.takeIf { it.isJsonObject }?.asJsonObject ?: tree
     if (body !== tree) require(tree.keySet().all { it == "song" }) { "La envoltura Psych contiene propiedades adicionales que no se pueden convertir sin pérdida." }
+    body.get("speed")?.takeUnless { it.isJsonNull }?.let { value ->
+        require(value.isJsonPrimitive && value.asJsonPrimitive.isNumber &&
+            value.asBigDecimal.compareTo(java.math.BigDecimal(speed.toFloat().toString())) == 0) {
+            "La velocidad Psych tiene una precisión que no se puede conservar sin pérdida."
+        }
+    }
     val events = body.get("events")?.takeUnless { it.isJsonNull }?.toString() ?: "[]"
     val eventJson = com.fnfmodmaker.mod.validatePsychEvents(events)
     val sections = song.optJSONArray("notes") ?: error("Faltan secciones del chart.")

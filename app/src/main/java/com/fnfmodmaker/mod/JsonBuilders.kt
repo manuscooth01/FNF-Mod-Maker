@@ -182,8 +182,17 @@ object JsonBuilders {
         difficulty: String = song.orderedDifficulties.firstOrNull() ?: "normal"): String {
         val customChart = config.getChart(song.songFolder, difficulty)
         if (customChart != null) {
-            val json = customChart.copy(songFolder = song.songName.trim(), bpm = song.bpmValue, scrollSpeed = song.speedValue,
-                offsetMs = song.offsetValue, needsVoices = song.hasVocals, player1 = song.player,
+            // Imported difficulties can have independent speed, offset and needsVoices.
+            // Preserve them unless the shared song control or the voice assets actually changed.
+            val imported = song.importedPsychFolder.isNotEmpty()
+            val base = if (imported) config.getChart(song.songFolder, "normal")
+                ?: song.orderedDifficulties.firstNotNullOfOrNull { config.getChart(song.songFolder, it) } else null
+            val originalVoice = imported && config.importedModResources.any { it.originalPath == "songs/${song.importedPsychFolder}/Voices.ogg" }
+            val speed = if (base != null && song.speedValue == base.scrollSpeed) customChart.scrollSpeed else song.speedValue
+            val offset = if (base != null && song.offsetValue == base.offsetMs) customChart.offsetMs else song.offsetValue
+            val voices = if (imported && song.hasVocals == originalVoice) customChart.needsVoices else song.hasVocals
+            val json = customChart.copy(songFolder = song.songName.trim(), bpm = song.bpmValue, scrollSpeed = speed,
+                offsetMs = offset, needsVoices = voices, player1 = song.player,
                 player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych).toPsychJson()
             return if (config.psychChartFormat == com.fnfmodmaker.model.PsychChartFormat.PSYCH_073) psych073Chart(json) else json
         }

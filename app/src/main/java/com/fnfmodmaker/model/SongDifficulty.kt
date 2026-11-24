@@ -34,7 +34,7 @@ internal fun duplicateSongDifficulty(config: ModConfig, index: Int, source: Stri
     require(song.difficulties.size < 64) { "La canción ya tiene el máximo de dificultades." }
     val chart = config.getChart(song.songFolder, source) ?: error("La dificultad de origen no tiene un chart editable; no se puede copiar sin pérdida.")
     val copy = chart.copy(difficulty = target)
-    val updated = addSongDifficulty(config, index, target).withChart(song.songFolder, target, copy)
-    val history = recordChartHistory(ChartPersistentHistory(), null, copy)
-    return updated.copy(chartHistories = updated.chartHistories + (song.songFolder to (updated.chartHistories[song.songFolder].orEmpty() + (target to history))))
+    // The target did not exist. Keep an empty history: undoing chart creation alone
+    // could otherwise resurrect a previously removed, uneditable imported difficulty.
+    return addSongDifficulty(config, index, target).withChart(song.songFolder, target, copy)
 }

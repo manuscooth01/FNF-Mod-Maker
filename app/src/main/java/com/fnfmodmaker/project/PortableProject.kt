@@ -40,9 +40,9 @@ internal class PortableProject(private val appRoot: File) {
 
     /** Finds the actual PickedImage/PickedAudio references in any nested project section. */
     private fun refs(root: JsonElement, action: (JsonObject) -> Unit) {
-        fun visit(node: JsonElement, depth: Int) {
+        fun visit(node: JsonElement, depth: Int, parentKey: String? = null) {
             require(depth <= 64) { "El proyecto tiene una estructura demasiado profunda." }
-            if (node.isJsonArray) node.asJsonArray.forEach { visit(it, depth + 1) }
+            if (node.isJsonArray) node.asJsonArray.forEach { visit(it, depth + 1, parentKey) }
             else if (node.isJsonObject) {
                 val obj = node.asJsonObject
                 if (obj.has("path")) {
@@ -51,10 +51,10 @@ internal class PortableProject(private val appRoot: File) {
                 } else {
                     val assetKeys = setOf("instrumental", "vocalsPlayer", "vocalsOpponent", "sheet", "atlasSheet", "atlasXml", "icon", "backgroundImage", "image")
                     obj.entrySet().forEach { (key, value) ->
-                        if (key in assetKeys && !value.isJsonNull) {
+                        if (key in assetKeys && !value.isJsonNull && !(parentKey == "chartAudioMix" && key == "instrumental")) {
                             require(value.isJsonObject && value.asJsonObject.has("path") && value.asJsonObject.has("displayName")) { "Recurso $key inválido." }
                         }
-                        visit(value, depth + 1)
+                        visit(value, depth + 1, key)
                     }
                 }
             }

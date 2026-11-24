@@ -23,7 +23,7 @@ class PsychChartReaderTest {
     }
     @Test fun editedLaneSurvivesOutputEvenInOpponentSection() {
         val draft = readPsychChart(chart("\"format\":\"psych_v1\",", false), "test", "normal")
-            .copy(notes = listOf(ChartNote(1700, 1, 200)))
+            .copy(notes = listOf(ChartNote(2100, 1, 200)))
         val encoded = JSONObject(draft.toPsychJson())
         val note = encoded.getJSONArray("notes").getJSONObject(1).getJSONArray("sectionNotes").getJSONArray(0)
         assertEquals(1, note.getInt(1)); assertEquals(200, note.getInt(2))

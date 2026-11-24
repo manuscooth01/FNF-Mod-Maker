@@ -107,7 +107,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     FilterChip(multiMode, { multiMode = !multiMode; group = emptySet(); selected = null; resizeMode = false }, enabled = !locked, label = { Text("Selección múltiple") })
                 }
                 Text("RIVAL    ${gridArrows.joinToString("  ")}       JUGADOR    ${gridArrows.joinToString("  ")}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-                Text(if (multiMode) "Toca notas para seleccionarlas, incluso en otras páginas. Usa los botones para mover, copiar o borrar el grupo." else "Toca para añadir o seleccionar; arrastra para mover o, en Sostenido, cambiar el final. Tiempo exacto permite movimiento libre.", style = MaterialTheme.typography.labelSmall)
+                Text(if (multiMode) "Toca notas para seleccionarlas, incluso en otras páginas. Al duplicar un compás, cada nota avanza un compás musical; si cambia el tempo o compás, pueden cambiar sus distancias en ms." else "Toca para añadir o seleccionar; arrastra para mover o, en Sostenido, cambiar el final. Tiempo exacto permite movimiento libre.", style = MaterialTheme.typography.labelSmall)
                 vm.liveNotice?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall) }
                 vm.liveError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
                 ChartWaveform(song, vm.liveDurationMs, grid, page, vm.livePositionMs, onPage = { page = it })

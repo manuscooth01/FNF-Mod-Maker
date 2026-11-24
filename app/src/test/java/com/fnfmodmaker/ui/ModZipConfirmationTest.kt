@@ -203,6 +203,12 @@ class ModZipConfirmationTest {
         assertEquals(3, grid.tempoChanges.first().numerator)
         assertEquals(2.5, grid.beatAt(1000.0), 0.0001)
         assertEquals(1167L, com.fnfmodmaker.model.recordedNoteTime(1150, 0, 120, com.fnfmodmaker.model.RecordingSnap.HALF_BEAT, 5000, grid))
+        val held = com.fnfmodmaker.model.ChartNote(800, 0)
+        assertEquals(367L, com.fnfmodmaker.model.recordedHoldLength(held, 810, 1150, 0, 120,
+            com.fnfmodmaker.model.RecordingSnap.HALF_BEAT, 5000, listOf(held), grid))
+        val practice = org.json.JSONObject(com.fnfmodmaker.mod.JsonBuilders.vsliceChart(vm.config, vm.liveSong!!, 5000)).getJSONObject("notes").getJSONArray("normal")
+        assertEquals(400L, practice.getJSONObject(1).getLong("t"))
+        assertEquals(1083L, practice.getJSONObject(3).getLong("t"))
         vm.closeLiveChart(); vm.switchProject(); await { !vm.busy }; vm.switchProject(project); await { !vm.busy }
         vm.openLiveChart(); assertEquals(changed, vm.liveVSliceTempo())
         vm.restoreLiveVSliceTempo(false); assertEquals(initial, vm.liveVSliceTempo()); assertEquals("120", vm.liveSong!!.bpm)

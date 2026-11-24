@@ -154,6 +154,9 @@ private fun CharacterIdentity(vm: WizardViewModel, draft: CharacterDraft, onPick
     if (draft.importedVSliceCharacterId.isNotEmpty() && draft.charId != draft.importedVSliceCharacterId) {
         TextButton(onClick = vm::restoreImportedCharId, enabled = !vm.busy) { Text("Restaurar ID original") }
     }
+    if (vm.config.songs.any { it.vSliceOrigin != null }) Text(
+        "Las canciones V-Slice importadas conservan sus personajes originales; cambiar el lado aquí no modifica su metadata.",
+        style = MaterialTheme.typography.labelSmall)
     SectionTitle("Lado en la canción")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         CharacterSide.entries.forEach { side -> FilterChip(side == draft.side, { vm.setCharSide(side) }, enabled = !vm.busy, label = { Text(side.label) }) }

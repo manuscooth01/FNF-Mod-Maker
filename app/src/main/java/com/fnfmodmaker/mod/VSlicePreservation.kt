@@ -31,6 +31,10 @@ internal fun vSliceImportProblems(song: SongConfig): List<String> {
     }
 }
 
+/** Check both user input and the actual builder projection: neither may hide the other. */
+internal fun vSliceExportProblems(raw: SongConfig, effective: SongConfig): List<String> =
+    (vSliceImportProblems(raw) + vSliceImportProblems(effective)).distinct()
+
 /** An editable imported character must still target the exact original JSON. */
 internal fun vSliceCharacterProblems(config: ModConfig): List<String> {
     val character = config.character

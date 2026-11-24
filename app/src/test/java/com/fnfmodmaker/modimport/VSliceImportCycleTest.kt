@@ -246,7 +246,7 @@ class VSliceImportCycleTest {
         assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(renamedChar, File(temp.root, "invalid-char"), temp.root, {}, services()) }
     }
 
-    @Test fun generatedStageAndCharacterDoNotRewriteImportedVSliceMetadata() {
+    @Test fun generatedStageChangesAreReportedByBothWizardAndBuilder() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val p = prepare(zip(), store)
         val changed = p.config.copy(character = p.config.character.copy(side = CharacterSide.PLAYER),
@@ -254,9 +254,13 @@ class VSliceImportCycleTest {
         val effective = changed.effectiveExportConfig().firstSong
         assertEquals(p.config.firstSong.player, effective.player)
         assertEquals(p.config.firstSong.opponent, effective.opponent)
-        assertEquals(p.config.firstSong.stageVSlice, effective.stageVSlice)
-        assertTrue(validateWizard(changed).joinToString { it.message }, validateWizard(changed).isEmpty())
-        ModBuilder.buildInternal(changed, File(temp.root, "stage-build"), temp.root, {}, services())
+        assertEquals("fnfmm-another", effective.stageVSlice)
+        val issue = validateWizard(changed).single { it.message.contains(": escenario de metadata") }.message
+        assertTrue(issue.contains("original: \"mainStage\"")); assertTrue(issue.contains("actual: \"fnfmm-another\""))
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            ModBuilder.buildInternal(changed, File(temp.root, "stage-build"), temp.root, {}, services())
+        }
+        assertTrue(failure.message!!.contains(issue))
     }
 
     @Test fun unknownCollisionAndMetadataEditsFailRatherThanLoseData() {

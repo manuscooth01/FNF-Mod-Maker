@@ -197,10 +197,8 @@ data class ModConfig(
         val characterConfig = withCharacter()
         if (!characterConfig.stageDraft.enabled) return characterConfig
         return characterConfig.copy(songs = characterConfig.songs.map { song ->
-            if (song.vSliceOrigin != null) song else song.copy(
-                stagePsych = characterConfig.stageDraft.stageFolder,
-                stageVSlice = characterConfig.stageDraft.stageFolder
-            )
+            song.copy(stagePsych = characterConfig.stageDraft.stageFolder,
+                stageVSlice = characterConfig.stageDraft.stageFolder)
         })
     }
 }

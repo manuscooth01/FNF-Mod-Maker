@@ -62,12 +62,15 @@ object ModBuilder {
         }
         require(!importedVSlice || rawConfig.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) { "El proyecto importado debe exportarse para V-Slice." }
         val config = rawConfig.effectiveExportConfig()
-        val metadataProblems = config.songs.flatMap(::vSliceImportProblems) + vSliceCharacterProblems(config)
+        val metadataProblems = rawConfig.songs.zip(config.songs).flatMap { (raw, effective) -> vSliceExportProblems(raw, effective) } + vSliceCharacterProblems(config)
         require(metadataProblems.isEmpty()) { metadataProblems.joinToString(" ") }
         val importedCharts = config.songs.filter { it.vSliceOrigin != null }.associate { song ->
             require(song.difficulties.isNotEmpty()) { "${song.songFolder}: elige una dificultad editable." }
             song.songFolder to buildImportedVSliceChart(config, song, appRoot)
         }
+        if (config.character.enabled && config.songs.any { song ->
+                song.vSliceOrigin != null && (if (config.character.side == com.fnfmodmaker.model.CharacterSide.PLAYER) song.player else song.opponent) != config.character.charFolder
+            }) warnings.add("Las canciones V-Slice importadas conservan sus personajes originales; el personaje generado no se asigna automáticamente a su metadata.")
         val modFolder = config.modFolder
         val root = File(workRoot, modFolder)
         if (root.exists()) root.deleteRecursively()

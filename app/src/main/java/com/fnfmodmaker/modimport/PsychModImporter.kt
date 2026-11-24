@@ -118,7 +118,9 @@ internal class PsychModImporter(
             val resources = files.map { path -> ImportedModResource(path, imageAsset(index.getValue(path), path.substringAfterLast('/')), path in converted) }
             val config = ModConfig(engine = TargetEngine.PSYCH, modTitle = title, modId = slugify(title), description = pack.optString("description").take(1000),
                 songs = songs, charts = charts, characterLibrary = characters.ifEmpty { listOf(CharacterEntry()) },
-                characterAssignments = if (characters.size > 1) CharacterAssignments() else null, importedModResources = resources)
+                characterAssignments = if (characters.size > 1 || characters.singleOrNull()?.draft?.let { draft ->
+                    songs.any { song -> (if (draft.side == CharacterSide.PLAYER) song.player else song.opponent) != draft.charFolder }
+                } == true) CharacterAssignments() else null, importedModResources = resources)
             return PreparedPsychImport(stage, config, warnings.distinct())
         } catch (e: Throwable) { stage.deleteRecursively(); throw e }
     }

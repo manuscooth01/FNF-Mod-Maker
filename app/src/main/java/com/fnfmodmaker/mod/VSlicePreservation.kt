@@ -117,9 +117,10 @@ internal fun originalVSliceText(config: ModConfig, path: String, appRoot: File, 
 internal fun buildImportedVSliceChart(config: ModConfig, song: SongConfig, appRoot: File): String {
     val origin = song.vSliceOrigin ?: error("No hay origen V-Slice.")
     val difficulties = com.fnfmodmaker.model.exportDifficulties(config, song)
-    val drafts = difficulties.associateWith { diff -> config.getChart(song.songFolder, diff)!! }
+    val drafts = difficulties.mapNotNull { diff -> config.getChart(song.songFolder, diff)?.let { diff to it } }.toMap()
+    val retained = difficulties.filter { it !in drafts && it in origin.uneditableDifficulties }.toSet()
     val speed = if (song.speed != origin.originalSpeed) song.speedValue else null
-    return patchVSliceChart(originalVSliceText(config, origin.chartPath, appRoot, true), drafts, origin.editableDifficulties, speed)
+    return patchVSliceChart(originalVSliceText(config, origin.chartPath, appRoot, true), drafts, origin.editableDifficulties, speed, retained)
 }
 
 /** Free editing patches known fields while leaving unrelated metadata in the original tree. */

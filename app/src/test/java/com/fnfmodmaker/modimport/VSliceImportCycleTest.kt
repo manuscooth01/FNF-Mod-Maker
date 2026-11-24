@@ -146,7 +146,7 @@ class VSliceImportCycleTest {
         val store = ProjectStore(File(alias, "projects"), temp.root)
         val active = store.newId(); store.save(active, gson.toJsonTree(ModConfig(modTitle = "Existing")).asJsonObject); store.setActive(active)
         val prepared = prepare(zip(), store)
-        assertEquals(TargetEngine.VSLICE, prepared.config.engine); assertEquals(setOf("normal"), prepared.config.firstSong.difficulties)
+        assertEquals(TargetEngine.VSLICE, prepared.config.engine); assertEquals(setOf("normal", "hard"), prepared.config.firstSong.difficulties)
         assertTrue(prepared.config.character.enabled); assertTrue(prepared.warnings.any { it.contains("eventos") }); assertTrue(prepared.warnings.any { it.contains("hard") })
         val id = store.publishModImport(prepared.stage, gson.toJsonTree(prepared.config).asJsonObject) { }
         assertEquals(active, store.activeId())
@@ -169,7 +169,7 @@ class VSliceImportCycleTest {
         assertEquals("normal", JSONObject(text("data/songs/test/test-metadata.json")).getJSONObject("playData").getJSONArray("difficulties").getString(0))
         val exported = JSONObject(text("data/songs/test/test-chart.json"))
         assertEquals("retained", exported.getString("unknownChart")); assertEquals(1, exported.getJSONArray("events").length())
-        assertFalse(exported.getJSONObject("notes").has("hard"))
+        assertEquals("mine", exported.getJSONObject("notes").getJSONArray("hard").getJSONObject(0).getString("k"))
         assertEquals(100.25, exported.getJSONObject("notes").getJSONArray("normal").getJSONObject(0).getDouble("t"), 0.0)
         assertEquals(800, exported.getJSONObject("notes").getJSONArray("normal").getJSONObject(1).getInt("t"))
         val char = JSONObject(text("data/characters/hero.json"))
@@ -283,7 +283,7 @@ class VSliceImportCycleTest {
         val exportTree = com.google.gson.JsonParser.parseString(rawExport).asJsonObject
         exportTree.getAsJsonObject("playData").getAsJsonObject("characters").addProperty("opponent", "hero")
         val sourceTree = com.google.gson.JsonParser.parseString(original).asJsonObject
-        sourceTree.getAsJsonObject("playData").add("difficulties", com.google.gson.JsonArray().apply { add("normal") })
+        sourceTree.getAsJsonObject("playData").add("difficulties", com.google.gson.JsonArray().apply { add("normal"); add("hard") })
         assertEquals(sourceTree, exportTree)
         assertEquals("123456789012345678901234567890", exportTree.getAsJsonObject("extraMetadata").get("largeInteger").asString)
         assertEquals("0.12345678901234567890123456789", exportTree.getAsJsonObject("extraMetadata").get("precise").asString)
@@ -353,6 +353,22 @@ class VSliceImportCycleTest {
         val next = ModBuilder.buildInternal(added, File(temp.root, "added-build"), temp.root, {}, services())
         assertTrue(JSONObject(File(next.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("notes").has("easy"))
     }
+    @Test fun removingUnsupportedDifficultyIsIntentionalAndPersists() {
+        val store = ProjectStore(File(temp.root, "remove-special"), temp.root)
+        val prepared = prepare(zip(), store)
+        val removed = removeSongDifficulty(prepared.config, 0, "hard")
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(removed).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "remove-special-output"), temp.root, {}, services())
+        val result = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, result, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(result.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val out = JSONObject(files.getValue("data/songs/test/test-chart.json").toString(Charsets.UTF_8))
+        assertFalse(out.getJSONObject("notes").has("hard"))
+        assertTrue(out.getJSONObject("notes").has("normal"))
+        assertEquals("mine", JSONObject(File(reopened.importedModResources.single { it.originalPath == "data/songs/test/test-chart.json" }.asset!!.path).readText()).getJSONObject("notes").getJSONArray("hard").getJSONObject(0).getString("k"))
+    }
+
     @Test fun fractionalNotesThatBecomeAmbiguousAreKeptUneditable() {
         val source = JSONObject("""{"notes":{"normal":[{"t":100.1,"d":0},{"t":100.2,"d":0}]}}""")
         assertThrows(IllegalArgumentException::class.java) { readVSliceDifficulty(source, "test", "normal", 120, 1f) }

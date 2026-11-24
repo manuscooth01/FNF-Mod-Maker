@@ -64,7 +64,9 @@ data class VSliceSongOrigin(
     val originalName: String = "", val originalArtist: String = "", val originalBpm: String = "",
     val originalSpeed: String = "", val originalOffset: String = "", val originalPlayer: String = "",
     val originalOpponent: String = "", val originalGirlfriend: String = "", val originalStage: String = "",
-    val instrumentalFile: String = "Inst.ogg", val playerVoiceFile: String = "", val opponentVoiceFile: String = ""
+    val instrumentalFile: String = "Inst.ogg", val playerVoiceFile: String = "", val opponentVoiceFile: String = "",
+    // Imported charts that cannot be represented are retained verbatim until explicitly removed.
+    val uneditableDifficulties: Set<String> = emptySet()
 )
 
 /** Configuración de una canción individual dentro de un mod. */

@@ -23,5 +23,5 @@ internal fun addSongDifficulty(config: ModConfig, index: Int, difficulty: String
 internal fun exportDifficulties(config: ModConfig, song: SongConfig): List<String> =
     if (song.vSliceOrigin != null || song.importedPsychFolder.isNotEmpty() ||
         (config.engine == TargetEngine.PSYCH && config.importedModResources.any { it.converted && it.originalPath.startsWith("data/${song.songFolder}/") }))
-        song.orderedDifficulties.filter { config.getChart(song.songFolder, it) != null }
+        song.orderedDifficulties.filter { config.getChart(song.songFolder, it) != null || it in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet()) }
     else song.orderedDifficulties

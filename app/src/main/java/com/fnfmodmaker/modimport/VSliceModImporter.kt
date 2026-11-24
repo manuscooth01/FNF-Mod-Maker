@@ -84,16 +84,17 @@ internal class VSliceModImporter(
                 val perSong = linkedMapOf<String, ChartDraft>()
                 for (difficulty in ALL_DIFFICULTIES.filter { it in declared && sourceNotes.has(it) }) {
                     try { perSong[difficulty] = readVSliceDifficulty(chart, folder, difficulty, bpm.toInt(), speedFor(difficulty)) }
-                    catch (e: Exception) { warnings.add("$chartPath · $difficulty: no editable (${e.message}); se omitirá del ZIP. El original se conserva en el proyecto.") }
+                    catch (e: Exception) { warnings.add("$chartPath · $difficulty: no editable (${e.message}); se conservará sin modificar mientras no se elimine.") }
                 }
                 val uneditable = (declared + sourceNotes.keys().asSequence().toSet()) - perSong.keys
-                if (uneditable.isNotEmpty()) warnings.add("$chartPath: dificultades sin chart editable que se omitirán del ZIP: ${uneditable.sorted().joinToString()}. Los originales se conservan en el proyecto.")
-                require(perSong.isNotEmpty()) { "$chartPath: ninguna dificultad compatible; aún no se puede crear un proyecto editable para esta canción." }
+                val retained = ALL_DIFFICULTIES.filter { it in declared && sourceNotes.has(it) && it !in perSong }.toSet()
+                val other = uneditable - retained
+                if (other.isNotEmpty()) warnings.add("$chartPath: dificultades no compatibles o sin chart: ${other.sorted().joinToString()}; el original se conserva en el proyecto.")
                 if ((chart.optJSONArray("events")?.length() ?: 0) > 0) warnings.add("$chartPath: eventos conservados sin edición; se mantendrán al modificar notas.")
                 if (times.length() > 1) warnings.add("$metadataPath: cambios de BPM conservados; la cuadrícula usa solo el BPM inicial.")
                 if ((play.optJSONArray("songVariations")?.length() ?: 0) > 0 || files.any { it.startsWith("data/songs/$folder/$folder-chart-") || it.startsWith("data/songs/$folder/$folder-metadata-") })
                     warnings.add("$metadataPath: variaciones conservadas sin edición; solo se edita el chart base.")
-                val initialSpeed = speedFor(if ("normal" in perSong) "normal" else perSong.keys.first()).toString()
+                val initialSpeed = speedFor(if ("normal" in perSong) "normal" else perSong.keys.firstOrNull() ?: retained.firstOrNull() ?: "normal").toString()
                 val offsetDouble = metadata.optJSONObject("offsets")?.optDouble("instrumental", 0.0) ?: 0.0
                 val offset = if (offsetDouble.isFinite() && offsetDouble % 1 == 0.0 && offsetDouble >= Int.MIN_VALUE && offsetDouble <= Int.MAX_VALUE) offsetDouble.toInt() else 0
                 if (offset.toDouble() != offsetDouble) warnings.add("$metadataPath: offset no entero conservado; la previsualización puede diferir.")
@@ -118,9 +119,9 @@ internal class VSliceModImporter(
                 if (files.count { it.startsWith("songs/$folder/Voices") && it.endsWith(".ogg", true) } > listOfNotNull(playerFile, opponentFile).size)
                     warnings.add("songs/$folder/: voces adicionales conservadas sin edición.")
                 val origin = VSliceSongOrigin(folder, metadataPath, chartPath, perSong.keys, songName, artist, bpm.toInt().toString(), initialSpeed,
-                    offset.toString(), player, opponent, gf, stageId, instName, playerFile.orEmpty(), opponentFile.orEmpty())
+                    offset.toString(), player, opponent, gf, stageId, instName, playerFile.orEmpty(), opponentFile.orEmpty(), retained)
                 val song = SongConfig(songName = songName, artist = artist, bpm = bpm.toInt().toString(), speed = initialSpeed, offsetMs = offset.toString(),
-                    player = player, opponent = opponent, girlfriend = gf, stageVSlice = stageId, difficulties = perSong.keys,
+                    player = player, opponent = opponent, girlfriend = gf, stageVSlice = stageId, difficulties = perSong.keys + retained,
                     practiceNotes = false, instrumental = inst, vocalsPlayer = playerVoice, vocalsOpponent = opponentVoice, vSliceOrigin = origin)
                 songs.add(song); charts[folder] = perSong; converted.add(chartPath)
             }

@@ -49,13 +49,14 @@ internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty:
 }
 
 /** Patch only explicitly editable difficulties, preserving events, extra difficulties and unknown fields. */
-internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>, editable: Set<String>, speed: Float? = null): String {
+internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>, editable: Set<String>, speed: Float? = null, retained: Set<String> = emptySet()): String {
     val chart = readVSliceJson(original, "chart")
     val notes = chart.optJSONObject("notes") ?: JSONObject().also { chart.put("notes", it) }
-    val removed = notes.keys().asSequence().filter { it !in drafts.keys }.toList()
+    val removed = notes.keys().asSequence().filter { it !in drafts.keys && it !in retained }.toList()
     removed.forEach { notes.remove(it) }
     val speeds = chart.optJSONObject("scrollSpeed") ?: JSONObject().also { chart.put("scrollSpeed", it) }
-    speeds.keys().asSequence().filter { it != "default" && it !in drafts.keys }.toList().forEach { speeds.remove(it) }
+    speeds.keys().asSequence().filter { it != "default" && it !in drafts.keys && it !in retained }.toList().forEach { speeds.remove(it) }
+    if (speed != null) retained.forEach { speeds.put(it, speed) }
     drafts.forEach { (difficulty, draft) ->
         val previous = if (difficulty in editable && notes.has(difficulty)) runCatching { readVSliceDifficulty(chart, draft.songFolder, difficulty, draft.bpm, draft.scrollSpeed) }.getOrNull() else null
         if (previous == null || previous.notes != draft.notes) {

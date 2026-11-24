@@ -166,7 +166,8 @@ class PsychImportCycleTest {
         val services = ModBuildServices(object : AudioEncoder {
             override fun convert(input: File, output: File): String? = error("OGG no requiere conversión")
             override fun mix(first: File, second: File, output: File): String? = error("Una voz")
-        }, { _, _, _, _ -> }, { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        }, { root, cfg, _, _ -> File(root, "characters/${cfg.character.charFolder}.json").apply { parentFile.mkdirs(); writeText("{}") } },
+            { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
         val built = ModBuilder.buildInternal(reopened, File(temp.root, "psych-output"), temp.root, {}, services)
         assertFalse(File(built.rootDir, "data/test/test-easy.json").exists())
         assertTrue(File(built.rootDir, "data/test/test.json").isFile)

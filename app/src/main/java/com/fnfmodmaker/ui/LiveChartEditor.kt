@@ -153,6 +153,8 @@ private fun LiveSetup(vm: WizardViewModel) {
     if (song == null || song.songName.isBlank() || vm.config.songs.count { it.songFolder == song.songFolder } > 1)
         Text("La canción debe tener un nombre único en el paso Canciones.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     else if (song.difficulties.isEmpty()) Text("Activa al menos una dificultad en Canciones.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+    else if (vm.liveDifficulty in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet()) && vm.liveChart == null)
+        Text("Este chart contiene datos que el editor no representa. Se conservará intacto; para descartarlo, elimina la dificultad en Canciones.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     else if (vm.liveChart?.let { it.events.isNotEmpty() || it.sections.isNotEmpty() } == true)
         Text("Este chart contiene eventos o secciones que la app aún no puede exportar. No se puede grabar encima para evitar perderlos.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     else if (song.instrumental == null || !vm.liveCanPlay)
@@ -219,7 +221,7 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
     if (vm.liveCanPlay && vm.liveDurationMs <= 0) Text("Escucha y pausa la instrumental para detectar su duración antes de abrir la cuadrícula.", style = MaterialTheme.typography.labelSmall)
     if (vm.liveCanPlay && (vm.liveSong?.bpmValue ?: 0) !in 1..400) Text("Para la cuadrícula, indica un BPM entre 1 y 400 en Canciones.", style = MaterialTheme.typography.labelSmall)
     val chart = vm.liveChart
-    Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.config.importedModResources.isNotEmpty()) "Sin chart personalizado: esta dificultad no se exportará hasta crear un chart." else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
+    Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.liveDifficulty in (vm.liveSong?.vSliceOrigin?.uneditableDifficulties ?: emptySet())) "Chart original conservado sin edición." else if (vm.config.importedModResources.isNotEmpty()) "Sin chart personalizado: esta dificultad no se exportará hasta crear un chart." else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
     LiveTimeline(vm.livePreviewNotes, vm.livePositionMs)
     Text("La línea indica el momento actual; arriba: jugador, abajo: rival. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

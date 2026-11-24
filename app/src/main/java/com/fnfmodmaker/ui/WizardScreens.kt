@@ -259,12 +259,20 @@ private fun WizardSongsStep(vm: WizardViewModel) {
     Field("BPM", song.bpm, vm::setActiveSongBpm, hint = "Pulsos por minuto; de 1 a 400.",
         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number, enabled = !vm.busy)
     SectionTitle("Dificultades")
+    var removeDifficulty by remember(vm.activeSongIndex) { mutableStateOf<String?>(null) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         com.fnfmodmaker.model.ALL_DIFFICULTIES.forEach { difficulty ->
-            FilterChip(difficulty in song.difficulties, { vm.toggleActiveSongDifficulty(difficulty) }, enabled = !vm.busy,
+            FilterChip(difficulty in song.difficulties, {
+                if (difficulty in song.difficulties) removeDifficulty = difficulty else vm.toggleActiveSongDifficulty(difficulty)
+            }, enabled = !vm.busy,
                 label = { Text(when (difficulty) { "easy" -> "Fácil"; "normal" -> "Normal"; else -> "Difícil" }) })
         }
     }
+    removeDifficulty?.let { difficulty -> androidx.compose.material3.AlertDialog(
+        onDismissRequest = { removeDifficulty = null }, title = { Text("¿Eliminar dificultad $difficulty?") },
+        text = { Text("Se quitarán la dificultad y su chart del proyecto y del ZIP. Los originales importados permanecen en el respaldo.") },
+        confirmButton = { TextButton(onClick = { vm.toggleActiveSongDifficulty(difficulty); removeDifficulty = null }) { Text("Eliminar") } },
+        dismissButton = { TextButton(onClick = { removeDifficulty = null }) { Text("Cancelar") } }) }
     SimpleStagePanel(vm)
     var advanced by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Ocultar ajustes avanzados ↑" else "Ajustes avanzados ↓") }

@@ -425,7 +425,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val song = liveSong ?: return false
         val chart = liveChart
         return song.songName.isNotBlank() && config.songs.count { it.songFolder == song.songFolder } == 1 &&
-            liveDifficulty in song.difficulties && (chart == null || (chart.events.isEmpty() && chart.sections.isEmpty()))
+            liveDifficulty in song.difficulties && !(chart == null && liveDifficulty in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet())) &&
+            (chart == null || (chart.events.isEmpty() && chart.sections.isEmpty()))
     }
     val liveCanPlay: Boolean get() = liveChartAvailable && liveSong?.instrumental?.let { File(it.path).isFile } == true
 

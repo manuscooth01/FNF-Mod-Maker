@@ -116,7 +116,8 @@ internal fun HomeScreen(vm: WizardViewModel) {
                         Text(file.detail, style = MaterialTheme.typography.bodySmall)
                     }
                 }
-            }, confirmButton = { TextButton(onClick = vm::closeModZipReview) { Text("Cerrar revisión") } })
+            }, confirmButton = { TextButton(onClick = vm::confirmPsychImport, enabled = !vm.busy) { Text("Importar y abrir") } },
+            dismissButton = { TextButton(onClick = vm::closeModZipReview, enabled = !vm.busy) { Text("Cancelar") } })
     }
     vm.portableImportSummary?.let { summary ->
         AlertDialog(onDismissRequest = vm::cancelPortableImport, title = { Text("¿Importar este proyecto?") },
@@ -193,7 +194,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
             }
             OutlinedButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy && vm.currentProjectId != null, modifier = Modifier.fillMaxWidth()) { Text("Importar proyecto .fnfproject") }
             OutlinedButton(onClick = { inspectZip.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Importar mod ZIP para editar") }
-            Text("En desarrollo: por ahora solo analiza el ZIP; no crea un proyecto editable.", style = MaterialTheme.typography.labelSmall)
+            Text("Psych Engine: subset compatible. V-Slice y BOTH aún no se importan.", style = MaterialTheme.typography.labelSmall)
             if (vm.modZipInspecting) TextButton(onClick = vm::cancelModZipInspection) { Text("Cancelar análisis ZIP") }
             vm.projects.forEach { project ->
                 Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -208,7 +209,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
                     }
                 }
             }
-            Text("Guarda un .fnfproject fuera de la app para conservar una copia. Los ZIP de mods no se convierten en proyectos editables.", style = MaterialTheme.typography.labelSmall)
+            Text("Guarda un .fnfproject fuera de la app para conservar una copia. La importación ZIP Psych solo admite un subconjunto de mods.", style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(12.dp))
             ToolCard(
                 icon = com.fnfmodmaker.R.drawable.tool_person,

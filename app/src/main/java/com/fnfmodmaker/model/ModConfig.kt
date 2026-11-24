@@ -54,6 +54,9 @@ data class PickedImage(
     val path: String
 )
 
+/** Original bytes kept as project assets; converted paths may be regenerated on ZIP export. */
+data class ImportedModResource(val originalPath: String = "", val asset: PickedImage? = null, val converted: Boolean = false)
+
 /** Configuración de una canción individual dentro de un mod. */
 data class SongConfig(
     val songName: String = "",
@@ -123,7 +126,8 @@ data class ModConfig(
     val chartHistories: Map<String, Map<String, ChartPersistentHistory>> = emptyMap(),
 
     /** Scripts Lua de Psych aprobados por el usuario; nunca se ejecutan en la app. */
-    val psychScripts: Map<String, String> = emptyMap()
+    val psychScripts: Map<String, String> = emptyMap(),
+    val importedModResources: List<ImportedModResource> = emptyList()
 ) {
     val hasAnyVocals: Boolean get() = songs.any { it.hasVocals }
 

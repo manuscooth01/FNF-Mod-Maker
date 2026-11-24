@@ -101,6 +101,36 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         return id
     }
 
+    /** Publish an already converted mod as a new project; all references must stay in its staged assets. */
+    fun publishModImport(stage: File, source: JsonObject, validate: (JsonObject) -> Unit): String {
+        require(stage.parentFile.canonicalFile == root.canonicalFile && stage.name.startsWith(".pending-") && idPattern.matches(stage.name.removePrefix(".pending-")) && stage.isDirectory)
+        val id = newId(); val finalDir = dir(id)
+        require(!finalDir.exists())
+        val output = source.deepCopy()
+        val stagedAssets = File(stage, "assets").canonicalFile
+        fun visit(node: com.google.gson.JsonElement, depth: Int) {
+            require(depth <= 64)
+            if (node.isJsonArray) { node.asJsonArray.forEach { visit(it, depth + 1) }; return }
+            if (!node.isJsonObject) return
+            val obj = node.asJsonObject
+            if (obj.has("path") && obj.has("displayName") && obj.has("uri")) {
+                val path = File(obj.get("path").asString)
+                val canonical = path.canonicalFile
+                require(canonical == path.absoluteFile && canonical.path.startsWith(stagedAssets.path + File.separator) && canonical.isFile) { "Recurso importado inseguro o ausente." }
+                val relative = canonical.relativeTo(stage.canonicalFile).invariantSeparatorsPath
+                obj.addProperty("path", File(finalDir, relative).absolutePath)
+                obj.addProperty("uri", "")
+                return
+            }
+            obj.entrySet().forEach { visit(it.value, depth + 1) }
+        }
+        visit(output, 0); validate(output)
+        val wrapper = JsonObject().apply { addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", output) }
+        SafeFile(File(stage, "project.json")).write(wrapper.toString())
+        check(stage.renameTo(finalDir)) { "No se pudo publicar el proyecto importado." }
+        return id
+    }
+
     /** Copy all recognized PickedImage/PickedAudio objects. Missing legacy assets remain referenced and are reported. */
     fun copyAssets(config: JsonObject, id: String): CopiedAssets {
         val result = config.deepCopy()

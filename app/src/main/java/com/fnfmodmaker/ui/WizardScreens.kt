@@ -68,6 +68,15 @@ internal fun WizardScreen(vm: WizardViewModel) {
         if (uri != null) vm.export(uri)
     }
 
+    var confirmScripts by remember { mutableStateOf(false) }
+    if (confirmScripts) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { confirmScripts = false },
+        title = { Text("Scripts incluidos") },
+        text = { Text("Este proyecto contiene scripts que pueden ejecutarse en Psych Engine. La app no los ejecuta. Revisa su código antes de instalar el mod.") },
+        confirmButton = { TextButton(onClick = { confirmScripts = false; createZip.launch(vm.zipFileName) }) { Text("Continuar") } },
+        dismissButton = { TextButton(onClick = { confirmScripts = false }) { Text("Cancelar") } }
+    )
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { ToolTopBar("Tu mod", config.modTitle.ifBlank { "Nuevo proyecto" }, vm::goHome) },
@@ -87,7 +96,10 @@ internal fun WizardScreen(vm: WizardViewModel) {
                             Button(onClick = vm::next, enabled = vm.canAdvance && !vm.busy,
                                 modifier = Modifier.weight(1.5f)) { Text("Continuar") }
                         } else {
-                            Button(onClick = { createZip.launch(vm.zipFileName) }, enabled = vm.exportReady && !vm.busy,
+                            Button(onClick = {
+                                if (config.psychScripts.isNotEmpty() || config.importedModResources.any { it.originalPath.endsWith(".lua", true) || it.originalPath.endsWith(".hx", true) || it.originalPath.endsWith(".hscript", true) }) confirmScripts = true
+                                else createZip.launch(vm.zipFileName)
+                            }, enabled = vm.exportReady && !vm.busy,
                                 modifier = Modifier.weight(1.5f)) { Text(if (vm.busy) "Creando…" else "Guardar ZIP") }
                         }
                     }

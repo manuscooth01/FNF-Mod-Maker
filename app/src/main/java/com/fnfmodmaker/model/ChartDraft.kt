@@ -115,7 +115,8 @@ data class ChartDraft(
                 val relativeBeat = ((note.timeMs - sectionStartMs) / beatMs)
                 val isPlayerSide = note.lane in 0..3
                 val lane = note.lane % 4
-                val data = if (mustHit == isPlayerSide) lane else lane + 4
+                // psych_v1 stores the absolute player/opponent lane, independent of mustHitSection.
+                val data = if (isPlayerSide) lane else lane + 4
                 val sustain = note.lengthMs.coerceAtLeast(0L)
                 
                 sectionNotes.put(

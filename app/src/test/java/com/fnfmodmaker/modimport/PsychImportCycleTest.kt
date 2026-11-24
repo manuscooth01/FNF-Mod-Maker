@@ -1,0 +1,79 @@
+package com.fnfmodmaker.modimport
+
+import android.net.Uri
+import com.fnfmodmaker.mod.JsonBuilders
+import com.fnfmodmaker.mod.ModBuilder
+import com.fnfmodmaker.mod.mergeImportedResources
+import com.fnfmodmaker.model.*
+import com.fnfmodmaker.project.PortableProject
+import com.fnfmodmaker.project.ProjectStore
+import com.google.gson.GsonBuilder
+import com.google.gson.TypeAdapter
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonWriter
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+
+class PsychImportCycleTest {
+    @get:Rule val temp = TemporaryFolder()
+    private val gson = GsonBuilder().serializeNulls().registerTypeAdapter(Uri::class.java, object : TypeAdapter<Uri>() {
+        override fun write(out: JsonWriter, value: Uri?) { out.nullValue() }
+        override fun read(input: JsonReader): Uri? { input.skipValue(); return null }
+    }).create()
+    private fun image(f: File, name: String): PickedImage = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null}""", PickedImage::class.java)
+    private fun audio(f: File, name: String, ms: Long): PickedAudio = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null,"durationMs":$ms}""", PickedAudio::class.java)
+    private fun fixture(): ByteArray {
+        val files = linkedMapOf(
+            "pack.json" to """{"name":"Psych Fixture","description":"example"}""",
+            "data/test/test.json" to """{"song":{"song":"test","format":"psych_v1","bpm":120,"speed":2,"player1":"bf","player2":"dad","stage":"stage","events":[],"notes":[{"mustHitSection":false,"sectionNotes":[[100,0,0],[500,6,200]]}]}}""",
+            "songs/test/Inst.ogg" to "fake-audio-for-unit-test", "songs/test/Voices.ogg" to "fake-voices-for-unit-test",
+            "characters/dad.json" to """{"image":"characters/dad","animations":[{"anim":"idle","name":"idle","fps":24,"loop":false,"offsets":[0,0]}]}""",
+            "images/characters/dad.png" to "fake-png-for-unit-test", "images/characters/dad.xml" to """<TextureAtlas imagePath="dad.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>""",
+            "scripts/custom.lua" to "print('hello')", "unknown/config.json" to "{\"opaque\":true}")
+        val bytes = ByteArrayOutputStream()
+        ZipOutputStream(bytes).use { zip -> files.forEach { (path, contents) -> zip.putNextEntry(ZipEntry("wrapper/$path")); zip.write(contents.toByteArray()); zip.closeEntry() } }
+        return bytes.toByteArray()
+    }
+    @Test fun extractedPsychProjectCanBeSavedReopenedPackagedAndOpaqueAssetsSurvive() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val active = store.newId(); store.save(active, gson.toJsonTree(ModConfig(modTitle = "Current")).asJsonObject); store.setActive(active)
+        val stage = store.newImportStage()
+        val importer = PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image)
+        val prepared = ModZipInspector(File(temp.root, "cache")).withExtracted(fixture().inputStream()) { dir, names -> importer.prepare(dir, names, stage) }
+        assertEquals(active, store.activeId()); assertEquals(1, prepared.config.songs.size)
+        assertTrue(prepared.config.character.enabled); assertEquals(2, prepared.config.getChart("test", "normal")!!.notes.size)
+        val id = store.publishModImport(stage, gson.toJsonTree(prepared.config).asJsonObject) { }
+        assertEquals(active, store.activeId()); assertEquals("Current", store.load(active).config.get("modTitle").asString)
+        var reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        assertTrue(File(reopened.firstSong.instrumental!!.path).isFile)
+        val edited = reopened.getChart("test", "normal")!!.copy(notes = listOf(ChartNote(1700, 1, 250)))
+        reopened = reopened.withChart("test", "normal", edited)
+        store.save(id, gson.toJsonTree(reopened).asJsonObject)
+        reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        assertEquals(edited.notes, reopened.getChart("test", "normal")!!.notes)
+        val portable = PortableProject(temp.root)
+        val backup = File(temp.root, "backup.fnfproject")
+        portable.export(store.load(id).config, store.assets(id), backup)
+        val preparedPortable = portable.prepare(backup, store.newImportStage())
+        val restoredId = store.publishImport(preparedPortable, portable) { }
+        val restored = gson.fromJson(store.load(restoredId).config, ModConfig::class.java)
+        assertTrue(File(restored.firstSong.instrumental!!.path).isFile)
+        assertEquals(edited.notes, restored.getChart("test", "normal")!!.notes)
+        // Exercise the actual merge and ZIP code. Android-only bitmap/FFmpeg builder requires device tests.
+        val output = File(temp.root, "built").apply { mkdirs() }
+        File(output, "data/test/test.json").apply { parentFile.mkdirs(); writeText(JsonBuilders.psychChart(restored, restored.firstSong, 10_000, "normal")) }
+        mergeImportedResources(output, restored.importedModResources, temp.root)
+        val zipped = ByteArrayOutputStream(); ModBuilder.zip(output, zipped, false)
+        val entries = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(zipped.toByteArray().inputStream()).use { zip -> while (true) { val e = zip.nextEntry ?: break; entries[e.name] = zip.readBytes() } }
+        assertEquals("print('hello')", entries.getValue("scripts/custom.lua").toString(Charsets.UTF_8))
+        assertEquals("{\"opaque\":true}", entries.getValue("unknown/config.json").toString(Charsets.UTF_8))
+        assertEquals(edited.notes, readPsychChart(entries.getValue("data/test/test.json").toString(Charsets.UTF_8), "test", "normal").notes)
+    }
+}

@@ -42,6 +42,9 @@ import com.fnfmodmaker.mod.ModArchiveLibrary
 import com.fnfmodmaker.mod.ArchivedMod
 import com.fnfmodmaker.modimport.ModZipInspector
 import com.fnfmodmaker.modimport.ModZipReview
+import com.fnfmodmaker.modimport.InventoriedFile
+import com.fnfmodmaker.modimport.PsychModImporter
+import com.fnfmodmaker.modimport.PreparedPsychImport
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -1005,38 +1008,75 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // ZIP inspection is deliberately independent of .fnfproject and the copy library.
+    // Conversion is staged separately from both the active project and the ZIP copy library.
     internal var modZipReview by mutableStateOf<ModZipReview?>(null)
         private set
     internal var modZipInspecting by mutableStateOf(false)
         private set
     private var modZipJob: kotlinx.coroutines.Job? = null
+    private var preparedPsych: PreparedPsychImport? = null
 
     internal fun inspectModZip(uri: Uri) {
-        if (busy || modZipReview != null) return
+        if (busy || modZipReview != null || currentProjectId == null) return
         val app = getApplication<Application>()
         busy = true; modZipInspecting = true; portableMessage = null
-        portableProgress = "Validando ZIP y revisando recursos…"
+        portableProgress = "Validando y preparando proyecto Psych…"
+        val stage = projectStore.newImportStage()
         modZipJob = viewModelScope.launch {
+            var delivered = false
             try {
-                val review = withContext(Dispatchers.IO) {
+                val name = withContext(Dispatchers.IO) { MediaTools.displayName(app, uri) }
+                val prepared = withContext(Dispatchers.IO) {
                     val context = kotlin.coroutines.coroutineContext
                     val source = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el archivo.")
-                    ModZipInspector(File(app.cacheDir, "mod-zip-inspection")).inspect(source, MediaTools.displayName(app, uri)) { context.ensureActive() }
+                    ModZipInspector(File(app.cacheDir, "mod-zip-inspection")).withExtracted(source, { context.ensureActive() }) { root, names ->
+                        PsychModImporter(MediaTools::imageSize, { file -> MediaTools.readDurationMs(file.absolutePath) }).prepare(root, names, stage) { context.ensureActive() }
+                    }
                 }
-                modZipReview = review
+                preparedPsych = prepared
+                val config = prepared.config
+                val items = config.importedModResources.map { r -> InventoriedFile(r.originalPath, if (r.originalPath.endsWith(".lua", true) || r.originalPath.endsWith(".hx", true)) "Script" else "Recurso",
+                    if (r.converted) "Editable o regenerado" else "Conservado sin edición",
+                    if (r.converted) "Se regenerará al exportar; el original se conserva en el proyecto." else "Se conservará si no colisiona con un archivo generado.") }
+                modZipReview = ModZipReview(name, listOf("Psych Engine"), config.songs.map { it.songName },
+                    config.songs.flatMap { song -> song.orderedDifficulties.map { "${song.songName}: $it" } },
+                    if (config.character.enabled) 1 else 0, 0, config.songs.sumOf { 1 + if (it.hasVocals) 1 else 0 },
+                    items.count { it.kind == "Script" }, items, prepared.warnings)
+                delivered = true
             } catch (e: CancellationException) {
-                portableMessage = "Análisis cancelado. El proyecto actual no cambió."
+                portableMessage = "Importación cancelada. El proyecto actual no cambió."
                 throw e
             } catch (e: Exception) {
-                portableMessage = "No se pudo analizar el ZIP: ${e.message}. El proyecto actual no cambió."
+                portableMessage = "No se pudo preparar el mod Psych: ${e.message}. El proyecto actual no cambió."
             } finally {
+                if (!delivered) stage.deleteRecursively()
                 modZipInspecting = false; busy = false; portableProgress = null; modZipJob = null
             }
         }
     }
     internal fun cancelModZipInspection() { modZipJob?.cancel() }
-    internal fun closeModZipReview() { modZipReview = null }
+    internal fun closeModZipReview() {
+        val prepared = preparedPsych
+        preparedPsych = null; modZipReview = null
+        if (prepared != null) viewModelScope.launch(Dispatchers.IO) { projectStore.discardImportStage(prepared.stage) }
+    }
+    internal fun confirmPsychImport() {
+        if (busy) return
+        val prepared = preparedPsych ?: return
+        busy = true; portableMessage = null; portableProgress = "Guardando proyecto importado…"
+        viewModelScope.launch {
+            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
+                try { projectStore.publishModImport(prepared.stage, configJson(prepared.config), ::validatePortableConfig) }
+                catch (e: Exception) { projectStore.discardImportStage(prepared.stage); throw e }
+            } } }
+            preparedPsych = null; modZipReview = null
+            busy = false; portableProgress = null
+            result.onSuccess { id ->
+                portableMessage = "Proyecto Psych importado como copia independiente. Abriendo…"
+                switchProject(id)
+            }.onFailure { portableMessage = "No se pudo importar el mod: ${it.message}. El proyecto actual no cambió." }
+        }
+    }
 
     // ---------------- Importar Mod ----------------
 

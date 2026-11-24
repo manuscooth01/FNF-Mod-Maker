@@ -51,7 +51,11 @@ internal class ModZipInspector(private val tempRoot: File, private val limits: M
         }
         require(!entry.generalPurposeBit.usesEncryption()) { "ZIP cifrado no compatible: ${entry.name}" }
     }
-    fun inspect(input: InputStream, name: String, ensureActive: () -> Unit = {}): ModZipReview {
+    fun inspect(input: InputStream, name: String, ensureActive: () -> Unit = {}): ModZipReview =
+        withExtracted(input, ensureActive) { _, names -> inventory(name, names) }
+
+    /** The callback may copy validated files into a separate staging area; this temporary tree is always removed. */
+    fun <T> withExtracted(input: InputStream, ensureActive: () -> Unit = {}, block: (File, List<String>) -> T): T {
         check(tempRoot.isDirectory || tempRoot.mkdirs()) { "No se pudo crear la carpeta temporal." }
         val stage = File(tempRoot, "inspect-${UUID.randomUUID()}")
         check(stage.mkdir()) { "No se pudo crear la carpeta temporal aislada." }
@@ -129,7 +133,8 @@ internal class ModZipInspector(private val tempRoot: File, private val limits: M
                 }
             }
             require(fileNames.isNotEmpty()) { "El ZIP no contiene archivos." }
-            return inventory(name, fileNames)
+            ensureActive()
+            return block(extracted, fileNames)
         } finally { stage.deleteRecursively() }
     }
 

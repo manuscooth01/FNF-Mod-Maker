@@ -583,11 +583,9 @@ redistribuir recursos de terceros; comprueba sus derechos y condiciones antes de
 
 ### Importador de mod ZIP editable: etapa V1.1 (en desarrollo)
 
-Inicio permite seleccionar un ZIP y revisar un inventario **provisional**, separado de la biblioteca
-que guarda copias y de la importación `.fnfproject`. Todavía no crea ni modifica proyectos, no
-convierte ni conserva recursos y no permite exportar un mod importado; cerrar o cancelar deja el
-proyecto actual intacto. La detección de motores, canciones y dificultades se basa en rutas, no en
-validación de esquemas. Los scripts nunca se ejecutan durante el análisis.
+La infraestructura de V1.1 analiza el ZIP en una carpeta temporal aislada, separada de la biblioteca
+de copias y de `.fnfproject`. Cerrar o cancelar deja el proyecto actual intacto. Los scripts nunca se
+ejecutan durante el análisis. La conversión inicial Psych se describe en la sección siguiente.
 
 El análisis descomprime en caché aislada y cuenta bytes reales, verifica CRC, rechaza enlaces y
 rutas ambiguas y limpia los temporales. Límites móviles: ZIP comprimido 128 MiB, extracción total
@@ -596,3 +594,25 @@ de 1 MiB. Son límites conservadores, no una promesa de que cualquier dispositiv
 espacio. Se usa Apache Commons Compress porque el ZIP estándar de Java no expone los tipos Unix.
 Las etapas posteriores deben implementar conversión, persistencia, resolución de colisiones y
 preservación/exportación segura antes de considerar funcional la importación editable.
+
+### Psych ZIP editable: conversión inicial (V1.2 en desarrollo)
+
+La importación crea una copia independiente mediante el almacenamiento de proyectos y permite
+editar charts que usan BPM entero, secciones de cuatro tiempos y notas normales o sostenidos.
+Reconoce los carriles absolutos `psych_v1` y los carriles relativos por sección del formato antiguo.
+Se admiten dificultades easy, normal y hard (debe existir normal), una instrumental `Inst.ogg`,
+una pista opcional `Voices.ogg` y, si coincide con el personaje de todas las canciones, un personaje
+Sparrow compatible. Se requieren rutas estándar y un único `pack.json`. La importación de V-Slice y
+BOTH sigue pendiente.
+
+Los archivos originales se guardan en los recursos privados del proyecto y en el `.fnfproject`.
+Los archivos no convertidos se reincorporan al ZIP; las colisiones con archivos generados detienen la
+exportación, salvo las rutas expresamente convertidas. Los originales convertidos permanecen en el
+proyecto, pero se regeneran en el ZIP: se informa durante la revisión. Se mantienen las semanas
+originales si existen. Los scripts no se ejecutan en la app; se pide confirmación antes de exportar.
+
+Los eventos, tipos de nota especiales, secciones GF/alt y cambios de BPM bloquean la conversión del
+chart en esta versión para evitar pérdidas. Otros campos y la organización de secciones pueden
+cambiar al regenerar charts/personaje; el original queda guardado en el proyecto. Voces adicionales y
+personajes o escenarios no convertidos se conservan sin edición. OGG no se valida por completo y es
+necesario probar audio, personaje y el ZIP en Android y en la versión de Psych utilizada.

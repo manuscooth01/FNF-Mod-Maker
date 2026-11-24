@@ -38,6 +38,7 @@ object ModBuilder {
             rawConfig.getChart(song.songFolder, difficulty)?.requireExportable()
         } }
         val warnings = mutableListOf<String>()
+        require(rawConfig.importedModResources.isEmpty() || rawConfig.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) { "Los recursos importados solo pueden exportarse para Psych Engine en esta versión." }
         // Si hay personaje propio, el chart de cada canción debe apuntar a él.
         val characterConfig = rawConfig.withCharacter()
         val config = if (characterConfig.stageDraft.enabled) characterConfig.copy(songs = characterConfig.songs.map {
@@ -156,6 +157,9 @@ object ModBuilder {
                 }
             }
 
+            // Imported weeks may contain gameplay metadata not represented by this app.
+            // Preserve them verbatim instead of creating colliding replacement weeks.
+            if (config.importedModResources.none { it.originalPath.startsWith("weeks/", ignoreCase = true) && it.originalPath.endsWith(".json", ignoreCase = true) }) {
             // Semana única con todas las canciones.
             if (songEntries.size == 1) {
                 val song = songEntries.first().song
@@ -190,9 +194,15 @@ object ModBuilder {
                     )
                 }
             }
+            }
         }
 
         writeText(root, "LEEME.txt", readmeText(config, songEntries))
+        if (config.importedModResources.isNotEmpty()) {
+            onProgress("Conservando recursos originales…")
+            mergeImportedResources(root, config.importedModResources, File(context.applicationInfo.dataDir))
+            warnings.add("Los archivos convertidos se regeneraron; sus originales se conservan en el proyecto. Revisa el mod en Psych Engine.")
+        }
 
         onProgress("Empaquetando…")
         val files = root.walkTopDown()

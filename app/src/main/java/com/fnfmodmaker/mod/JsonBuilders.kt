@@ -201,8 +201,8 @@ object JsonBuilders {
                     if (beat >= beats) break
                     val isPlayerSide = beat % 2 == 0
                     val lane = beat % 4
-                    // En psych_v1: 0-3 = mismo lado que mustHitSection, 4-7 = el contrario
-                    val data = if (mustHit == isPlayerSide) lane else lane + 4
+                    // psych_v1 stores absolute lanes (0–3 player, 4–7 opponent).
+                    val data = if (isPlayerSide) lane else lane + 4
                     sectionNotes.put(
                         JSONArray()
                             .put((beat * beatMs).roundToLong())

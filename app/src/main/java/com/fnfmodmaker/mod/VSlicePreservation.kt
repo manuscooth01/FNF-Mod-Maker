@@ -47,16 +47,24 @@ internal fun patchImportedVSliceMetadata(original: String, raw: SongConfig, effe
     val changes = listOf(Triple("player", origin.originalPlayer, effective.player), Triple("opponent", origin.originalOpponent, effective.opponent), Triple("girlfriend", origin.originalGirlfriend, effective.girlfriend))
         .filter { it.first in allowed && it.second != it.third }
     if (changes.isEmpty()) return original
-    val json = readVSliceJson(original, "metadata original")
-    val play = json.optJSONObject("playData") ?: error("Falta playData en la metadata original.")
-    val chars = play.optJSONObject("characters") ?: if (!play.has("characters")) JSONObject().also { play.put("characters", it) } else error("characters no es un objeto.")
-    changes.forEach { (role, before, after) ->
-        require(!chars.has(role) || chars.isNull(role) || chars.opt(role) is String) { "La referencia original $role no es texto; se conserva sin editar." }
-        require(chars.optString(role, "") == before) { "La metadata original de $role no coincide con el proyecto; no se exportó." }
-        require(after.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "ID de personaje inseguro: $after" }
-        chars.put(role, after)
+    // Validate bounds/depth first, then use Gson's lazy JSON numbers so unknown
+    // large integers and high-precision decimals are not rounded by JSONObject.
+    readVSliceJson(original, "metadata original")
+    val json = com.google.gson.JsonParser.parseString(original).asJsonObject
+    val play = json.get("playData")?.takeIf { it.isJsonObject }?.asJsonObject ?: error("Falta playData en la metadata original.")
+    val chars = when {
+        !play.has("characters") -> com.google.gson.JsonObject().also { play.add("characters", it) }
+        play.get("characters").isJsonObject -> play.getAsJsonObject("characters")
+        else -> error("characters no es un objeto.")
     }
-    return json.toString(2)
+    changes.forEach { (role, before, after) ->
+        val originalValue = chars.get(role)
+        require(originalValue == null || (originalValue.isJsonPrimitive && originalValue.asJsonPrimitive.isString)) { "La referencia original $role no es texto; se conserva sin editar." }
+        require((originalValue?.asString ?: "") == before) { "La metadata original de $role no coincide con el proyecto; no se exportó." }
+        require(after.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "ID de personaje inseguro: $after" }
+        chars.addProperty(role, after)
+    }
+    return json.toString()
 }
 
 /** An editable imported character must still target the exact original JSON. */

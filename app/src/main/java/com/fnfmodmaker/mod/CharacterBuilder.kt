@@ -254,10 +254,10 @@ object CharacterBuilder {
         if (icon != null) {
             onProgress("Preparando el icono de vida para $charId…")
             val target = File(root, "images/icons/icon-$charId.png")
-            if (MediaTools.prepareHealthIcon(File(icon.path), target)) {
-                return charId
+            require(MediaTools.prepareHealthIcon(File(icon.path), target)) {
+                "No se pudo procesar el icono de vida de $charId; vuelve a elegirlo para evitar perderlo."
             }
-            warnings.add("El icono de vida de $charId no se pudo procesar; se usará el del juego base.")
+            return charId
         }
         // Sin icono propio: usamos el del personaje base del lado elegido.
         val side = when (charData) {

@@ -313,11 +313,8 @@ object ModBuilder {
             if (config.showInStoryMode) "Configurado para Freeplay y modo historia; verifica en el motor."
             else "Configurado para Freeplay; verifica en el motor."
         )
-        if (config.character.enabled) {
-            output.appendLine(
-                "Personaje propio: ${config.character.charFolder} " +
-                    "(lado ${config.character.side.label.lowercase()})."
-            )
+        if (config.charactersToExport().isNotEmpty()) {
+            output.appendLine("Personajes propios: ${config.charactersToExport().joinToString { it.draft.charFolder }}.")
         }
         output.appendLine()
         output.appendLine("Carpetas generadas:")

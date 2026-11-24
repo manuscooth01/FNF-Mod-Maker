@@ -11,7 +11,11 @@ import java.io.File
 
 class CharacterLibraryTest {
     @get:Rule val temp = TemporaryFolder()
-    private val gson = Gson()
+    private val gson = com.google.gson.GsonBuilder().registerTypeAdapter(android.net.Uri::class.java,
+        object : com.google.gson.TypeAdapter<android.net.Uri>() {
+            override fun write(out: com.google.gson.stream.JsonWriter, value: android.net.Uri?) { out.nullValue() }
+            override fun read(input: com.google.gson.stream.JsonReader): android.net.Uri? { input.skipValue(); return null }
+        }.nullSafe()).create()
     @Test fun migrationRetainsEveryLegacyFieldAndRejectsAmbiguity() {
         val old = JsonParser.parseString("""{"songs":[],"charts":{},"stageDraft":{},"character":{"charId":"Hero","sheet":{"path":"/kept","uri":"x","displayName":"hero.png"},"variations":[{"variationId":"night"}],"animationSettings":{"idle":{"offsetX":"19"}},"futureData":{"value":42}}}""").asJsonObject
         val converted = migrateCharacterLibrary(old)

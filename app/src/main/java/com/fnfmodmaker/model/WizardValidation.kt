@@ -34,12 +34,26 @@ fun characterLibraryProblems(config: ModConfig, fileExists: (String) -> Boolean 
     config.charactersToExport().forEach { entry ->
         val draft = entry.draft
         val prefix = draft.charFolder
+        if (config.engine.includesPsych && draft.cameraX.toIntOrNull() != 0) {
+            val needsPlayer = assignments.player == entry.id
+            val needsOther = assignments.opponent == entry.id || assignments.girlfriend == entry.id
+            if ((needsPlayer && draft.side != CharacterSide.PLAYER) || (needsOther && draft.side == CharacterSide.PLAYER))
+                add("Personaje $prefix: Psych invierte la cámara X del jugador. Ajusta el lado de referencia o usa cámara X cero para reutilizarlo en roles opuestos.")
+        }
+        val importedPath = if (config.engine.includesVSlice) "data/characters/$prefix.json" else "characters/$prefix.json"
+        if (config.importedModResources.any { it.converted && it.originalPath == importedPath } &&
+            draft.importedSourceFormat != (if (config.engine.includesVSlice) "V-Slice" else "Psych"))
+            add("Personaje $prefix: el JSON original pertenece a otro personaje importado; cambia el ID para no sobrescribirlo.")
         if (!prefix.matches(Regex("[A-Za-z0-9_-]{1,64}")) || !names.add(prefix.lowercase(java.util.Locale.ROOT))) add("Personaje: ID de archivo duplicado o inseguro: $prefix.")
         characterInputProblems(draft, fileExists).forEach { add("Personaje $prefix: $it") }
         draft.variations.forEach { variation ->
             if (!variation.variationId.matches(Regex("[a-z0-9_-]{1,40}"))) add("Personaje $prefix: ID de variación inválido.")
             val path = "$prefix-${variation.variationId}"
             if (!names.add(path.lowercase(java.util.Locale.ROOT))) add("Personaje: ID de archivo duplicado: $path.")
+            val scale = variation.scale.toFloatOrNull()
+            val counts = listOf(variation.idleFrames, variation.leftFrames, variation.downFrames, variation.upFrames, variation.rightFrames).map { it.toIntOrNull() }
+            if (scale == null || !scale.isFinite() || scale <= 0f || counts.any { it == null || it < 0 } || (counts.firstOrNull() ?: 0) <= 0)
+                add("Personaje $prefix: escala o animaciones inválidas en ${variation.variationId}.")
             if (!variation.isReady || variation.sheet?.let { !fileExists(it.path) } == true || variation.icon?.let { !fileExists(it.path) } == true)
                 add("Personaje $prefix: completa los recursos de la variación ${variation.variationId}.")
         }

@@ -52,5 +52,7 @@ class PsychSectionsTest {
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(chart.replace("[2200,0,300]", "[2200,0,300,0,{\"extra\":true}]"), "test", "normal") }
         val draft = readPsychChart(chart, "test", "normal")
         assertThrows(IllegalArgumentException::class.java) { draft.copy(psychLayout = draft.psychLayout.dropLast(1)).toPsychJson() }
+        assertThrows(IllegalArgumentException::class.java) { draft.copy(psychLayout = listOf(draft.psychLayout[0].copy(sourceJson = """{"sectionBeats":"invalid"}"""))).toPsychJson() }
+        assertThrows(IllegalArgumentException::class.java) { draft.copy(psychSongExtras = """{"song":[1]}""").toPsychJson() }
     }
 }

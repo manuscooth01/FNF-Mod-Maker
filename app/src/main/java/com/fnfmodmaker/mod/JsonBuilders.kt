@@ -182,6 +182,7 @@ object JsonBuilders {
         difficulty: String = song.orderedDifficulties.firstOrNull() ?: "normal"): String {
         val customChart = config.getChart(song.songFolder, difficulty)
         if (customChart != null) {
+            customChart.requireExportable()
             // Imported difficulties can have independent speed, offset and needsVoices.
             // Preserve them unless the shared song control or the voice assets actually changed.
             val imported = song.importedPsychFolder.isNotEmpty()

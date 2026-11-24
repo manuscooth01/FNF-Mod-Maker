@@ -35,9 +35,12 @@ internal fun psychSectionSpans(sections: List<PsychSectionData>, initialBpm: Int
         require(section.beats.isFinite() && section.beats in 0.25..128.0 && section.bpm.isFinite() && section.bpm >= 0.0 && section.bpm <= 10_000.0 && (!section.changeBpm || section.bpm > 0.0)) { "Duración o BPM Psych inválidos." }
         val source = psychObject(section.sourceJson, "propiedades de sección")
         require(!source.has("sectionNotes")) { "La sección contiene notas duplicadas." }
-        source.get("lengthInSteps")?.let { steps ->
-            require(steps.isJsonNull || steps.isJsonPrimitive && steps.asJsonPrimitive.isNumber && steps.asDouble.isFinite()) { "lengthInSteps no es numérico y no se puede preservar al editar la duración." }
-        }
+        listOf("lengthInSteps", "sectionBeats", "bpm").forEach { key -> source.get(key)?.let { value ->
+            require(value.isJsonNull || value.isJsonPrimitive && value.asJsonPrimitive.isNumber && value.asDouble.isFinite()) { "$key de sección no es numérico." }
+        } }
+        listOf("mustHitSection", "altAnim", "gfSection", "changeBPM").forEach { key -> source.get(key)?.let { value ->
+            require(value.isJsonNull || value.isJsonPrimitive && value.asJsonPrimitive.isBoolean) { "$key de sección no es booleano." }
+        } }
         if (section.changeBpm) tempo = section.bpm
         val effectiveBeats = floor(section.beats * 4.0 + 0.5) / 4.0
         val next = time + effectiveBeats * 60_000.0 / tempo

@@ -90,6 +90,7 @@ data class ChartDraft(
         if (psychSongExtras.isNotBlank() && (psychLayout.isEmpty() || runCatching {
             val obj = psychObject(psychSongExtras, "propiedades Psych")
             require(obj.keySet().none { it in setOf("notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format") })
+            obj.get("song")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) }
         }.isFailure)) add("propiedades Psych inválidas")
         if (psychEventsJson.isNotBlank() && runCatching { com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson) }.isFailure) add("eventos Psych inválidos")
         if (sections.isNotEmpty()) add("secciones personalizadas")

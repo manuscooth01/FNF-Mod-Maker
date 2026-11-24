@@ -249,7 +249,7 @@ object ProjectProposalPlanner {
                     current = current.withChart(song.songFolder, diff, chart).copy(chartHistories = current.chartHistories +
                         (song.songFolder to (current.chartHistories[song.songFolder].orEmpty() + (diff to recorded))))
                     val previousText = previous?.let { "${it.notes.size} notas editadas" } ?: if (song.practiceNotes) "notas de práctica generadas al exportar" else "chart vacío"
-                    fun describeNotes(list: List<ChartNote>) = list.joinToString("\n") { "${it.timeMs} ms · carril ${it.lane} · duración ${it.lengthMs} ms" }.ifEmpty { "(sin notas)" }
+                    fun describeNotes(list: List<ChartNote>) = list.joinToString("\n") { "${it.timeMs} ms · carril ${it.lane} · duración ${it.lengthMs} ms · tipo ${it.kind.ifEmpty { "normal" }}" }.ifEmpty { "(sin notas)" }
                     val oldNotes = previous?.let { "\nNOTAS ANTERIORES:\n${describeNotes(it.notes)}" } ?: ""
                     items.add(ProposalItem("Reemplazar chart ${song.songName} · $diff", "Canción ${index + 1}. Antes: $previousText. Después: ${notes.size} notas. Carriles 0–3 jugador, 4–7 rival.$oldNotes\nNOTAS PROPUESTAS:\n${describeNotes(notes)}"))
                 }

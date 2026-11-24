@@ -820,17 +820,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     internal fun removeSong(index: Int) {
         if (busy || config.songs.size <= 1 || index !in config.songs.indices) return
-        val removedFolder = config.songs[index].songFolder
-        val updated = config.songs.toMutableList()
-        updated.removeAt(index)
+        val updated = config.songs.filterIndexed { i, _ -> i != index }
         activeSongIndex = when {
             index < activeSongIndex -> activeSongIndex - 1
             activeSongIndex >= updated.size -> updated.lastIndex
             else -> activeSongIndex
         }
         activeChartSongIndex = activeChartSongIndex.coerceIn(0, updated.lastIndex)
-        config = config.copy(songs = updated, charts = if (updated.any { it.songFolder == removedFolder }) config.charts else config.charts - removedFolder,
-            chartHistories = if (updated.any { it.songFolder == removedFolder }) config.chartHistories else config.chartHistories - removedFolder)
+        config = com.fnfmodmaker.model.removeSong(config, index)
         scheduleAutoSave()
     }
 

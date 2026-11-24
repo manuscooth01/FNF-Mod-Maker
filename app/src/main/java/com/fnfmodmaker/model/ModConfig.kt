@@ -149,7 +149,9 @@ data class ModConfig(
 
     /** Scripts Lua de Psych aprobados por el usuario; nunca se ejecutan en la app. */
     val psychScripts: Map<String, String> = emptyMap(),
-    val importedModResources: List<ImportedModResource> = emptyList()
+    val importedModResources: List<ImportedModResource> = emptyList(),
+    // Source song folders explicitly removed from this editable project; originals stay in assets.
+    val deletedImportedSongFolders: Set<String> = emptySet()
 ) {
     val character: CharacterDraft get() = characterLibrary.firstOrNull { it.id == selectedCharacterId }?.draft
         ?: characterLibrary.firstOrNull()?.draft ?: CharacterDraft()

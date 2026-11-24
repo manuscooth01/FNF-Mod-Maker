@@ -43,3 +43,20 @@ internal fun renameSong(config: ModConfig, index: Int, name: String): ModConfig 
         charts = if (oldFolder in config.charts) config.charts - oldFolder + (newFolder to movedCharts) else config.charts,
         chartHistories = if (oldFolder in config.chartHistories) config.chartHistories - oldFolder + (newFolder to movedHistories) else config.chartHistories)
 }
+
+/** Remove a song and remember its source folder, without deleting project assets. */
+internal fun removeSong(config: ModConfig, index: Int): ModConfig {
+    require(index in config.songs.indices && config.songs.size > 1) { "Debe quedar al menos una canción." }
+    val song = config.songs[index]
+    val rest = config.songs.filterIndexed { i, _ -> i != index }
+    val origin = song.vSliceOrigin?.folder ?: song.importedPsychFolder.ifEmpty {
+        if (config.engine == TargetEngine.PSYCH && config.importedModResources.any { it.converted && it.originalPath.startsWith("data/${song.songFolder}/") }) song.songFolder else ""
+    }
+    require(origin.isEmpty() || origin.matches(Regex("[a-z0-9_-]{1,80}"))) { "Origen de canción inválido." }
+    val shared = rest.any { it.songFolder == song.songFolder }
+    val originShared = origin.isNotEmpty() && rest.any { (it.vSliceOrigin?.folder ?: it.importedPsychFolder) == origin }
+    return config.copy(songs = rest,
+        charts = if (shared) config.charts else config.charts - song.songFolder,
+        chartHistories = if (shared) config.chartHistories else config.chartHistories - song.songFolder,
+        deletedImportedSongFolders = if (origin.isEmpty() || originShared) config.deletedImportedSongFolders else config.deletedImportedSongFolders + origin)
+}

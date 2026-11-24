@@ -58,7 +58,8 @@ object ModBuilder {
             rawConfig.getChart(song.songFolder, difficulty)?.requireExportable()
         } }
         val warnings = mutableListOf<String>()
-        val importedVSlice = rawConfig.songs.any { it.vSliceOrigin != null }
+        val importedVSlice = rawConfig.songs.any { it.vSliceOrigin != null } || rawConfig.importedModResources.any { it.originalPath.startsWith("data/songs/") && it.originalPath.endsWith("-metadata.json") }
+        require(rawConfig.deletedImportedSongFolders.all { it.matches(Regex("[a-z0-9_-]{1,80}")) }) { "Origen de canción eliminada inválido." }
         require(rawConfig.importedModResources.isEmpty() || rawConfig.engine == if (importedVSlice) com.fnfmodmaker.model.TargetEngine.VSLICE else com.fnfmodmaker.model.TargetEngine.PSYCH) {
             "Los proyectos importados solo se exportan para su motor original; BOTH aún no está soportado."
         }
@@ -268,6 +269,21 @@ object ModBuilder {
         if (config.importedModResources.isNotEmpty()) {
             onProgress("Conservando recursos originales…")
             val omitted = mutableSetOf<String>()
+            config.deletedImportedSongFolders.forEach { folder ->
+                val data = if (config.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) "data/songs/$folder/" else "data/$folder/"
+                config.importedModResources.filter { it.originalPath.startsWith(data) || it.originalPath.startsWith("songs/$folder/") }
+                    .forEach { omitted.add(it.originalPath) }
+            }
+            if (config.deletedImportedSongFolders.isNotEmpty()) {
+                val psych = config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH
+                val prefix = if (psych) "weeks/" else "data/levels/"
+                val referencePath = Regex("^" + Regex.escape(prefix) + "[A-Za-z0-9_-]{1,80}\\.json$")
+                config.importedModResources.filter { referencePath.matches(it.originalPath) }.forEach { resource ->
+                    val original = originalVSliceText(config, resource.originalPath, appRoot, false)
+                    removeSongReferences(original, config.deletedImportedSongFolders, psych)?.let { writeText(root, resource.originalPath, it) }
+                }
+                warnings.add("Se eliminaron referencias de canciones en listas de niveles o semanas. Revisa los scripts y referencias personalizadas antes de instalar.")
+            }
             config.songs.forEach { song ->
                 song.vSliceOrigin?.let { origin ->
                     if (origin.folder != song.songFolder) {

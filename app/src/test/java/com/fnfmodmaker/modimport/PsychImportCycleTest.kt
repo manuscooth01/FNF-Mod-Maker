@@ -31,7 +31,7 @@ class PsychImportCycleTest {
     }).create()
     private fun image(f: File, name: String): PickedImage = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null}""", PickedImage::class.java)
     private fun audio(f: File, name: String, ms: Long): PickedAudio = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null,"durationMs":$ms}""", PickedAudio::class.java)
-    private fun fixture(allDifficulties: Boolean = false, withoutNormal: Boolean = false, multiCharacter: Boolean = false): ByteArray {
+    private fun fixture(allDifficulties: Boolean = false, withoutNormal: Boolean = false, multiCharacter: Boolean = false, withWeek: Boolean = false): ByteArray {
         val files = linkedMapOf(
             "pack.json" to """{"name":"Psych Fixture","description":"example"}""",
             "data/test/test.json" to """{"song":{"song":"test","format":"psych_v1","bpm":120,"speed":2,"player1":"bf","player2":"dad","stage":"stage","events":[],"notes":[{"mustHitSection":false,"sectionNotes":[[100,0,0],[500,6,200]]}]}}""",
@@ -44,6 +44,7 @@ class PsychImportCycleTest {
             files["data/test/test-hard.json"] = files.getValue("data/test/test.json")
         }
         if (withoutNormal) files.remove("data/test/test.json")
+        if (withWeek) files["weeks/story.json"] = """{"songs":[["test","dad",[1,2,3]],["fresh","dad",[1,2,3]]],"unknown":true}"""
         if (multiCharacter) {
             files["characters/metza.json"] = """{"image":"characters/metza","scale":1,"unknown":123,"animations":[{"anim":"idle","name":"idle","fps":24,"loop":false,"indices":[0],"extra":true,"offsets":[0,0]}]}"""
             files["images/characters/metza.png"] = "png"
@@ -144,6 +145,31 @@ class PsychImportCycleTest {
         val character = org.json.JSONObject(files.getValue("characters/metza.json").toString(Charsets.UTF_8))
         assertEquals(1.5, character.getDouble("scale"), 0.0); assertEquals(123, character.getInt("unknown"))
         assertEquals(0, character.getJSONArray("animations").getJSONObject(0).getJSONArray("indices").getInt(0))
+    }
+
+    @Test fun deletedPsychSongIsRemovedFromWeekAndZipButOriginalRemains() {
+        val store = ProjectStore(File(temp.root, "psych-removed-song"), temp.root)
+        val prepared = ModZipInspector(File(temp.root, "psych-removed-cache")).withExtracted(fixture(withWeek = true).inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, store.newImportStage())
+        }
+        val other = prepared.config.firstSong.copy(songName = "fresh", importedPsychFolder = "")
+        val removed = removeSong(prepared.config.copy(songs = prepared.config.songs + other), 0)
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(removed).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val services = ModBuildServices(object : AudioEncoder {
+            override fun convert(input: File, output: File): String? = error("OGG")
+            override fun mix(first: File, second: File, output: File): String? = error("Una voz")
+        }, { root, cfg, _, _ -> File(root, "characters/${cfg.character.charFolder}.json").apply { parentFile.mkdirs(); writeText("{}") } },
+            { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "psych-removed-output"), temp.root, {}, services)
+        val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        assertTrue(files.keys.none { it.startsWith("data/test/") || it.startsWith("songs/test/") })
+        assertTrue(files.containsKey("data/fresh/fresh.json"))
+        val week = org.json.JSONObject(files.getValue("weeks/story.json").toString(Charsets.UTF_8))
+        assertEquals(1, week.getJSONArray("songs").length()); assertEquals("fresh", week.getJSONArray("songs").getJSONArray(0).getString(0)); assertTrue(week.getBoolean("unknown"))
+        assertTrue(File(reopened.importedModResources.single { it.originalPath == "data/test/test.json" }.asset!!.path).isFile)
     }
 
     @Test fun psychWithoutNormalChartImportsRemainingDifficulties() {

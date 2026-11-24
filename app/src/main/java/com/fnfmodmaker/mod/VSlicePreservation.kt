@@ -42,7 +42,7 @@ internal fun vSliceExportProblems(raw: SongConfig, effective: SongConfig, config
     (vSliceImportProblems(raw) + vSliceImportProblems(effective, assignedVSliceRoles(config))).distinct()
 
 /** Duplicate keys have ambiguous meaning and cannot safely survive reserialization. */
-private fun rejectDuplicateJsonKeys(text: String) {
+internal fun rejectDuplicateJsonKeys(text: String) {
     val reader = com.google.gson.stream.JsonReader(java.io.StringReader(text))
     fun value() {
         when (reader.peek()) {
@@ -204,4 +204,21 @@ internal fun patchPsychCharacter(original: String, generated: String, hasIcon: B
         source.add("animations", result)
     }
     return source.toString()
+}
+
+/** Remove references only in the documented songs arrays; retain unrelated JSON values. */
+internal fun removeSongReferences(original: String, deleted: Set<String>, psych: Boolean): String? {
+    if (deleted.isEmpty()) return null
+    readVSliceJson(original, "nivel o semana original"); rejectDuplicateJsonKeys(original)
+    val json = com.google.gson.JsonParser.parseString(original).asJsonObject
+    val songs = json.get("songs")?.takeIf { it.isJsonArray }?.asJsonArray ?: return null
+    val kept = com.google.gson.JsonArray(); var changed = false
+    songs.forEach { entry ->
+        val name = if (psych) entry.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull() else entry
+        val raw = name?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+        if (raw != null && com.fnfmodmaker.model.psychSongPath(raw) in deleted) changed = true else kept.add(entry.deepCopy())
+    }
+    if (!changed) return null
+    json.add("songs", kept)
+    return json.toString()
 }

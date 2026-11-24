@@ -180,6 +180,24 @@ class VSliceImportCycleTest {
         assertEquals("{\"variation\":true}", text("data/songs/test/test-chart-remix.json"))
         for (p in listOf("songs/test/Inst.ogg", "songs/test/Voices-bf.ogg", "songs/test/Voices-hero.ogg", "songs/test/Voices-gf.ogg", "data/stages/custom.json", "data/levels/old.json")) assertTrue(p, p in files)
     }
+    @Test fun deletedImportedSongStaysInBackupButNotZipOrLevel() {
+        val store = ProjectStore(File(temp.root, "removed-vslice-song"), temp.root)
+        val prepared = prepare(zip(extra = mapOf("data/levels/old.json" to """{"songs":["test","fresh"],"unknown":true}""")), store)
+        val other = prepared.config.firstSong.copy(songName = "fresh", vSliceOrigin = null)
+        val removed = removeSong(prepared.config.copy(songs = prepared.config.songs + other), 0)
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(removed).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "removed-vslice-output"), temp.root, {}, services())
+        val out = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, out, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(out.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        assertTrue(files.keys.none { it.startsWith("songs/test/") || it.startsWith("data/songs/test/") })
+        assertTrue(files.containsKey("data/songs/fresh/fresh-chart.json"))
+        val level = JSONObject(files.getValue("data/levels/old.json").toString(Charsets.UTF_8))
+        assertEquals(1, level.getJSONArray("songs").length()); assertEquals("fresh", level.getJSONArray("songs").getString(0)); assertTrue(level.getBoolean("unknown"))
+        assertTrue(File(reopened.importedModResources.single { it.originalPath == "data/songs/test/test-chart.json" }.asset!!.path).isFile)
+    }
+
     @Test fun multipleImportedCharactersPersistAndExportIndependently() {
         val store = ProjectStore(File(temp.root, "multi-vslice"), temp.root)
         val extras = mapOf(

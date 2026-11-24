@@ -293,18 +293,29 @@ class ModZipConfirmationTest {
     }
     @Test fun bothPsychSectionsDoNotChangeVSliceTempoOrChart() {
         vm.setEngine(TargetEngine.BOTH); vm.setModTitle("Both Sections")
-        assertTrue(vm.setActiveSongName("Shared")); vm.setActiveSongBpm("120")
+        assertTrue(vm.setActiveSongName("Shared")); vm.setActiveSongBpm("120.5")
         val source = File(app.cacheDir, "both-sections.ogg")
         javaClass.getResourceAsStream("/psych-fixture/Inst.ogg")!!.use { source.writeBytes(it.readBytes()) }
         vm.pickActiveSongAudio(Uri.fromFile(source), com.fnfmodmaker.model.AudioSlot.INSTRUMENTAL)
         await { !vm.busy }; assertNull(vm.error)
         vm.openLiveChart()
-        val tempo = com.fnfmodmaker.mod.changeVSliceTempo(vm.liveVSliceTempo(), null, "1000", "180", "3", "8")
-        vm.saveLiveVSliceTempo(tempo); vm.createLivePsychChart()
+        val initial = vm.liveVSliceTempo()
+        var tempo = com.fnfmodmaker.mod.changeVSliceTempo(initial, 0, "0", "150.25", "4", "4")
+        tempo = com.fnfmodmaker.mod.changeVSliceTempo(tempo, null, "1000", "180.25", "3", "8")
+        vm.saveLiveVSliceTempo(tempo)
+        vm.setActiveSongBpm("121.75")
+        assertEquals(tempo, vm.liveVSliceTempo())
+        vm.restoreLiveVSliceTempo(false); assertEquals(initial, vm.liveVSliceTempo())
+        vm.restoreLiveVSliceTempo(true); assertEquals(tempo, vm.liveVSliceTempo())
+        vm.setActiveSongBpm("120.5")
+        vm.selectLiveSnap(com.fnfmodmaker.model.RecordingSnap.HALF_BEAT)
+        val recordingGrid = vm.recordingTempoGrid()!!
+        assertEquals(150.25 / 60.0, recordingGrid.beatAt(1000.0), 1e-9)
+        vm.createLivePsychChart()
         val song = vm.liveSong!!
         val metaBefore = com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceMetadata(song, 0))
         val chartBefore = com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.vsliceChart(vm.config, song, 0))
-        val changed = vm.liveChart!!.psychLayout + com.fnfmodmaker.model.PsychSectionData(beats = 3.0, bpm = 240.0, changeBpm = true, gfSection = true)
+        val changed = vm.liveChart!!.psychLayout + com.fnfmodmaker.model.PsychSectionData(beats = 3.0, bpm = 240.5, changeBpm = true, gfSection = true)
         vm.saveLivePsychSections(changed)
         vm.saveLivePsychEvents("""[[123,[["Hey!","1",""]]]]""")
         assertEquals(tempo, vm.liveVSliceTempo())
@@ -316,7 +327,8 @@ class ModZipConfirmationTest {
         val files = mutableMapOf<String, ByteArray>()
         java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
         val psych = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/shared/shared.json").toString(Charsets.UTF_8)).asJsonObject
-        assertEquals(240.0, psych.getAsJsonArray("notes")[1].asJsonObject.get("bpm").asDouble, 0.0)
+        assertEquals(240.5, psych.getAsJsonArray("notes")[1].asJsonObject.get("bpm").asDouble, 0.0)
+        assertEquals(120.5, psych.get("bpm").asDouble, 0.0)
         assertEquals("""[[123,[["Hey!","1",""]]]]""", psych.get("events").toString())
         val metadata = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/songs/shared/shared-metadata.json").toString(Charsets.UTF_8)).asJsonObject
         assertEquals(com.google.gson.JsonParser.parseString(tempo), metadata.get("timeChanges"))

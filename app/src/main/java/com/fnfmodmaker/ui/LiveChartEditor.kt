@@ -236,8 +236,9 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         runCatching { chart?.psychLayout?.takeIf { it.isNotEmpty() }?.let { com.fnfmodmaker.model.psychSectionSpans(it, vm.liveSong!!.bpmValue) }.orEmpty() }.getOrDefault(emptyList())
     }
     val psychTempos = psychSpans.mapIndexedNotNull { i, span -> if (i > 0 && span.bpm != psychSpans[i - 1].bpm) span.startMs else null }
-    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs, eventTimes, tempoTimes + psychTempos, psychSpans.map { it.startMs })
-    Text("La línea indica el momento actual; arriba: jugador, abajo: rival. Dorado: eventos; cian: cambios de tempo; violeta: secciones Psych. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
+    val tempoGrid = remember(vm.config, vm.liveSongIndex, vm.liveDifficulty, vm.liveDurationMs) { runCatching { vm.liveTempoGrid(1) }.getOrNull() }
+    LiveTimeline(vm.livePreviewNotes, vm.livePositionMs, eventTimes, tempoTimes + psychTempos, psychSpans.map { it.startMs }, tempoGrid, vm.config.engine.includesVSlice)
+    Text("Línea blanca central: posición actual; rayas tenues: beats${if (vm.config.engine.includesVSlice) " y compases V-Slice" else " Psych (sin compás musical supuesto)"}. Dorado: eventos; cian: tempo; violeta: secciones Psych. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         TextButton(onClick = vm::undoLiveNote, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveUndoCount > 0) { Text("Deshacer último toque") }
         if (chart != null) TextButton(onClick = { confirmDelete = true }, enabled = !vm.livePlaying && !vm.liveLoading) { Text("Borrar chart propio") }
@@ -355,12 +356,34 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
 }
 
 @Composable
-private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long, events: List<Double>, tempos: List<Double>, sections: List<Double>) {
+private fun LiveTimeline(notes: List<ChartNote>, positionMs: Long, events: List<Double>, tempos: List<Double>, sections: List<Double>, grid: com.fnfmodmaker.model.TouchGrid?, showMeasures: Boolean) {
     Canvas(Modifier.fillMaxWidth().height(100.dp).semantics { contentDescription = "Línea de tiempo de notas alrededor del momento de reproducción" }) {
         drawRect(Color(0xFF201A29))
         val laneHeight = size.height / 8f
         for (lane in 0..8) drawLine(Color.White.copy(alpha = .13f), Offset(0f, lane * laneHeight), Offset(size.width, lane * laneHeight), 1f)
         val windowMs = 6000f
+        if (grid != null) {
+            val start = (positionMs - windowMs / 2.0).coerceAtLeast(0.0)
+            val end = positionMs + windowMs / 2.0
+            var beat = kotlin.math.ceil(grid.beatAt(start))
+            var count = 0
+            while (count++ < 512) {
+                val time = grid.timeAtBeat(beat++)
+                if (time > end) break
+                val x = size.width / 2f + ((time - positionMs) / windowMs * size.width).toFloat()
+                if (x in 0f..size.width) drawLine(Color.White.copy(alpha = .10f), Offset(x, 0f), Offset(x, size.height), 1f)
+            }
+            if (showMeasures) {
+                var measure = kotlin.math.ceil(grid.measureAt(start))
+                count = 0
+                while (count++ < 512) {
+                    val time = grid.timeAtMeasure(measure++)
+                    if (time > end) break
+                    val x = size.width / 2f + ((time - positionMs) / windowMs * size.width).toFloat()
+                    if (x in 0f..size.width) drawLine(Color.White.copy(alpha = .28f), Offset(x, 0f), Offset(x, size.height), 2f)
+                }
+            }
+        }
         for (section in sections) {
             val x = size.width / 2f + ((section - positionMs) / windowMs * size.width).toFloat()
             if (x in 0f..size.width) drawLine(Color(0xFFC581F0), Offset(x, 0f), Offset(x, size.height), 2f)

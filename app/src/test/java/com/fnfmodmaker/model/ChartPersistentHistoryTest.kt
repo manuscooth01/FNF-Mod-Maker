@@ -72,4 +72,18 @@ class ChartPersistentHistoryTest {
         assertNull(restoreChartHistory(normalHistory, hard, false))
         assertEquals(300L, restored.getChart("song", "hard")!!.notes.single().lengthMs)
     }
+    @Test fun historyWrittenBeforeDoubleBpmStillRestoresWithPsychLayout() {
+        val before = ChartDraft(bpm = 120.0, psychLayout = listOf(PsychSectionData(bpm = 120.0)))
+        val after = before.copy(notes = listOf(ChartNote(100, 2)))
+        val fresh = recordChartHistory(ChartPersistentHistory(), before, after)
+        fun oldHash(c: ChartDraft): String {
+            val text = c.toString().replace(", bpm=120.0, offsetMs=", ", bpm=120, offsetMs=")
+            return java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+        }
+        val old = fresh.copy(undo = listOf(fresh.undo.single().copy(beforeHash = oldHash(before), afterHash = oldHash(after))))
+        val undo = restoreChartHistory(old, after, false)!!
+        assertEquals(before, undo.chart)
+        assertEquals(after, restoreChartHistory(undo.history, before, true)!!.chart)
+    }
+
 }

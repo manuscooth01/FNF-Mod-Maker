@@ -82,4 +82,20 @@ class PsychSectionsTest {
         }
     }
 
+    @Test fun bpmChangeAtFirstSectionAndLegacyLengthProtection() {
+        val draft = readPsychChart(chart, "test", "normal")
+        val first = draft.psychLayout[0].copy(beats = 2.25, changeBpm = true, bpm = 125.5)
+        val sections = listOf(first) + draft.psychLayout.drop(1)
+        val spans = psychSectionSpans(sections, 120.5)
+        assertEquals(0.0, spans.first().startMs, 0.0)
+        assertEquals(125.5, spans.first().bpm, 0.0)
+        assertEquals(2.25 * 60000.0 / 125.5, spans[1].startMs, 1e-9)
+        val safe = draft.copy(notes = emptyList(), bpm = 120.5, psychLayout = sections)
+        val out = JsonParser.parseString(safe.toPsychJson()).asJsonObject.getAsJsonArray("notes")[0].asJsonObject
+        assertEquals(9, out.get("lengthInSteps").asInt)
+        assertThrows(IllegalArgumentException::class.java) {
+            safe.copy(psychLayout = listOf(first.copy(beats = 2.3)) + sections.drop(1)).toPsychJson()
+        }
+    }
+
 }

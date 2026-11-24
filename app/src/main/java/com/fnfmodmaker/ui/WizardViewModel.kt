@@ -400,12 +400,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private var nextLiveHoldId = 0L
     // Snapshot once per recording session: tempo cannot be edited during playback.
     private var liveRecordingGrid: com.fnfmodmaker.model.TouchGrid? = null
-    internal fun recordingTempoGrid(): com.fnfmodmaker.model.TouchGrid? {
-        if (liveSnap == com.fnfmodmaker.model.RecordingSnap.FREE) return null
+    // BOTH always uses V-Slice's independent map for the grid and recording; Psych remains separate.
+    internal fun liveTempoGrid(divisions: Int): com.fnfmodmaker.model.TouchGrid {
         val song = liveSong ?: error("Selecciona una canción.")
         val tempos = if (config.engine.includesVSlice) com.fnfmodmaker.mod.vSliceGridTempos(liveVSliceTempo())
-            else liveChart?.psychLayout?.takeIf { it.isNotEmpty() }?.let { com.fnfmodmaker.model.psychGridTempos(it, song.bpmValue) } ?: return null
-        return com.fnfmodmaker.model.TouchGrid(song.bpmValue, liveSnap.divisionsPerBeat, liveDurationMs.coerceAtLeast(1L), tempos)
+            else liveChart?.psychLayout?.takeIf { it.isNotEmpty() }?.let { com.fnfmodmaker.model.psychGridTempos(it, song.bpmValue) }.orEmpty()
+        return com.fnfmodmaker.model.TouchGrid(song.bpmValue, divisions, liveDurationMs.coerceAtLeast(1L), tempos)
+    }
+    internal fun recordingTempoGrid(): com.fnfmodmaker.model.TouchGrid? {
+        if (liveSnap == com.fnfmodmaker.model.RecordingSnap.FREE) return null
+        return liveTempoGrid(liveSnap.divisionsPerBeat)
     }
     val livePreviewNotes: List<ChartNote> get() {
         val chart = liveChart ?: return emptyList()

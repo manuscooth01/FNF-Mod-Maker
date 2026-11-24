@@ -103,8 +103,8 @@ internal fun ChartSummaryPreview(vm: WizardViewModel) {
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Text("VISTA DEL CHART", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
-            Row(Modifier.horizontalScroll(rememberScrollState())) { ALL_DIFFICULTIES.filter { it in song.difficulties }.forEach { d ->
-                FilterChip(d == difficulty, { difficulty = d }, modifier = Modifier.padding(end = 4.dp), label = { Text(when (d) { "easy" -> "Fácil"; "hard" -> "Difícil"; else -> "Normal" }) })
+            Row(Modifier.horizontalScroll(rememberScrollState())) { song.orderedDifficulties.forEach { d ->
+                FilterChip(d == difficulty, { difficulty = d }, modifier = Modifier.padding(end = 4.dp), label = { Text(when (d) { "easy" -> "Fácil"; "hard" -> "Difícil"; "normal" -> "Normal"; else -> d }) })
             } }
             if (chart == null) Text(if (song.practiceNotes) "Sin chart propio: se generarán notas de práctica al exportar." else "Sin chart propio: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
             else {

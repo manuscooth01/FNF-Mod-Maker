@@ -24,6 +24,7 @@ enum class TargetEngine(val label: String, val description: String) {
 }
 
 val ALL_DIFFICULTIES: List<String> = listOf("easy", "normal", "hard")
+fun isValidDifficulty(id: String): Boolean = id.matches(Regex("[a-z0-9][a-z0-9_-]{0,31}"))
 
 /** Ranura de audio que se está eligiendo en el paso de audio. */
 enum class AudioSlot { INSTRUMENTAL, VOICES_PLAYER, VOICES_OPPONENT }
@@ -97,7 +98,7 @@ data class SongConfig(
     val offsetValue: Int get() = offsetMs.toIntOrNull() ?: 0
 
     val orderedDifficulties: List<String>
-        get() = ALL_DIFFICULTIES.filter { it in difficulties }
+        get() = ALL_DIFFICULTIES.filter { it in difficulties } + (difficulties - ALL_DIFFICULTIES.toSet()).sorted()
 
     val hasVocals: Boolean get() = vocalsPlayer != null || vocalsOpponent != null
     val hasSplitVocals: Boolean get() = vocalsPlayer != null && vocalsOpponent != null

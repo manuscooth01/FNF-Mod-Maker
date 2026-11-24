@@ -2032,7 +2032,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun toggleActiveSongDifficulty(difficulty: String) {
-        if (busy || difficulty !in com.fnfmodmaker.model.ALL_DIFFICULTIES) return
+        if (busy || !com.fnfmodmaker.model.isValidDifficulty(difficulty)) return
         val song = config.songs.getOrNull(activeSongIndex) ?: return
         if (difficulty in song.difficulties) {
             config = com.fnfmodmaker.model.removeSongDifficulty(config, activeSongIndex, difficulty)

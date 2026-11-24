@@ -260,14 +260,17 @@ private fun WizardSongsStep(vm: WizardViewModel) {
         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number, enabled = !vm.busy)
     SectionTitle("Dificultades")
     var removeDifficulty by remember(vm.activeSongIndex) { mutableStateOf<String?>(null) }
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        com.fnfmodmaker.model.ALL_DIFFICULTIES.forEach { difficulty ->
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        (com.fnfmodmaker.model.ALL_DIFFICULTIES + song.orderedDifficulties).distinct().forEach { difficulty ->
             FilterChip(difficulty in song.difficulties, {
                 if (difficulty in song.difficulties) removeDifficulty = difficulty else vm.toggleActiveSongDifficulty(difficulty)
             }, enabled = !vm.busy,
-                label = { Text(when (difficulty) { "easy" -> "Fácil"; "normal" -> "Normal"; else -> "Difícil" }) })
+                label = { Text(when (difficulty) { "easy" -> "Fácil"; "normal" -> "Normal"; "hard" -> "Difícil"; else -> difficulty }) })
         }
     }
+    var newDifficulty by remember(vm.activeSongIndex) { mutableStateOf("") }
+    Field("Nueva dificultad", newDifficulty, { newDifficulty = it.lowercase().filter { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' || c == '_' }.take(32) }, hint = "ID, por ejemplo insane", enabled = !vm.busy)
+    TextButton(onClick = { vm.toggleActiveSongDifficulty(newDifficulty); newDifficulty = "" }, enabled = !vm.busy && com.fnfmodmaker.model.isValidDifficulty(newDifficulty) && newDifficulty !in song.difficulties) { Text("Añadir dificultad") }
     removeDifficulty?.let { difficulty -> androidx.compose.material3.AlertDialog(
         onDismissRequest = { removeDifficulty = null }, title = { Text("¿Eliminar dificultad $difficulty?") },
         text = { Text("Se quitarán la dificultad y su chart del proyecto y del ZIP. Los originales importados permanecen en el respaldo.") },

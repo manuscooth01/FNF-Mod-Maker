@@ -198,8 +198,8 @@ object ProjectProposalPlanner {
                 "difficulty" -> {
                     keys(change, setOf("type", "songIndex", "difficulty", "action"))
                     val (index, target) = song(current, change)
-                    val difficulty = requiredString(change, "difficulty", 20)
-                    if (difficulty !in ALL_DIFFICULTIES) fail("dificultad no compatible")
+                    val difficulty = requiredString(change, "difficulty", 32).lowercase()
+                    if (!isValidDifficulty(difficulty)) fail("ID de dificultad inválido")
                     val action = requiredString(change, "action", 20)
                     current = when (action) {
                         "add" -> { if (difficulty in target.difficulties) fail("la dificultad ya existe"); addSongDifficulty(current, index, difficulty) }
@@ -221,7 +221,7 @@ object ProjectProposalPlanner {
                     keys(change, setOf("type", "songIndex", "difficulty", "notes"))
                     val (index, song) = song(current, change)
                     if (song.songName.isBlank() || current.songs.count { it.songFolder == song.songFolder } != 1) fail("la canción necesita un nombre único antes de editar su chart")
-                    val diff = requiredString(change, "difficulty", 20)
+                    val diff = requiredString(change, "difficulty", 32).lowercase()
                     if (diff !in song.difficulties) fail("la dificultad $diff no está activada en la canción")
                     if (song.bpmValue !in 1..400) fail("corrige el BPM de la canción antes de crear el chart")
                     val array = change.get("notes")?.takeIf { it.isJsonArray }?.asJsonArray ?: fail("faltan notas")
@@ -237,6 +237,7 @@ object ProjectProposalPlanner {
                     }.sortedWith(compareBy<ChartNote> { it.timeMs }.thenBy { it.lane })
                     if (notes.map { it.timeMs to it.lane }.distinct().size != notes.size) fail("hay notas duplicadas en el mismo instante y carril")
                     val previous = current.getChart(song.songFolder, diff)
+                    if (previous == null && diff in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet())) fail("el chart original contiene datos no editables; elimina y vuelve a añadir la dificultad para descartarlos conscientemente")
                     if (previous != null && previous.notes.size > 1000) fail("el chart existente tiene demasiadas notas para revisarlo en este lote")
                     if (previous != null && (previous.events.isNotEmpty() || previous.sections.isNotEmpty())) fail("el chart contiene eventos o secciones que no se pueden preservar")
                     val chart = ChartDraft(songFolder = song.songFolder, difficulty = diff, notes = notes, bpm = song.bpmValue,
@@ -322,7 +323,7 @@ fun projectContext(config: ModConfig, characterOnly: Boolean): String {
                 "opponent" to song.opponent, "girlfriend" to song.girlfriend, "stagePsych" to song.stagePsych, "stageVSlice" to song.stageVSlice,
                 "charts" to song.orderedDifficulties.map { difficulty ->
                     val chart = config.getChart(song.songFolder, difficulty)
-                    mapOf("difficulty" to difficulty, "custom" to (chart != null), "noteCount" to (chart?.notes?.size ?: 0),
+                    mapOf("difficulty" to difficulty, "custom" to (chart != null), "originalRetainedWithoutEditing" to (chart == null && difficulty in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet())), "noteCount" to (chart?.notes?.size ?: 0),
                         "events" to (chart?.events?.size ?: 0), "sampleNotes" to (chart?.notes?.take(30) ?: emptyList<ChartNote>()),
                         "sampleTruncated" to ((chart?.notes?.size ?: 0) > 30))
                 })

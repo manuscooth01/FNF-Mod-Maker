@@ -399,6 +399,23 @@ class VSliceImportCycleTest {
         val next = ModBuilder.buildInternal(added, File(temp.root, "added-build"), temp.root, {}, services())
         assertTrue(JSONObject(File(next.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("notes").has("easy"))
     }
+    @Test fun customVSliceDifficultySurvivesImportAndCanBeRemoved() {
+        val store = ProjectStore(File(temp.root, "vs-custom"), temp.root)
+        val meta = metadata.replace("[\"normal\",\"hard\"]", "[\"normal\",\"hard\",\"insane\"]")
+        val customChart = chart.replace("\"hard\":[{\"t\":300", "\"insane\":[{\"t\":1000,\"d\":2}],\"hard\":[{\"t\":300")
+        val prepared = prepare(zip(meta = meta, chartText = customChart), store)
+        assertTrue("insane" in prepared.config.firstSong.difficulties)
+        assertEquals(1000L, prepared.config.getChart("test", "insane")!!.notes.single().timeMs)
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(prepared.config).asJsonObject) { }
+        var reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        var built = ModBuilder.buildInternal(reopened, File(temp.root, "vs-custom-output"), temp.root, {}, services())
+        assertTrue(JSONObject(File(built.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("notes").has("insane"))
+        reopened = removeSongDifficulty(reopened, 0, "insane"); store.save(id, gson.toJsonTree(reopened).asJsonObject)
+        reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        built = ModBuilder.buildInternal(reopened, File(temp.root, "vs-custom-removed"), temp.root, {}, services())
+        assertFalse(JSONObject(File(built.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("notes").has("insane"))
+    }
+
     @Test fun removingUnsupportedDifficultyIsIntentionalAndPersists() {
         val store = ProjectStore(File(temp.root, "remove-special"), temp.root)
         val prepared = prepare(zip(), store)

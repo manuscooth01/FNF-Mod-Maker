@@ -145,9 +145,9 @@ private fun LiveSetup(vm: WizardViewModel) {
     }
     val song = vm.liveSong
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        ALL_DIFFICULTIES.filter { it in (song?.difficulties ?: emptySet()) }.forEach { difficulty ->
+        song?.orderedDifficulties.orEmpty().forEach { difficulty ->
             FilterChip(difficulty == vm.liveDifficulty, { vm.selectLiveDifficulty(difficulty) }, enabled = !locked,
-                label = { Text(when (difficulty) { "easy" -> "Fácil"; "normal" -> "Normal"; else -> "Difícil" }) })
+                label = { Text(when (difficulty) { "easy" -> "Fácil"; "normal" -> "Normal"; "hard" -> "Difícil"; else -> difficulty }) })
         }
     }
     if (song == null || song.songName.isBlank() || vm.config.songs.count { it.songFolder == song.songFolder } > 1)

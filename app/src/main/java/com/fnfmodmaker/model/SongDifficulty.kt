@@ -11,7 +11,7 @@ internal fun removeSongDifficulty(config: ModConfig, index: Int, difficulty: Str
         chartHistories = if (history.isEmpty()) config.chartHistories - song.songFolder else config.chartHistories + (song.songFolder to history))
 }
 internal fun addSongDifficulty(config: ModConfig, index: Int, difficulty: String): ModConfig {
-    require(difficulty in ALL_DIFFICULTIES)
+    require(isValidDifficulty(difficulty)) { "ID de dificultad inválido." }
     val song = config.songs[index]
     val songs = config.songs.toMutableList().apply { this[index] = song.copy(difficulties = song.difficulties + difficulty) }
     val updated = config.copy(songs = songs)

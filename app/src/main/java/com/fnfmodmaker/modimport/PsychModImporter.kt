@@ -56,7 +56,16 @@ internal class PsychModImporter(
                 ensureActive()
                 require(folder == psychSongPath(folder) && folder.matches(Regex("[a-z0-9_-]{1,80}"))) { "Carpeta de canción no compatible: $folder" }
                 val perSong = linkedMapOf<String, ChartDraft>()
-                for (difficulty in ALL_DIFFICULTIES) {
+                val prefix = "data/$folder/$folder"
+                val difficulties = chartPaths.mapNotNull { path ->
+                    when {
+                        path == "$prefix.json" -> "normal"
+                        path.startsWith("$prefix-") && path.endsWith(".json") -> path.removePrefix("$prefix-").removeSuffix(".json").takeIf { it != "normal" && isValidDifficulty(it) }
+                        else -> null
+                    }
+                }.distinct().sorted()
+                require(difficulties.size <= 64) { "Demasiadas dificultades en $folder." }
+                for (difficulty in difficulties) {
                     val path = "data/$folder/${folder}${if (difficulty == "normal") "" else "-$difficulty"}.json"
                     val file = index[path] ?: continue
                     require(file.length() in 1..4_000_000) { "Chart vacío o demasiado grande: $path" }

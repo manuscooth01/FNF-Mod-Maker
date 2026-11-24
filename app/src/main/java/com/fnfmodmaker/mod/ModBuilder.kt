@@ -54,6 +54,7 @@ object ModBuilder {
         // Fail before creating or clearing output directories, even if called outside the wizard.
         require(rawConfig.songs.isNotEmpty()) { "Añade al menos una canción." }
         require(rawConfig.songs.all { it.songFolder.matches(Regex("[a-z0-9_-]{1,80}")) }) { "Nombre de carpeta de canción inválido." }
+        require(rawConfig.songs.all { song -> song.difficulties.size <= 64 && song.difficulties.all { com.fnfmodmaker.model.isValidDifficulty(it) } }) { "ID de dificultad inválido." }
         rawConfig.songs.forEach { song -> song.orderedDifficulties.forEach { difficulty ->
             rawConfig.getChart(song.songFolder, difficulty)?.requireExportable()
         } }
@@ -301,9 +302,14 @@ object ModBuilder {
                 }
                 val oldFolder = song.importedPsychFolder.ifEmpty { song.songFolder }
                 if (config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) {
-                    com.fnfmodmaker.model.ALL_DIFFICULTIES.forEach { difficulty ->
-                        val path = "data/$oldFolder/$oldFolder${if (difficulty == "normal") "" else "-$difficulty"}.json"
-                        if (oldFolder != song.songFolder || difficulty !in com.fnfmodmaker.model.exportDifficulties(config, song)) omitted.add(path)
+                    config.importedModResources.filter { it.converted && it.originalPath.startsWith("data/$oldFolder/") }.forEach { resource ->
+                        val name = resource.originalPath.removePrefix("data/$oldFolder/").removeSuffix(".json")
+                        val difficulty = when {
+                            name == oldFolder -> "normal"
+                            name.startsWith("$oldFolder-") -> name.removePrefix("$oldFolder-")
+                            else -> ""
+                        }
+                        if (difficulty.isNotEmpty() && (oldFolder != song.songFolder || difficulty !in com.fnfmodmaker.model.exportDifficulties(config, song))) omitted.add(resource.originalPath)
                     }
                     if (oldFolder != song.songFolder) config.importedModResources.filter { it.converted && it.originalPath.startsWith("songs/$oldFolder/") }.forEach { omitted.add(it.originalPath) }
                 }

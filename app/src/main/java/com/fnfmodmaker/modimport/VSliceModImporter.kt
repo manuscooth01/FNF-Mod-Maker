@@ -82,12 +82,14 @@ internal class VSliceModImporter(
                 val metadataDifficulties = play.optJSONArray("difficulties")
                 val declared = if (metadataDifficulties == null) sourceNotes.keys().asSequence().toSet() else (0 until metadataDifficulties.length()).map { metadataDifficulties.optString(it) }.toSet()
                 val perSong = linkedMapOf<String, ChartDraft>()
-                for (difficulty in ALL_DIFFICULTIES.filter { it in declared && sourceNotes.has(it) }) {
+                val supported = declared.filter { isValidDifficulty(it) && sourceNotes.has(it) }.sorted()
+                require(supported.size <= 64) { "$chartPath: demasiadas dificultades." }
+                for (difficulty in supported) {
                     try { perSong[difficulty] = readVSliceDifficulty(chart, folder, difficulty, bpm.toInt(), speedFor(difficulty)) }
                     catch (e: Exception) { warnings.add("$chartPath · $difficulty: no editable (${e.message}); se conservará sin modificar mientras no se elimine.") }
                 }
                 val uneditable = (declared + sourceNotes.keys().asSequence().toSet()) - perSong.keys
-                val retained = ALL_DIFFICULTIES.filter { it in declared && sourceNotes.has(it) && it !in perSong }.toSet()
+                val retained = supported.filter { it !in perSong }.toSet()
                 val other = uneditable - retained
                 if (other.isNotEmpty()) warnings.add("$chartPath: dificultades no compatibles o sin chart: ${other.sorted().joinToString()}; el original se conserva en el proyecto.")
                 if ((chart.optJSONArray("events")?.length() ?: 0) > 0) warnings.add("$chartPath: eventos conservados sin edición; se mantendrán al modificar notas.")

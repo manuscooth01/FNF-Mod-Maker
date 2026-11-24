@@ -62,7 +62,7 @@ object AiProtocol {
                 "fps":{"type":"integer"},"loop":{"type":"boolean"},"offsetX":{"type":"integer"},"offsetY":{"type":"integer"},"prefix":{"type":"string"},
                 "artist":{"type":"string"},"bpm":{"type":"integer"},"speed":{"type":"number"},"offsetMs":{"type":"integer"},"practiceNotes":{"type":"boolean"},
                 "stagePsych":{"type":"string"},"stageVSlice":{"type":"string"},
-                "difficulty":{"type":"string","enum":["easy","normal","hard"]},
+                "difficulty":{"type":"string","description":"ID seguro en minúsculas, por ejemplo easy, normal, hard o insane"},
                 "notes":{"type":"array","maxItems":1000,"items":{"type":"object","additionalProperties":false,"required":["timeMs","lane"],"properties":{"timeMs":{"type":"integer"},"lane":{"type":"integer"},"lengthMs":{"type":"integer"}}}}
               }
             }}

@@ -67,7 +67,7 @@ internal fun ModPreviewScreen(vm: WizardViewModel, onClose: () -> Unit) {
                         config.songs.forEachIndexed { i, value -> FilterChip(i == index, onClick = { audio.stop(); index = i }, label = { Text(value.songName.ifBlank { "Canción ${i + 1}" }) }) }
                     }
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ALL_DIFFICULTIES.filter { it in song.difficulties }.forEach { d -> FilterChip(d == difficulty, onClick = { difficulty = d }, label = { Text(when (d) { "easy" -> "Fácil"; "hard" -> "Difícil"; else -> "Normal" }) }) }
+                        song.orderedDifficulties.forEach { d -> FilterChip(d == difficulty, onClick = { difficulty = d }, label = { Text(when (d) { "easy" -> "Fácil"; "hard" -> "Difícil"; "normal" -> "Normal"; else -> d }) }) }
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {

@@ -172,13 +172,14 @@ class ModZipConfirmationTest {
         vm.setCharLeftFrames("0"); vm.setCharDownFrames("0"); vm.setCharUpFrames("0"); vm.setCharRightFrames("0")
         val png = File(app.cacheDir, "metza.png"); javaClass.getResourceAsStream("/psych-fixture/dad.png")!!.use { png.writeBytes(it.readBytes()) }
         vm.pickCharacterSheet(Uri.fromFile(png)); await { !vm.busy }; assertNull(vm.error)
-        val assignment = """{"summary":"Cambiar rival","changes":[{"type":"assignment","role":"opponent","characterId":"${vm.config.selectedCharacterId}"}]}"""
+        val assignment = """{"summary":"Cambiar rival","changes":[{"type":"assignment","role":"opponent","characterId":"${vm.config.selectedCharacterId}"},{"type":"animation","characterId":"${vm.config.selectedCharacterId}","name":"idle","fps":18,"offsetX":7}]}"""
         vm.acceptAiProposal(vm.config, com.fnfmodmaker.ai.AiProtocol.ProjectResponse(null, assignment), false)
         assertNotNull(vm.aiError, vm.aiProposal); vm.applyAiProposal()
         assertEquals("metza", vm.config.effectiveExportConfig().firstSong.opponent)
         vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
         assertEquals("dad", vm.config.firstSong.opponent)
         assertEquals("metza", vm.config.effectiveExportConfig().firstSong.opponent)
+        assertEquals("18", vm.config.character.settingsFor("idle").fps)
         assertTrue(vm.validationIssues.joinToString { it.message }, vm.exportReady)
         val output = File(app.cacheDir, "tarde-metza.zip")
         vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
@@ -190,6 +191,9 @@ class ModZipConfirmationTest {
         assertEquals("metza", chars.getString("opponent")); chars.put("opponent", "dad")
         assertEquals(com.google.gson.JsonParser.parseString(original), com.google.gson.JsonParser.parseString(exported.toString())); assertEquals(original, File(originalPath).readText())
         listOf("data/characters/metza.json", "images/characters/metza.png", "images/characters/metza.xml").forEach { assertTrue(it, files.containsKey(prefix + it)) }
+        val characterJson = org.json.JSONObject(files.getValue(prefix + "data/characters/metza.json").toString(Charsets.UTF_8))
+        val idle = characterJson.getJSONArray("animations").getJSONObject(0)
+        assertEquals("idle", idle.getString("name")); assertEquals(18, idle.getInt("frameRate")); assertEquals(7, idle.getJSONArray("offsets").getInt(0))
     }
 
     @Test fun simulatedAiResponseAppliesSavesReopensAndUndoIsSafe() {
@@ -210,6 +214,18 @@ class ModZipConfirmationTest {
         assertFalse(vm.canUndoAi)
         vm.acceptAiProposal(vm.config, com.fnfmodmaker.ai.AiProtocol.ProjectResponse("Consejo", null), false)
         assertTrue(vm.aiProposalNotice!!.contains("herramientas")); assertNull(vm.aiProposal)
+    }
+
+    @Test fun undoNeverOverwritesLaterManualEdits() {
+        val base = vm.config
+        val args = """{"summary":"posición","changes":[{"type":"character","positionX":12}]}"""
+        vm.acceptAiProposal(base, com.fnfmodmaker.ai.AiProtocol.ProjectResponse(null, args), false)
+        vm.applyAiProposal(); assertTrue(vm.canUndoAi)
+        vm.setCharName("Edición posterior")
+        vm.undoAiBatch()
+        assertEquals("Edición posterior", vm.config.character.displayName)
+        assertEquals("12", vm.config.character.positionX)
+        assertTrue(vm.aiError!!.contains("cambió"))
     }
 
     @Test fun publicationFailureShowsErrorRetainsReviewAndCanRetry() {

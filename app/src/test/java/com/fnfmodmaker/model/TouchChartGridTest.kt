@@ -19,6 +19,16 @@ class TouchChartGridTest {
         for (lane in 0..7) assertEquals(lane, grid.laneForColumn(grid.columnForLane(lane)!!))
         assertNull(grid.laneForColumn(8)); assertNull(grid.columnForLane(-1))
     }
+    @Test fun gridFollowsTempoAndDenominatorChangesWithoutMovingNotes() {
+        val grid = TouchGrid(120, 4, 6000, listOf(GridTempo(0.0, 120.0, 4), GridTempo(2000.0, 180.0, 8), GridTempo(3000.0, 90.0, 4)))
+        assertEquals(2000L, grid.pageStart(1))
+        assertEquals(2167L, grid.timeAt(1, 4))
+        assertEquals(4.0, grid.rowPosition(2167, 1), .01)
+        assertEquals(2, grid.pageForTime(2667))
+        assertEquals(3000L, grid.timeAtBeat(10.0).toLong())
+        assertEquals(3667L, grid.shiftTime(3000, 1.0))
+        assertEquals(4000L, grid.pageEnd(2))
+    }
     @Test fun replaceIsAtomicAndPreservesOtherNotes() {
         val hold = ChartNote(500, 0, 500)
         val chord = ChartNote(500, 4)

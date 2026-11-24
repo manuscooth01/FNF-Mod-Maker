@@ -61,7 +61,10 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
     val song = vm.liveSong ?: return
     if (song.bpmValue !in 1..400 || vm.liveDurationMs <= 0L) return
     var divisions by rememberSaveable { mutableStateOf(4) }
-    val grid = remember(song.bpmValue, divisions, vm.liveDurationMs) { TouchGrid(song.bpmValue, divisions, vm.liveDurationMs) }
+    val tempos = remember(vm.config, vm.liveSongIndex) {
+        if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) runCatching { com.fnfmodmaker.mod.vSliceGridTempos(vm.liveVSliceTempo()) }.getOrNull() else emptyList()
+    }
+    val grid = remember(song.bpmValue, divisions, vm.liveDurationMs, tempos) { TouchGrid(song.bpmValue, divisions, vm.liveDurationMs, tempos.orEmpty()) }
     var page by rememberSaveable { mutableStateOf(grid.pageForTime(vm.livePositionMs)) }
     page = page.coerceIn(0, grid.pageCount - 1)
     var selected by remember { mutableStateOf<ChartNote?>(null) }
@@ -87,7 +90,8 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         Text("Cuadrícula de notas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text("${song.songName} · ${vm.liveDifficulty} · ${gridClock(grid.pageStart(page))}", style = MaterialTheme.typography.labelSmall)
-                        Text("La cuadrícula usa el BPM inicial; no sigue cambios posteriores de tempo.", style = MaterialTheme.typography.labelSmall)
+                        if (tempos == null) Text("No se pudo leer el mapa de tempo; se usa el BPM inicial. Los tiempos exactos no cambian.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
+                        else Text("Páginas de cuatro beats; el compás puede tener otra duración.", style = MaterialTheme.typography.labelSmall)
                     }
                     LocalToolbarIcon()
                     TextButton(onClick = onClose) { Text("Listo") }
@@ -95,7 +99,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Ajuste", style = MaterialTheme.typography.labelMedium)
                     listOf(1 to "1/4", 2 to "1/8", 4 to "1/16", 8 to "1/32").forEach { (value, label) ->
-                        FilterChip(divisions == value, { val time = grid.pageStart(page); divisions = value; page = TouchGrid(song.bpmValue, value, vm.liveDurationMs).pageForTime(time) },
+                        FilterChip(divisions == value, { val time = grid.pageStart(page); divisions = value; page = TouchGrid(song.bpmValue, value, vm.liveDurationMs, tempos.orEmpty()).pageForTime(time) },
                             enabled = !locked, label = { Text(label) })
                     }
                     FilterChip(!resizeMode, { resizeMode = false }, enabled = !locked, label = { Text("Mover") })
@@ -128,11 +132,11 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                     Text("Seleccionada: ${if (note.lane < 4) "Jugador" else "Rival"} ${gridArrows[note.lane % 4]} · ${gridClock(note.timeMs)} · ${note.lengthMs} ms", style = MaterialTheme.typography.labelMedium)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         TextButton(onClick = {
-                            val updated = note.copy(lengthMs = (note.lengthMs - grid.stepMs.roundToLong()).coerceAtLeast(0L))
+                            val updated = note.copy(lengthMs = (grid.shiftTime(note.endTimeMs, -1.0 / grid.divisionsPerBeat) - note.timeMs).coerceAtLeast(0L))
                             if (vm.applyGridNote(note, updated)) selected = updated
                         }, enabled = !locked && note.lengthMs > 0) { Text("Sostenido −") }
                         TextButton(onClick = {
-                            val updated = note.copy(lengthMs = note.lengthMs + grid.stepMs.roundToLong())
+                            val updated = note.copy(lengthMs = (grid.shiftTime(note.endTimeMs, 1.0 / grid.divisionsPerBeat) - note.timeMs).coerceAtLeast(0L))
                             if (vm.applyGridNote(note, updated)) selected = updated
                         }, enabled = !locked) { Text("Sostenido +") }
                         TextButton(onClick = { timeText = note.timeMs.toString(); timeError = null; editTime = true }, enabled = !locked) { Text("Tiempo exacto") }
@@ -154,15 +158,15 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                             if (pasted != null && vm.applyGridChanges(emptyList(), pasted)) group = pasted.toSet()
                         }, enabled = clipboard.isNotEmpty() && !locked) { Text("Pegar al inicio de página") }
                         TextButton(onClick = {
-                            val copies = translateGridNotes(chosen, (grid.rows * grid.stepMs).roundToLong(), 0)
+                            val copies = chosen.map { it.copy(timeMs = grid.shiftTime(it.timeMs, 4.0)) }
                             if (copies != null && vm.applyGridChanges(emptyList(), copies)) group = copies.toSet()
                         }, enabled = chosen.isNotEmpty() && !locked) { Text("Duplicar +1 compás") }
                         TextButton(onClick = { confirmDelete = true }, enabled = chosen.isNotEmpty() && !locked) { Text("Quitar grupo") }
                         TextButton(onClick = { group = emptySet() }, enabled = chosen.isNotEmpty()) { Text("Deseleccionar") }
                     }
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                        TextButton(onClick = { moveGroup(-grid.stepMs.roundToLong(), 0) }, enabled = chosen.isNotEmpty() && !locked) { Text("Tiempo −") }
-                        TextButton(onClick = { moveGroup(grid.stepMs.roundToLong(), 0) }, enabled = chosen.isNotEmpty() && !locked) { Text("Tiempo +") }
+                        TextButton(onClick = { val moved = chosen.map { it.copy(timeMs = grid.shiftTime(it.timeMs, -1.0 / grid.divisionsPerBeat)) }; if (vm.applyGridChanges(chosen, moved)) group = moved.toSet() }, enabled = chosen.isNotEmpty() && !locked) { Text("Tiempo −") }
+                        TextButton(onClick = { val moved = chosen.map { it.copy(timeMs = grid.shiftTime(it.timeMs, 1.0 / grid.divisionsPerBeat)) }; if (vm.applyGridChanges(chosen, moved)) group = moved.toSet() }, enabled = chosen.isNotEmpty() && !locked) { Text("Tiempo +") }
                         TextButton(onClick = { moveGroup(0, -1) }, enabled = chosen.isNotEmpty() && !locked) { Text("Carril ←") }
                         TextButton(onClick = { moveGroup(0, 1) }, enabled = chosen.isNotEmpty() && !locked) { Text("Carril →") }
                     }
@@ -220,7 +224,7 @@ private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playh
         .pointerInput(grid, page, resizeMode, multiMode, locked) {
             val rowH = size.height.toFloat() / grid.rows
             val colW = size.width.toFloat() / 8f
-            fun noteY(time: Long) = ((time / grid.stepMs - page.toLong() * grid.rows) + .5).toFloat() * rowH
+            fun noteY(time: Long) = (grid.rowPosition(time, page) + .5).toFloat() * rowH
             fun hit(point: Offset): ChartNote? {
                 val col = (point.x / colW).toInt()
                 val lane = grid.laneForColumn(col) ?: return null
@@ -273,7 +277,7 @@ private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playh
         for (column in 0..7) drawRect(gridColors[column % 4].copy(alpha = .08f), Offset(column * colW, 0f), Size(colW, size.height))
         for (column in 0..8) drawLine(Color.White.copy(alpha = if (column == 4) .7f else .2f), Offset(column * colW, 0f), Offset(column * colW, size.height), if (column == 4) 3f else 1f)
         for (row in 0..grid.rows) drawLine(Color.White.copy(alpha = if (row % grid.divisionsPerBeat == 0) .45f else .14f), Offset(0f, row * rowH), Offset(size.width, row * rowH), if (row % grid.divisionsPerBeat == 0) 2f else 1f)
-        fun noteY(time: Long) = ((time / grid.stepMs - page.toLong() * grid.rows) + .5).toFloat() * rowH
+        fun noteY(time: Long) = (grid.rowPosition(time, page) + .5).toFloat() * rowH
         for (note in notes) {
             val col = grid.columnForLane(note.lane) ?: continue
             val y = noteY(note.timeMs); val endY = noteY(note.endTimeMs)
@@ -300,7 +304,7 @@ private fun GridButtonEditor(grid: TouchGrid, page: Int, notes: List<ChartNote>,
     var column by remember { mutableStateOf(0) }
     val lane = grid.laneForColumn(column)!!
     val time = grid.timeAt(page, row)
-    val nearby = if (time == null) null else notes.filter { it.lane == lane && abs(it.timeMs - time) < grid.stepMs / 2 }
+    val nearby = if (time == null) null else notes.filter { it.lane == lane && abs(it.timeMs - time) < grid.stepMsAt(time) / 2 }
         .minByOrNull { abs(it.timeMs - time) }
     AlertDialog(onDismissRequest = onClose, title = { Text("Edición por botones") },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {

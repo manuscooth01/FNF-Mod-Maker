@@ -65,7 +65,7 @@ private fun WaveRow(label: String, audio: PickedAudio, durationMs: Long, relativ
             .pointerInput(grid, durationMs) { detectTapGestures { onPage(grid.pageForTime((it.x / size.width * durationMs).toLong())) } }) {
             drawRect(Color(0xFF171322))
             val start = grid.pageStart(page).toDouble() / durationMs * size.width
-            val endTime = (grid.pageStart(page) + (grid.stepMs * grid.rows).toLong()).coerceAtMost(durationMs)
+            val endTime = grid.pageEnd(page)
             val end = endTime.toDouble() / durationMs * size.width
             drawRect(Color(0xFF7B4C99).copy(alpha = .35f), Offset(start.toFloat(), 0f), Size((end - start).toFloat().coerceAtLeast(1f), size.height))
             wave.values.forEachIndexed { index, peak ->

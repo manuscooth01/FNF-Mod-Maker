@@ -53,7 +53,7 @@ internal fun VSliceTempoEditor(vm: WizardViewModel) {
             }
         }
         TextButton(onClick = { edit(null, "añadir") }) { Text("Añadir cambio") }
-        Text("La cuadrícula y el ajuste de grabación todavía usan el BPM inicial; utiliza tiempos exactos para cambios posteriores.", style = MaterialTheme.typography.labelSmall)
+        Text("La cuadrícula sigue el mapa de tempo; el ajuste de grabación en vivo todavía usa el BPM inicial.", style = MaterialTheme.typography.labelSmall)
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     } }, confirmButton = { TextButton(onClick = {
         runCatching { check(vm.liveVSliceTempo() == original) { "El tempo cambió mientras editabas; vuelve a abrirlo." }; vm.saveLiveVSliceTempo(draft) }

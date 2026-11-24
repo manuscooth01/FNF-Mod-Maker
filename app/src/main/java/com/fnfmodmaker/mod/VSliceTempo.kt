@@ -98,3 +98,13 @@ internal fun duplicateVSliceTempo(source: String, index: Int, time: String): Str
     result.set(target, copy)
     return validateVSliceTempo(result.toString())
 }
+
+internal fun vSliceGridTempos(source: String): List<com.fnfmodmaker.model.GridTempo> {
+    val rows = JsonParser.parseString(validateVSliceTempo(source)).asJsonArray
+    var bpm = 0.0
+    return rows.map { entry ->
+        val row = entry.asJsonObject
+        bpm = row.get("bpm")?.asDouble ?: bpm
+        com.fnfmodmaker.model.GridTempo(row.get("t").asDouble, bpm, row.get("d")?.asInt ?: 4)
+    }
+}

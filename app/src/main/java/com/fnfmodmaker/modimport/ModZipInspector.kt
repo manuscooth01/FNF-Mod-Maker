@@ -42,6 +42,7 @@ internal class ModZipInspector(private val tempRoot: File, private val limits: M
     }
     private fun key(path: String) = Normalizer.normalize(path, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
     private fun validateType(entry: ZipArchiveEntry) {
+        require(entry.rawName?.none { it.toInt() == 0x5c } != false) { "Separador ZIP no permitido: ${entry.name}" }
         val mode = entry.unixMode
         val type = mode and 0xF000
         // Archives without Unix attributes report zero. Reject special files and symlinks.

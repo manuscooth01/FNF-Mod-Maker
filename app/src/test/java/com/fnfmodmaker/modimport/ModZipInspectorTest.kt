@@ -47,11 +47,12 @@ class ModZipInspectorTest {
     }
     @Test fun rejectsTraversalAbsoluteAndDangerousPaths() {
         for (name in listOf("../escape", "/absolute", "C:/x", "foo/../x", "foo\\x", "a//b", "a/./b", "a/．．/b", "a/name?.txt")) {
-            // Commons normalizes a leading slash on write; patch the headers to make a real absolute path.
-            val bytes = if (name.startsWith('/')) {
+            // Commons normalizes leading slashes/backslashes on write; patch both headers.
+            val safeName = (if (name.startsWith('/')) "X" + name.substring(1) else name).replace('\\', '/')
+            val bytes = if (safeName != name) {
                 val replacement = name.toByteArray()
-                val safe = ("X" + name.substring(1)).toByteArray()
-                zip(file("X" + name.substring(1))).also { archive ->
+                val safe = safeName.toByteArray()
+                zip(file(safeName)).also { archive ->
                     for (i in 0..archive.size - safe.size) {
                         if (safe.indices.all { archive[i + it] == safe[it] }) replacement.copyInto(archive, i)
                     }

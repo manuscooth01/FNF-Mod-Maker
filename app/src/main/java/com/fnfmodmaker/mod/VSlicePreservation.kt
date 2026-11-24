@@ -146,6 +146,9 @@ internal fun freeVSliceMetadata(original: String, raw: SongConfig, effective: So
     }
     removeVoiceReference("playerVocals", origin.playerVoiceFile, effective.vocalsPlayer == null)
     removeVoiceReference("opponentVocals", origin.opponentVoiceFile, effective.vocalsOpponent == null)
+    raw.vSliceTempoJson?.let { tempo ->
+        json.add("timeChanges", com.google.gson.JsonParser.parseString(tempoWithInitialBpm(tempo, raw.bpmValue)))
+    }
     if (raw.bpm != origin.originalBpm) {
         val times = json.getAsJsonArray("timeChanges") ?: error("Falta timeChanges.")
         require(times.size() > 0 && times[0].isJsonObject) { "Tempo inicial inválido." }

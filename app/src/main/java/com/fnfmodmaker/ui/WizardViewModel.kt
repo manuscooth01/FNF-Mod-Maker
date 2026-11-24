@@ -475,6 +475,41 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         scheduleAutoSave(); forceAutoSave()
     }
 
+    /** Song-wide V-Slice time changes. Original metadata stays untouched in project assets. */
+    internal fun liveVSliceTempo(): String {
+        val song = liveSong ?: error("Selecciona una canción.")
+        val stored = song.vSliceTempoJson ?: song.vSliceOrigin?.let { origin ->
+            val text = com.fnfmodmaker.mod.originalVSliceText(config, origin.metadataPath, File(getApplication<Application>().applicationInfo.dataDir), false)
+            com.fnfmodmaker.modimport.readVSliceJson(text, "metadata original")
+            com.fnfmodmaker.mod.rejectDuplicateJsonKeys(text)
+            com.google.gson.JsonParser.parseString(text).asJsonObject.get("timeChanges")?.toString() ?: error("Falta timeChanges.")
+        } ?: """[{"t":0,"bpm":${song.bpmValue},"n":4,"d":4}]"""
+        return com.fnfmodmaker.mod.tempoWithInitialBpm(stored, song.bpmValue)
+    }
+    internal fun saveLiveVSliceTempo(text: String) {
+        check(config.engine == TargetEngine.VSLICE && !livePlaying && !liveLoading && !busy) { "Pausa el editor y selecciona V-Slice." }
+        val song = liveSong ?: error("Selecciona una canción.")
+        val before = liveVSliceTempo()
+        val edited = com.fnfmodmaker.mod.validateVSliceTempo(text)
+        if (before == edited) return
+        val bpm = com.google.gson.JsonParser.parseString(edited).asJsonArray[0].asJsonObject.get("bpm").asInt
+        val songs = config.songs.toMutableList()
+        songs[liveSongIndex] = song.copy(bpm = bpm.toString(), vSliceTempoJson = edited, vSliceTempoUndo = (song.vSliceTempoUndo + before).takeLast(10), vSliceTempoRedo = emptyList())
+        config = config.copy(songs = songs); scheduleAutoSave(); forceAutoSave()
+    }
+    internal fun restoreLiveVSliceTempo(redo: Boolean) {
+        check(config.engine == TargetEngine.VSLICE && !livePlaying && !liveLoading && !busy) { "Pausa el editor y selecciona V-Slice." }
+        val song = liveSong ?: error("Selecciona una canción.")
+        val previous = (if (redo) song.vSliceTempoRedo else song.vSliceTempoUndo).lastOrNull() ?: error("No hay cambio de tempo que restaurar.")
+        val checked = com.fnfmodmaker.mod.validateVSliceTempo(previous)
+        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asInt
+        val current = liveVSliceTempo()
+        val songs = config.songs.toMutableList()
+        songs[liveSongIndex] = if (redo) song.copy(bpm = bpm.toString(), vSliceTempoJson = checked, vSliceTempoRedo = song.vSliceTempoRedo.dropLast(1), vSliceTempoUndo = (song.vSliceTempoUndo + current).takeLast(10))
+            else song.copy(bpm = bpm.toString(), vSliceTempoJson = checked, vSliceTempoUndo = song.vSliceTempoUndo.dropLast(1), vSliceTempoRedo = (song.vSliceTempoRedo + current).takeLast(10))
+        config = config.copy(songs = songs); scheduleAutoSave(); forceAutoSave()
+    }
+
     internal fun livePsychEvents(): String = liveChart?.psychEventsJson?.ifBlank { "[]" } ?: "[]"
     internal fun saveLivePsychEvents(text: String) {
         check(config.engine == TargetEngine.PSYCH && !livePlaying && !liveLoading && !busy && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
@@ -2074,7 +2109,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun setActiveSongBpm(value: String) {
-        updateActiveSong { it.copy(bpm = value.filter { it.isDigit() }.take(3)) }
+        updateActiveSong { it.copy(bpm = value.filter { c -> c.isDigit() }.take(3), vSliceTempoUndo = emptyList(), vSliceTempoRedo = emptyList()) }
     }
 
     internal fun setActiveSongSpeed(value: String) {

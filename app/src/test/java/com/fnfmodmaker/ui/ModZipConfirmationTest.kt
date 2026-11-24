@@ -151,6 +151,26 @@ class ModZipConfirmationTest {
         assertTrue(File(vm.config.firstSong.instrumental!!.path).isFile)
         assertEquals(vm.currentProjectId, File(app.filesDir, "projects/active.txt").readText())
     }
+    @Test fun vSliceTempoChangesPersistUndoRedoAndExport() {
+        val previous = vm.currentProjectId!!
+        vm.inspectModZip(zip()); await { !vm.busy }; vm.confirmModZipImport(); await { !vm.busy }
+        val imported = vm.currentProjectId!!
+        vm.openLiveChart()
+        val first = vm.liveVSliceTempo()
+        val edited = com.fnfmodmaker.mod.changeVSliceTempo(first, null, "1000", "180", "3", "8")
+        vm.saveLiveVSliceTempo(edited)
+        vm.closeLiveChart(); vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
+        vm.openLiveChart(); assertEquals(edited, vm.liveVSliceTempo())
+        vm.restoreLiveVSliceTempo(false); assertEquals(first, vm.liveVSliceTempo())
+        vm.restoreLiveVSliceTempo(true); assertEquals(edited, vm.liveVSliceTempo())
+        vm.closeLiveChart()
+        val output = File(app.cacheDir, "tempo-export.zip")
+        vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val meta = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/songs/tarde/tarde-metadata.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals(com.google.gson.JsonParser.parseString(edited), meta.get("timeChanges"))
+    }
     @Test fun vSliceEventEditsPersistUndoAndExport() {
         val previous = vm.currentProjectId!!
         vm.inspectModZip(zip()); await { !vm.busy }; vm.confirmModZipImport(); await { !vm.busy }

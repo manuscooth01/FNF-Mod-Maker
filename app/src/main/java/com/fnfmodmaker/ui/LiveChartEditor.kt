@@ -239,6 +239,7 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         confirmButton = { TextButton(onClick = { vm.deleteLiveCustomChart(); confirmDelete = false }) { Text("Borrar") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } })
     if (vm.config.engine.includesVSlice) {
+        if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) VSliceTempoEditor(vm)
         VSliceVisualEvents(vm)
         VSliceEventsEditor(vm)
     }

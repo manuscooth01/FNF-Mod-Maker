@@ -49,6 +49,19 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 require(it.isJsonPrimitive && it.asJsonPrimitive.isString) { "Eventos V-Slice inválidos." }
                 com.fnfmodmaker.mod.validateVSliceEvents(it.asString)
             }
+            song.get("vSliceTempoJson")?.takeUnless { it.isJsonNull }?.let {
+                require(it.isJsonPrimitive && it.asJsonPrimitive.isString) { "Tempo V-Slice inválido." }
+                com.fnfmodmaker.mod.validateVSliceTempo(it.asString)
+            }
+            listOf("vSliceTempoUndo", "vSliceTempoRedo").forEach { key ->
+                song.get(key)?.let { stack ->
+                    require(stack.isJsonArray && stack.asJsonArray.size() <= 10) { "Historial de tempo inválido." }
+                    stack.asJsonArray.forEach { entry ->
+                        require(entry.isJsonPrimitive && entry.asJsonPrimitive.isString) { "Historial de tempo inválido." }
+                        com.fnfmodmaker.mod.validateVSliceTempo(entry.asString)
+                    }
+                }
+            }
             listOf("vSliceEventsUndo", "vSliceEventsRedo").forEach { key ->
                 song.get(key)?.let { stack ->
                     require(stack.isJsonArray && stack.asJsonArray.size() <= 10) { "Historial de eventos inválido." }

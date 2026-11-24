@@ -466,6 +466,30 @@ class VSliceImportCycleTest {
         assertEquals(2, notes.getJSONArray("normal").length())
     }
 
+    @Test fun editedTempoPreservesMetadataThroughProjectAndZip() {
+        val store = ProjectStore(File(temp.root, "vs-tempo"), temp.root)
+        val prepared = prepare(zip(), store)
+        val song = prepared.config.firstSong
+        val tempo = """[{"t":0,"bpm":120,"n":4,"d":4,"unknown":123456789012345678901234567890},{"t":4000,"bpm":180,"n":3,"d":8}]"""
+        val edited = prepared.config.copy(songs = listOf(song.copy(vSliceTempoJson = tempo, vSliceTempoUndo = listOf("""[{"t":0,"bpm":120}]"""))))
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(edited).asJsonObject) { }
+        val portable = PortableProject(temp.root); val backup = File(temp.root, "tempo.fnfproject")
+        portable.export(store.load(id).config, store.assets(id), backup)
+        val restored = store.publishImport(portable.prepare(backup, store.newImportStage()), portable) { }
+        val reopened = gson.fromJson(store.load(restored).config, ModConfig::class.java)
+        assertEquals(tempo, reopened.firstSong.vSliceTempoJson)
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "vs-tempo-out"), temp.root, {}, services())
+        val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val meta = com.google.gson.JsonParser.parseString(files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals(com.google.gson.JsonParser.parseString(tempo), meta.get("timeChanges"))
+        assertTrue(meta.getAsJsonObject("extraMetadata").get("keep").asBoolean)
+        assertTrue(files.containsKey("data/songs/test/test-chart.json"))
+        val importedAgain = prepare(output.toByteArray(), store)
+        assertEquals(120, importedAgain.config.firstSong.bpmValue)
+    }
+
     @Test fun duplicateDifficultyPreservesNotesAndExportedMetadata() {
         val store = ProjectStore(File(temp.root, "vs-copy"), temp.root)
         val prepared = prepare(zip(), store)

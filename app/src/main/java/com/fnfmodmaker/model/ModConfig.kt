@@ -100,7 +100,10 @@ data class SongConfig(
     /** V-Slice events are shared by all difficulties; null retains the imported original. */
     val vSliceEventsJson: String? = null,
     val vSliceEventsUndo: List<String> = emptyList(),
-    val vSliceEventsRedo: List<String> = emptyList()
+    val vSliceEventsRedo: List<String> = emptyList(),
+    val vSliceTempoJson: String? = null,
+    val vSliceTempoUndo: List<String> = emptyList(),
+    val vSliceTempoRedo: List<String> = emptyList()
 ) {
     val songFolder: String get() = psychSongPath(songName)
     val bpmValue: Int get() = bpm.toIntOrNull() ?: 0

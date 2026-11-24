@@ -58,7 +58,7 @@ object JsonBuilders {
             .put("d", 4)
             .put("bt", JSONArray().put(4).put(4).put(4).put(4))
 
-        return JSONObject()
+        val metadata = JSONObject()
             .put("version", "2.2.4")
             .put("songName", song.songName.trim())
             .put("artist", song.artist.trim().ifEmpty { "Desconocido" })
@@ -68,7 +68,9 @@ object JsonBuilders {
             .put("timeChanges", JSONArray().put(timeChange))
             .put("playData", playData)
             .put("generatedBy", GENERATED_BY)
-            .toString(2)
+        val tree = com.google.gson.JsonParser.parseString(metadata.toString()).asJsonObject
+        song.vSliceTempoJson?.let { tree.add("timeChanges", com.google.gson.JsonParser.parseString(tempoWithInitialBpm(it, song.bpmValue))) }
+        return tree.toString()
     }
 
     /** `<song>-chart.json` (esquema 2.0.0) - usa chart editado si existe. */

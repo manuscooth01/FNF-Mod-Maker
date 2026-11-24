@@ -12,19 +12,23 @@ import java.util.zip.ZipFile
 internal data class ArchivedMod(val id: String, val name: String, val sha256: String, val size: Long,
     val entries: Int, val engines: List<String>, val scripts: Int)
 
+internal data class ModArchiveLimits(
+    val maxArchive: Long = 2L * 1024 * 1024 * 1024,
+    val maxUnpacked: Long = 4L * 1024 * 1024 * 1024,
+    val maxEntry: Long = 512L * 1024 * 1024,
+    val maxEntries: Int = 20_000
+)
+
 /** Stores the original ZIP verbatim. Nothing is extracted or executed, and no project is modified. */
-internal class ModArchiveLibrary(private val root: File) {
+internal class ModArchiveLibrary(private val root: File, private val limits: ModArchiveLimits = ModArchiveLimits()) {
     private val idPattern = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-    private val maxArchive = 2L * 1024 * 1024 * 1024
-    private val maxUnpacked = 4L * 1024 * 1024 * 1024
-    private val maxEntry = 512L * 1024 * 1024
     private fun dir(id: String): File { require(idPattern.matches(id)); return File(root, id) }
     private fun copy(input: InputStream, output: OutputStream, limit: Long, ensureActive: () -> Unit): Pair<Long, String> {
         val hash = MessageDigest.getInstance("SHA-256"); val buf = ByteArray(64 * 1024); var total = 0L
         while (true) {
             ensureActive(); val n = input.read(buf); if (n < 0) break
-            if (n == 0) { val b = input.read(); if (b < 0) break; require(total < limit) { "El ZIP supera 2 GiB." }; output.write(b); hash.update(b.toByte()); total++; continue }
-            require(n.toLong() <= limit - total) { "El ZIP supera 2 GiB." }
+            if (n == 0) { val b = input.read(); if (b < 0) break; require(total < limit) { "El ZIP supera el límite de tamaño permitido." }; output.write(b); hash.update(b.toByte()); total++; continue }
+            require(n.toLong() <= limit - total) { "El ZIP supera el límite de tamaño permitido." }
             output.write(buf, 0, n); hash.update(buf, 0, n); total += n
         }
         require(total > 0) { "El ZIP está vacío." }
@@ -43,7 +47,7 @@ internal class ModArchiveLibrary(private val root: File) {
         try {
             val target = File(stage, "original.zip")
             val (size, digest) = target.outputStream().use { out ->
-                val result = copy(input, out, maxArchive, ensureActive); out.fd.sync(); result
+                val result = copy(input, out, limits.maxArchive, ensureActive); out.fd.sync(); result
             }
             var count = 0; var scripts = 0; var unpacked = 0L
             val names = hashSetOf<String>(); val engines = linkedSetOf<String>()
@@ -51,12 +55,12 @@ internal class ModArchiveLibrary(private val root: File) {
                 val entries = zip.entries()
                 while (entries.hasMoreElements()) {
                     ensureActive(); val entry = entries.nextElement(); count++
-                    require(count <= 20_000 && validName(entry.name, entry.isDirectory)) { "ZIP con demasiadas entradas o ruta no segura." }
+                    require(count <= limits.maxEntries && validName(entry.name, entry.isDirectory)) { "ZIP con demasiadas entradas o ruta no segura." }
                     val normalized = entry.name.removeSuffix("/").lowercase(Locale.ROOT)
                     require(names.add(normalized)) { "El ZIP contiene rutas duplicadas." }
                     if (!entry.isDirectory) {
-                        require(entry.size in 0..maxEntry && entry.compressedSize >= 0) { "Archivo del ZIP demasiado grande o con tamaño desconocido." }
-                        require(entry.size <= maxUnpacked - unpacked) { "El ZIP supera el límite de contenido descomprimido." }
+                        require(entry.size in 0..limits.maxEntry && entry.compressedSize >= 0) { "Archivo del ZIP demasiado grande o con tamaño desconocido." }
+                        require(entry.size <= limits.maxUnpacked - unpacked) { "El ZIP supera el límite de contenido descomprimido." }
                         unpacked += entry.size
                         if (normalized.endsWith(".lua") || normalized.endsWith(".hx")) scripts++
                         if (normalized == "pack.json" || normalized.endsWith("/pack.json")) engines.add("Psych")
@@ -78,7 +82,7 @@ internal class ModArchiveLibrary(private val root: File) {
             val metaFile = File(folder, "metadata.json"); require(metaFile.length() in 1..64_000)
             val o = JSONObject(metaFile.readText()); require(o.getInt("version") == 1 && o.getString("id") == folder.name)
             val id = folder.name; val hash = o.getString("sha256"); val size = o.getLong("size")
-            require(hash.matches(Regex("[0-9a-f]{64}")) && size in 1..maxArchive && File(folder, "original.zip").isFile)
+            require(hash.matches(Regex("[0-9a-f]{64}")) && size in 1..limits.maxArchive && File(folder, "original.zip").isFile)
             val array = o.getJSONArray("engines")
             ArchivedMod(id, o.getString("name").take(160), hash, size, o.getInt("entries"), (0 until array.length()).map { array.getString(it) }, o.getInt("scripts"))
         }.getOrNull()
@@ -87,12 +91,12 @@ internal class ModArchiveLibrary(private val root: File) {
         val record = list().firstOrNull { it.id == id } ?: error("Copia de mod no encontrada.")
         val file = File(dir(id), "original.zip")
         require(file.length() == record.size) { "La copia del ZIP está dañada." }
-        val (_, hash) = file.inputStream().use { input -> copy(input, object : OutputStream() { override fun write(b: Int) {} ; override fun write(b: ByteArray, off: Int, len: Int) {} }, maxArchive, ensureActive) }
+        val (_, hash) = file.inputStream().use { input -> copy(input, object : OutputStream() { override fun write(b: Int) {} ; override fun write(b: ByteArray, off: Int, len: Int) {} }, limits.maxArchive, ensureActive) }
         require(hash == record.sha256) { "La copia del ZIP está dañada; no se exportó." }
         return file
     }
     fun export(id: String, output: OutputStream, ensureActive: () -> Unit = {}) {
-        verify(id, ensureActive).inputStream().use { copy(it, output, maxArchive, ensureActive) }
+        verify(id, ensureActive).inputStream().use { copy(it, output, limits.maxArchive, ensureActive) }
     }
     fun cleanupInterrupted() {
         root.listFiles().orEmpty().filter { it.isDirectory && it.name.startsWith(".pending-") && idPattern.matches(it.name.removePrefix(".pending-")) }.forEach { it.deleteRecursively() }

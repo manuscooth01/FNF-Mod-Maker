@@ -16,7 +16,7 @@ enum class TargetEngine(val label: String, val description: String) {
     ),
     BOTH(
         "Ambos",
-        "Genera las dos estructuras en la misma carpeta. Funciona en los dos juegos."
+        "Genera formatos para ambos motores en la misma carpeta. Comprueba la compatibilidad en las versiones que uses."
     );
 
     val includesVSlice: Boolean get() = this == VSLICE || this == BOTH

@@ -77,63 +77,16 @@ object ModBuilder {
             val songDir = File(root, "songs/$songFolder")
             songDir.mkdirs()
 
-            // ---------------- Audio de esta canción ----------------
             val instrumental = song.instrumental
                 ?: throw IllegalArgumentException("Falta la instrumental de '$songFolder'.")
-
-            onProgress(if (instrumental.isOgg) "Copiando instrumental de $songFolder…" else "Convirtiendo instrumental de $songFolder a OGG…")
-            val instTarget = File(songDir, "Inst.ogg")
-            if (instrumental.isOgg) {
-                File(instrumental.path).copyTo(instTarget, overwrite = true)
-            } else {
-                val error = MediaTools.convertToOgg(File(instrumental.path), instTarget)
-                if (error != null) {
-                    throw IllegalStateException("No se pudo convertir la instrumental de $songFolder a OGG:\n$error")
-                }
-            }
-
+            fun source(audio: com.fnfmodmaker.model.PickedAudio) = AudioSource(File(audio.path), audio.isOgg)
+            exportSongAudio(songDir, songFolder, config.engine, song.player, song.opponent,
+                source(instrumental), song.vocalsPlayer?.let(::source), song.vocalsOpponent?.let(::source),
+                object : AudioEncoder {
+                    override fun convert(input: File, output: File) = MediaTools.convertToOgg(input, output)
+                    override fun mix(first: File, second: File, output: File) = MediaTools.mixToOgg(first, second, output)
+                }, onProgress)
             val durationMs = instrumental.durationMs
-
-            // ---------------- Voces de esta canción ----------------
-            val playerVocals = song.vocalsPlayer
-            val opponentVocals = song.vocalsOpponent
-
-            if (song.hasVocals) {
-                if (song.hasSplitVocals) {
-                    if (config.engine.includesVSlice) {
-                        encodeAudio(
-                            playerVocals!!,
-                            File(songDir, "Voices-${characterFileId(song.player)}.ogg"),
-                            "las voces del jugador de $songFolder",
-                            warnings,
-                            onProgress
-                        )
-                        encodeAudio(
-                            opponentVocals!!,
-                            File(songDir, "Voices-${characterFileId(song.opponent)}.ogg"),
-                            "las voces del oponente de $songFolder",
-                            warnings,
-                            onProgress
-                        )
-                    }
-                    if (config.engine.includesPsych) {
-                        onProgress("Mezclando las dos pistas de voces para Psych en $songFolder…")
-                        val mixed = File(songDir, "Voices.ogg")
-                        val error = MediaTools.mixToOgg(
-                            File(playerVocals!!.path),
-                            File(opponentVocals!!.path),
-                            mixed
-                        )
-                        if (error != null) {
-                            warnings.add("No se pudieron mezclar las voces de $songFolder para Psych: $error")
-                            if (mixed.exists()) mixed.delete()
-                        }
-                    }
-                } else {
-                    val single = playerVocals ?: opponentVocals!!
-                    encodeAudio(single, File(songDir, "Voices.ogg"), "las voces de $songFolder", warnings, onProgress)
-                }
-            }
 
             songEntries.add(SongEntry(song, durationMs))
         }
@@ -263,35 +216,6 @@ object ModBuilder {
         }
     }
 
-    /**
-     * Copia el audio tal cual si ya es OGG; si no, lo convierte.
-     * Si falla, deja un aviso y no rompe el resto del mod.
-     */
-    private fun encodeAudio(
-        source: com.fnfmodmaker.model.PickedAudio,
-        target: File,
-        label: String,
-        warnings: MutableList<String>,
-        onProgress: (String) -> Unit
-    ) {
-        onProgress(if (source.isOgg) "Copiando $label…" else "Convirtiendo $label a OGG…")
-        if (source.isOgg) {
-            File(source.path).copyTo(target, overwrite = true)
-            return
-        }
-        val error = MediaTools.convertToOgg(File(source.path), target)
-        if (error != null) {
-            warnings.add("No se pudieron convertir $label, el mod se creó sin esa pista.")
-            if (target.exists()) target.delete()
-        }
-    }
-
-    /** Nombre de archivo válido para Voices-<personaje>.ogg */
-    private fun characterFileId(raw: String): String {
-        val clean = raw.trim().filterNot { it in "/\\:*?\"<>|" }
-        return clean.ifEmpty { "bf" }
-    }
-
     private fun writeText(root: File, relativePath: String, content: String) {
         val file = File(root, relativePath)
         file.parentFile?.mkdirs()
@@ -320,7 +244,7 @@ object ModBuilder {
             output.appendLine("2. Abre el juego: las canciones aparecen en Freeplay.")
             output.appendLine()
         }
-        output.appendLine("El chart trae notas de práctica para comprobar que todo suena.")
+        output.appendLine("Comprueba el chart y el audio en la versión del motor que uses.")
         output.appendLine("Para chartear en serio, abre el editor de charts del juego")
         output.appendLine("(en Psych: tecla 7 / en V-Slice: menú de debug) y guarda encima.")
         output.appendLine()
@@ -334,8 +258,8 @@ object ModBuilder {
             else -> output.appendLine("Voces: sin pista de voces.")
         }
         output.appendLine(
-            if (config.showInStoryMode) "Aparece en Freeplay y en el modo historia."
-            else "Aparece solo en Freeplay."
+            if (config.showInStoryMode) "Configurado para Freeplay y modo historia; verifica en el motor."
+            else "Configurado para Freeplay; verifica en el motor."
         )
         if (config.character.enabled) {
             output.appendLine(

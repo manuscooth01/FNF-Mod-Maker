@@ -47,4 +47,20 @@ class ModArchiveLibraryTest {
         assertThrows(IllegalArgumentException::class.java) { library.export(saved.id, out) }
         assertEquals(0, out.size())
     }
+    @Test fun rejectsBoundedArchiveEntryTotalAndCountWithoutPublishing() {
+        val bytes = zip("a.txt" to "123456", "b.txt" to "abcdef")
+        val configs = listOf(
+            ModArchiveLimits(maxArchive = (bytes.size - 1).toLong()),
+            ModArchiveLimits(maxEntry = 5),
+            ModArchiveLimits(maxUnpacked = 10),
+            ModArchiveLimits(maxEntries = 1)
+        )
+        configs.forEachIndexed { i, limits ->
+            val root = File(folder.root, "limit-$i")
+            val lib = ModArchiveLibrary(root, limits)
+            assertThrows(Exception::class.java) { lib.import(bytes.inputStream(), "too-large.zip") }
+            assertTrue(lib.list().isEmpty())
+            assertTrue(root.listFiles().orEmpty().none { it.name.startsWith(".pending-") })
+        }
+    }
 }

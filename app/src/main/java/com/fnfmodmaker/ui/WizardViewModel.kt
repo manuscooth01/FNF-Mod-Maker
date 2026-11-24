@@ -54,7 +54,6 @@ import com.fnfmodmaker.project.PortableSummary
 import com.fnfmodmaker.model.DragState
 import com.fnfmodmaker.model.SelectedNote
 import java.io.File
-import org.json.JSONObject
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
@@ -1910,16 +1909,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---------------- Canción activa ----------------
 
-    internal fun setActiveSongName(value: String) {
-        val clean = value.filterNot { it in "/\\|:*?\"<>" }
-        val oldFolder = activeSong.songFolder
-        updateActiveSong { it.copy(songName = clean) }
-        val newFolder = activeSong.songFolder
-        if (oldFolder != newFolder && oldFolder in config.charts && newFolder !in config.charts &&
-            config.songs.count { it.songFolder == oldFolder } == 0) {
-            val moved = config.charts.getValue(oldFolder).mapValues { (_, chart) -> chart.copy(songFolder = newFolder) }
-            config = config.copy(charts = config.charts - oldFolder + (newFolder to moved))
-            scheduleAutoSave()
+    internal fun setActiveSongName(value: String): Boolean {
+        if (busy) return false
+        return try {
+            val updated = com.fnfmodmaker.model.renameSong(config, activeSongIndex, value)
+            if (updated != config) { config = updated; scheduleAutoSave() }
+            error = null
+            true
+        } catch (e: IllegalArgumentException) {
+            error = e.message ?: "No se pudo cambiar el nombre sin riesgo de perder datos."
+            false
         }
     }
 
@@ -2598,118 +2597,6 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Importa un personaje desde un ZIP (generado por esta app) y carga en el config. */
-    fun importCharacter(uri: Uri) {
-        if (busy) return
-        val app = getApplication<Application>()
-        busy = true
-        error = null
-        status = "Importando personaje…"
-        viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val workRoot = File(app.cacheDir, "charimport")
-                    if (workRoot.exists()) workRoot.deleteRecursively()
-                    workRoot.mkdirs()
-                    val tempZip = File(workRoot, "import_${System.currentTimeMillis()}.zip")
-                    app.contentResolver.openInputStream(uri)?.use { input ->
-                        tempZip.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    // Extraer y parsear character JSON
-                    val extractDir = File(app.cacheDir, "charextract_${System.currentTimeMillis()}")
-                    if (extractDir.exists()) extractDir.deleteRecursively()
-                    extractDir.mkdirs()
-                    java.util.zip.ZipFile(tempZip).use { zip ->
-                        val entries = zip.entries()
-                        while (entries.hasMoreElements()) {
-                            val entry = entries.nextElement()
-                            val outFile = File(extractDir, entry.name)
-                            if (entry.isDirectory) outFile.mkdirs()
-                            else {
-                                outFile.parentFile?.mkdirs()
-                                zip.getInputStream(entry).use { input -> outFile.outputStream().use { output -> input.copyTo(output) } }
-                            }
-                        }
-                    }
-                    // Buscar character JSON (Psych o V-Slice)
-                    val charJsonFile = listOf(
-                        File(extractDir, "characters").listFiles()?.firstOrNull { it.extension == "json" },
-                        File(extractDir, "data/characters").listFiles()?.firstOrNull { it.extension == "json" }
-                    ).firstOrNull { it != null } ?: throw IllegalStateException("No se encontró character JSON en el ZIP")
-                    
-                    val json = JSONObject(charJsonFile.readText())
-                    val charId = json.optString("name", "").lowercase().replace(" ", "-")
-                    val displayName = json.optString("name", charId)
-                    val scale = json.optDouble("scale", 1.0).toFloat()
-                    val flipX = json.optBoolean("flip_x", false)
-                    val healthIcon = json.optString("healthicon", json.optString("healthIcon", ""))
-                    val flipXFinal = flipX
-                    
-                    // Animaciones
-                    val animations = json.optJSONArray("animations")
-                    var idleFrames = "2"
-                    var leftFrames = "1"
-                    var downFrames = "1"
-                    var upFrames = "1"
-                    var rightFrames = "1"
-                    for (index in 0 until (animations?.length() ?: 0)) {
-                        val a = animations!!.getJSONObject(index)
-                        val animName = a.optString("name", a.optString("anim", ""))
-                        when (animName) {
-                            "idle" -> idleFrames = "2"
-                            "singLEFT" -> leftFrames = "1"
-                            "singDOWN" -> downFrames = "1"
-                            "singUP" -> upFrames = "1"
-                            "singRIGHT" -> rightFrames = "1"
-                        }
-                    }
-                    
-                    // Spritesheet e icono
-                    val spritesheet = File(extractDir, "images/characters/${charJsonFile.nameWithoutExtension}.png")
-                    val iconFile = File(extractDir, "images/icons/icon-${charJsonFile.nameWithoutExtension}.png")
-                    
-                    val character = com.fnfmodmaker.model.CharacterDraft(
-                        enabled = true,
-                        charId = charId,
-                        displayName = displayName,
-                        sheet = if (spritesheet.exists()) com.fnfmodmaker.model.PickedImage(Uri.fromFile(spritesheet), spritesheet.name, spritesheet.absolutePath) else null,
-                        sheetWidth = 0,
-                        sheetHeight = 0,
-                        icon = if (iconFile.exists()) com.fnfmodmaker.model.PickedImage(Uri.fromFile(iconFile), iconFile.name, iconFile.absolutePath) else null,
-                        frameWidth = "150",
-                        frameHeight = "150",
-                        scale = scale.toString(),
-                        flipX = flipXFinal,
-                        side = com.fnfmodmaker.model.CharacterSide.OPPONENT,
-                        idleFrames = idleFrames,
-                        leftFrames = leftFrames,
-                        downFrames = downFrames,
-                        upFrames = upFrames,
-                        rightFrames = rightFrames
-                    )
-                    
-                    // Copiar spritesheet a cache si existe
-                    val finalChar = if (character.sheet != null) {
-                        val src = File(character.sheet!!.path)
-                        val target = newProjectAsset(src.name)
-                        src.copyTo(target, overwrite = true)
-                        character.copy(sheet = com.fnfmodmaker.model.PickedImage(character.sheet!!.uri, character.sheet!!.displayName, target.absolutePath))
-                    } else character
-                    
-                    finalChar
-                }
-            }
-            result.onSuccess { imported ->
-                config = config.copy(character = imported)
-                status = "¡Personaje importado! Revisa el editor."
-            }.onFailure {
-                status = ""
-                error = it.message ?: "No se pudo importar el personaje: ${it}"
-            }
-            busy = false
-        }
-    }
-
     // ---------------- Stage ----------------
     fun exportStage(uri: Uri) {
         if (busy) return
@@ -2935,7 +2822,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     // Evita que se acumulen los audios de exportaciones anteriores.
                     if (workRoot.exists()) workRoot.deleteRecursively()
                     val built = ModBuilder.build(app, config, workRoot) { message -> status = message }
-                    val stream = app.contentResolver.openOutputStream(uri)
+                    val stream = app.contentResolver.openOutputStream(uri, "wt")
                         ?: throw IllegalStateException("No se pudo abrir el destino elegido.")
                     stream.use { ModBuilder.zip(built.rootDir, it) }
                     built
@@ -2950,7 +2837,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }.onFailure {
                 status = ""
-                error = it.message ?: it.toString()
+                error = (it.message ?: it.toString()) + " Revisa el destino elegido: el selector podría haber dejado un archivo vacío o incompleto."
             }
             busy = false
         }

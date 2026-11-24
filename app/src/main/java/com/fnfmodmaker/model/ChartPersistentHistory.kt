@@ -63,3 +63,30 @@ fun restoreChartHistory(history: ChartPersistentHistory, current: ChartDraft?, r
     return ChartHistoryResult(target, if (redo) ChartPersistentHistory(trimHistory(history.undo + entry), history.redo.dropLast(1))
         else ChartPersistentHistory(history.undo.dropLast(1), trimHistory(history.redo + entry)))
 }
+
+/** Rebuild hashes from verified states, not from hashes alone. All-or-nothing on a stale chain. */
+internal fun renameChartHistory(history: ChartPersistentHistory, current: ChartDraft?, oldFolder: String, newFolder: String): ChartPersistentHistory {
+    fun renamed(chart: ChartDraft?): ChartDraft? = chart?.let {
+        require(it.songFolder == oldFolder) { "El historial contiene un chart de otra canción." }
+        it.copy(songFolder = newFolder)
+    }
+    renamed(current)
+    fun rebase(stack: List<ChartHistoryEntry>, redo: Boolean): List<ChartHistoryEntry> {
+        var state = current
+        return stack.asReversed().map { entry ->
+            // A one-entry stack validates both fingerprints and all note deltas without trimming other entries.
+            val single = if (redo) ChartPersistentHistory(redo = listOf(entry)) else ChartPersistentHistory(undo = listOf(entry))
+            val restored = restoreChartHistory(single, state, redo)
+                ?: throw IllegalArgumentException("El historial no coincide con el chart actual.")
+            val next = restored.chart
+            val before = if (redo) state else next
+            val after = if (redo) next else state
+            val mappedBefore = renamed(before); val mappedAfter = renamed(after)
+            val updated = entry.copy(beforeHash = chartFingerprint(mappedBefore), afterHash = chartFingerprint(mappedAfter),
+                beforeTemplate = renamed(entry.beforeTemplate), afterTemplate = renamed(entry.afterTemplate))
+            state = next
+            updated
+        }.asReversed()
+    }
+    return ChartPersistentHistory(undo = rebase(history.undo, false), redo = rebase(history.redo, true))
+}

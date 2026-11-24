@@ -226,7 +226,20 @@ private fun WizardSongsStep(vm: WizardViewModel) {
         }
     }
     Spacer(Modifier.height(10.dp))
-    Field("Nombre de la canción", song.songName, vm::setActiveSongName, enabled = !vm.busy)
+    var renameOpen by remember { mutableStateOf(false) }
+    var renameText by remember { mutableStateOf("") }
+    Text("Nombre de la canción: ${song.songName.ifBlank { "Sin nombre" }}", fontWeight = FontWeight.SemiBold)
+    OutlinedButton(onClick = { renameText = song.songName; renameOpen = true }, enabled = !vm.busy) {
+        Text(if (song.songName.isBlank()) "Elegir nombre" else "Cambiar nombre")
+    }
+    if (renameOpen) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { renameOpen = false }, title = { Text("Nombre de la canción") },
+        text = { Column {
+            Field("Nombre", renameText, { renameText = it }, hint = "El cambio conserva los charts y su historial. No se sobrescriben otras canciones.")
+            vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        } },
+        confirmButton = { TextButton(onClick = { if (vm.setActiveSongName(renameText)) renameOpen = false }, enabled = !vm.busy) { Text("Aplicar") } },
+        dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("Cancelar") } })
     Spacer(Modifier.height(10.dp))
     Field("Artista", song.artist, vm::setActiveSongArtist, hint = "Opcional", enabled = !vm.busy)
     Spacer(Modifier.height(10.dp))

@@ -162,7 +162,6 @@ object JsonBuilders {
             .put("contributors", contributors)
             .put("api_version", "0.8.0")
             .put("mod_version", "1.0.0")
-            .put("license", "CC-BY-4.0")
             .toString(2)
     }
 

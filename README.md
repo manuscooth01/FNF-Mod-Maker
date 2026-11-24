@@ -1,18 +1,19 @@
 # FNF Mod Maker (Android)
 
 Una app Android para crear mods de **Friday Night Funkin'** sin saber nada de JSON, carpetas ni
-conversores de audio. Rellenas un formulario, eliges tu canción y la app te devuelve un `.zip`
-listo para copiar al juego.
+conversores de audio. Rellenas un formulario, eliges tu canción y la app genera un `.zip`
+para probar en el juego. La compatibilidad real depende del motor y su versión; todavía necesita
+pruebas en Android y dentro de los juegos.
 
-Funciona con los dos motores que pediste:
+Genera estructuras para estos motores:
 
 | Motor | Dónde se juega | Formato de chart |
 |---|---|---|
 | **V-Slice** | FNF oficial de Android 0.8.x (`me.funkin.fnf`) | `data/songs/<id>/<id>-chart.json` + `-metadata.json` + `data/levels/<id>.json` |
 | **Psych Engine** | Psych Engine de Android **y** PC | `data/<id>/<id>.json` + `weeks/<id>.json` + `songs/<id>/Inst.ogg` |
 
-La opción **Ambos** genera las dos estructuras en la misma carpeta, así que el mismo ZIP sirve
-para los dos juegos (cada uno ignora los archivos del otro).
+La opción **Ambos** genera las dos estructuras en la misma carpeta. Esto no garantiza que el ZIP
+funcione en ambos juegos: comprueba la compatibilidad en las versiones que uses.
 
 ---
 
@@ -27,12 +28,12 @@ herramienta por separado. Hace esto:
   - **Convertir audio a OGG**: un archivo suelto, sin crear nada más.
 - En el asistente puedes **saltar entre pasos** tocando los números de arriba; solo se valida al
   continuar en cada paso y al exportar; el resumen te indica qué falta y te lleva al paso correspondiente.
-- Genera la estructura de carpetas y **todos** los JSON que necesitan los dos motores.
+- Genera estructuras y un subconjunto de los JSON para cada motor; no cubre todos sus formatos.
 - **Convierte audio a OGG Vorbis dentro del teléfono** con FFmpeg (MP3, WAV, M4A, FLAC…).
 - Si el archivo ya es `.ogg`, lo copia sin recomprimir.
 - Reescala el icono del mod a PNG de 512 px.
 - **Voces separadas por personaje** (`Voices-bf.ogg`, `Voices-dad.ogg`), como los mods reales de
-  GameBanana. Si das una sola pista, se guarda como `Voices.ogg` (compatible con todo); si das dos
+  GameBanana. Si das una sola pista, se guarda como `Voices.ogg` (comprueba su compatibilidad); si das dos
   y el destino incluye Psych, las **mezcla** automáticamente en un `Voices.ogg`.
 - **Offset en milisegundos** para corregir la sincronía del chart.
 - Genera el **título de la semana** (`images/storymenu/titles/<mod>.png`, 359x89 como los del
@@ -562,3 +563,20 @@ no se verifica la integridad interna de las entradas. El SHA-256 verifica la cop
 recuperarla, no su procedencia ni seguridad. Estas copias se pierden al desinstalar o borrar los datos
 de la app: guarda una copia externa. Al elegir un destino existente, Android puede sobrescribirlo.
 La conversión de mods ZIP a proyectos editables, incluidos charts y scripts, no está implementada.
+
+## Estabilización P0
+
+Al renombrar una canción se comprueban las colisiones y se trasladan charts e historiales de todas
+las dificultades en una sola operación. Si el historial existente no coincide, se rechaza el cambio
+sin sobrescribir datos. El importador ZIP de personaje heredado, sin acceso desde la interfaz y con
+extracción insegura, se retiró; no se añadió una nueva importación ZIP de personajes.
+
+La exportación se detiene si falla la instrumental o una voz seleccionada necesaria para un motor,
+incluida la mezcla de Psych. Si V-Slice necesita dos voces con el mismo nombre de archivo, se exige
+cambiar los IDs. No seleccionar voces sigue permitido. Un archivo identificado como OGG por su
+extensión se copia sin analizar completamente su códec o integridad; prueba los resultados en los
+motores. El selector Android puede dejar un documento vacío o incompleto si ocurre un fallo al
+guardar; comprueba o elimina ese destino.
+
+El metadata V-Slice ya no declara una licencia automáticamente. Esto no implica autorización para
+redistribuir recursos de terceros; comprueba sus derechos y condiciones antes de hacerlo.

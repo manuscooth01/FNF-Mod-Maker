@@ -553,6 +553,31 @@ class VSliceImportCycleTest {
         assertThrows(IllegalArgumentException::class.java) { prepare(zip(extra = mapOf("pack.json" to "{}", "data/test/test.json" to "{}")), store) }
         assertTrue(store.list().isEmpty())
     }
+    @Test fun mixedChartsWithoutPackAreRejectedBeforePublicationAndStagingIsCleaned() {
+        val store = ProjectStore(File(temp.root, "mixed-without-pack"), temp.root)
+        val old = productionJson(ModConfig(modTitle = "Anterior"))
+        val id = store.newId(); store.save(id, old); store.setActive(id)
+        for (path in listOf("data/test/test.json", "data/other/other-hard.json", "data/Other/OTHER-HARD.JSON")) {
+            val failure = assertThrows(IllegalArgumentException::class.java) {
+                prepare(zip(extra = mapOf(path to "not convertible")), store)
+            }
+            assertTrue(failure.message!!.contains("BOTH"))
+            assertEquals(id, store.activeId())
+            assertEquals(old, store.load(id).config)
+            assertEquals(listOf(id), store.list().map { it.id })
+            assertTrue(File(temp.root, "mixed-without-pack").listFiles().orEmpty().none { it.name.startsWith(".pending-") })
+            assertTrue(File(temp.root, "cache").listFiles().orEmpty().isEmpty())
+        }
+    }
+
+    @Test fun nonChartVSliceResourcesRemainImportableWithoutPack() {
+        val store = ProjectStore(File(temp.root, "vs-extra"), temp.root)
+        val prepared = prepare(zip(extra = mapOf("data/test/settings.json" to "{\"custom\":true}", "data/characters/characters.json" to "{}")), store)
+        assertEquals(TargetEngine.VSLICE, prepared.config.engine)
+        assertNotNull(prepared.config.getChart("test", "normal"))
+        assertTrue(prepared.config.importedModResources.any { it.originalPath == "data/test/settings.json" && !it.converted })
+    }
+
     @Test fun decimalTempoImportEditPortableZipAndReimport() {
         for ((i, bpm) in listOf("120.1", "123.4567", "140.25").withIndex()) {
             val store = ProjectStore(File(temp.root, "decimal-vs-$i"), temp.root)

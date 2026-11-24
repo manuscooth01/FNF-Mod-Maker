@@ -65,7 +65,7 @@ class ModZipConfirmationTest {
         }
         fail("Timeout: busy=${vm.busy}, message=${vm.portableMessage}, error=${vm.modZipImportError}")
     }
-    private fun zip(withCharacter: Boolean = false): Uri {
+    private fun zip(withCharacter: Boolean = false, mixed: Boolean = false): Uri {
         val file = File(app.cacheDir, "tarde-test.zip")
         val opponent = if (withCharacter) "Hero_Day" else "dad"
         val metadata = """{"version":"2.2.4","songName":"Tarde","artist":"Example","playData":{"difficulties":["easy","normal","hard"],"characters":{"player":"bf","opponent":"$opponent"},"stage":"mainStage"},"timeChanges":[{"t":0,"bpm":120}]}"""
@@ -76,6 +76,7 @@ class ModZipConfirmationTest {
             entry("data/songs/tarde/tarde-chart.json", chart.toByteArray())
             entry("songs/tarde/Inst.ogg", javaClass.getResourceAsStream("/psych-fixture/Inst.ogg")!!.use { it.readBytes() })
             entry("scripts/original.hx", "trace('original');".toByteArray())
+            if (mixed) entry("data/tarde/tarde-hard.json", """{"song":{"song":"tarde","bpm":120.5,"notes":[{"sectionNotes":[[500,7,0,99]]}]}}""".toByteArray())
             if (withCharacter) {
                 entry("data/characters/Hero_Day.json", """{"version":"1.0.2","name":"Hero","assetPath":"characters/Hero_Day","renderType":"sparrow","scale":1,"unknown":"kept","animations":[{"name":"idle","prefix":"idle","frameRate":24,"looped":false,"offsets":[0,0]}]}""".toByteArray())
                 entry("images/characters/Hero_Day.xml", """<TextureAtlas imagePath="Hero_Day.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>""".toByteArray())
@@ -96,6 +97,22 @@ class ModZipConfirmationTest {
         }
         return Uri.fromFile(file)
     }
+    @Test fun mixedZipWithoutPackDoesNotChangeOrPublishProject() {
+        val previous = vm.currentProjectId!!
+        val before = vm.config
+        val ids = vm.projects.map { it.id }.toSet()
+        vm.inspectModZip(zip(mixed = true)); await { !vm.busy }
+        assertNull(vm.modZipReview)
+        assertTrue(vm.portableMessage.orEmpty().contains("BOTH"))
+        assertEquals(previous, vm.currentProjectId)
+        assertEquals(before, vm.config)
+        assertEquals(ids, vm.projects.map { it.id }.toSet())
+        assertTrue(File(app.filesDir, "projects").listFiles().orEmpty().none { it.name.startsWith(".pending-") })
+        vm.confirmModZipImport()
+        assertEquals(previous, vm.currentProjectId)
+        assertEquals(ids, vm.projects.map { it.id }.toSet())
+    }
+
     @Test fun psychEventEditingUndoReopenAndExport() {
         val previous = vm.currentProjectId!!
         vm.inspectModZip(psychZip()); await { !vm.busy }; assertNotNull(vm.modZipImportError, vm.modZipReview)

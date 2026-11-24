@@ -26,7 +26,21 @@ internal class VSliceModImporter(
             val relative = names.associateBy { it.removePrefix(prefix) }
             val files = relative.keys.sorted()
             val psychChart = files.any { Regex("^data/(?!songs/)[^/]+/[^/]+\\.json$").matches(it) && !it.startsWith("data/characters/") && !it.startsWith("data/stages/") && !it.startsWith("data/levels/") }
-            require(!(files.any { it.equals("pack.json", true) } && psychChart)) { "El ZIP contiene estructuras Psych y V-Slice; todavía no se resuelven mods BOTH." }
+            // A Psych chart does not require pack.json to coexist with V-Slice files.
+            // Treat the canonical song/difficulty paths as ambiguous even when the JSON
+            // is malformed or not editable: parsing only supported charts would miss
+            // precisely the originals that must not be silently mistaken for V-Slice.
+            val psychSongPath = Regex("^data/([^/]+)/([^/]+)\\.json$", RegexOption.IGNORE_CASE)
+            val psychSongChart = files.any { path ->
+                val match = psychSongPath.matchEntire(path) ?: return@any false
+                val folder = match.groupValues[1]
+                val stem = match.groupValues[2]
+                folder.lowercase(java.util.Locale.ROOT) !in setOf("songs", "characters", "stages", "levels", "weeks") &&
+                    (stem.equals(folder, true) || stem.startsWith("$folder-", true))
+            }
+            require(!psychSongChart && !(files.any { it.equals("pack.json", true) } && psychChart)) {
+                "El ZIP contiene posibles charts Psych y V-Slice; todavía no se importan mods BOTH sin riesgo de pérdida."
+            }
             val index = linkedMapOf<String, File>(); val assetDir = File(stage, "assets/imported"); check(assetDir.mkdirs())
             files.forEachIndexed { i, path ->
                 ensureActive()

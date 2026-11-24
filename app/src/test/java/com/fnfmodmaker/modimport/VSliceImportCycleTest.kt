@@ -603,4 +603,19 @@ class VSliceImportCycleTest {
         assertEquals(4000.0, grid.timeAtBeat(8.1745), 1e-8)
     }
 
+    @Test fun editingAnOriginalFractionalNoteDoesNotSilentlyDiscardItsPrecision() {
+        val source = JSONObject(chart)
+        val draft = readVSliceDifficulty(source, "test", "normal", 120.1, 1.3f)
+        val unchangedFraction = draft.notes.first()
+        assertEquals(100L, unchangedFraction.timeMs)
+        val edited = draft.copy(notes = listOf(unchangedFraction.copy(timeMs = 200), draft.notes.last()))
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            patchVSliceChart(chart, mapOf("normal" to edited), setOf("normal"), retained = setOf("hard"))
+        }
+        assertTrue(failure.message!!.contains("fraccionario"))
+        val safe = draft.copy(notes = draft.notes + ChartNote(1200, 2))
+        val out = com.google.gson.JsonParser.parseString(patchVSliceChart(chart, mapOf("normal" to safe), setOf("normal"), retained = setOf("hard"))).asJsonObject
+        assertEquals("100.25", out.getAsJsonObject("notes").getAsJsonArray("normal")[0].asJsonObject.get("t").toString())
+    }
+
 }

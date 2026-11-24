@@ -96,6 +96,13 @@ internal class VSliceModImporter(
                     try { perSong[difficulty] = readVSliceDifficulty(chart, folder, difficulty, bpm, speedFor(difficulty)) }
                     catch (e: Exception) { warnings.add("$chartPath · $difficulty: no editable (${e.message}); se conservará sin modificar mientras no se elimine.") }
                 }
+                if (perSong.keys.any difficultyLoop@ { difficulty ->
+                    val rows = sourceNotes.optJSONArray(difficulty) ?: return@difficultyLoop false
+                    (0 until rows.length()).any rowLoop@ { i ->
+                        val row = rows.optJSONObject(i) ?: return@rowLoop false
+                        listOf("t", "l").any { key -> row.has(key) && row.opt(key) is Number && row.optDouble(key) % 1.0 != 0.0 }
+                    }
+                }) warnings.add("$chartPath: tiempos fraccionarios se muestran redondeados; sus notas originales no se pueden modificar o eliminar sin pérdida. Las demás notas siguen editables.")
                 val uneditable = (declared + sourceNotes.keys().asSequence().toSet()) - perSong.keys
                 val retained = supported.filter { it !in perSong }.toSet()
                 val other = uneditable - retained

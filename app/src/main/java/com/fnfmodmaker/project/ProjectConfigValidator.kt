@@ -133,6 +133,11 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 }
             }
         }
+        fun validateNote(value: com.google.gson.JsonObject) {
+            compare(value, autoSaveGson.toJsonTree(ChartNote()).asJsonObject)
+            val note = autoSaveGson.fromJson(value, ChartNote::class.java)
+            com.fnfmodmaker.model.psychNoteTypeToken(note)
+        }
         value.getAsJsonObject("charts").entrySet().forEach { (_, perSong) ->
             require(perSong.isJsonObject) { "Charts inválidos." }
             perSong.asJsonObject.entrySet().forEach { (_, chart) ->
@@ -149,7 +154,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 objectArray(chart.asJsonObject, "sections", autoSaveGson.toJsonTree(com.fnfmodmaker.model.ChartSection()).asJsonObject)
                 chart.asJsonObject.get("notes")?.let { notes ->
                     require(notes.isJsonArray) { "Notas inválidas." }
-                    notes.asJsonArray.forEach { n -> require(n.isJsonObject); compare(n.asJsonObject, autoSaveGson.toJsonTree(ChartNote()).asJsonObject) }
+                    notes.asJsonArray.forEach { n -> require(n.isJsonObject); validateNote(n.asJsonObject) }
                 }
             }
         }
@@ -170,7 +175,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                             listOf("added", "removed").forEach { n ->
                                 val notes = e.get(n); require(notes != null && notes.isJsonArray) { "Notas de historial inválidas." }
                                 noteCount += notes.asJsonArray.size()
-                                notes.asJsonArray.forEach { note -> require(note.isJsonObject); compare(note.asJsonObject, autoSaveGson.toJsonTree(ChartNote()).asJsonObject) }
+                                notes.asJsonArray.forEach { note -> require(note.isJsonObject); validateNote(note.asJsonObject) }
                             }
                             listOf("beforeTemplate", "afterTemplate").forEach { t -> e.get(t)?.let { template ->
                                 require(template.isJsonObject) { "Plantilla de historial inválida." }

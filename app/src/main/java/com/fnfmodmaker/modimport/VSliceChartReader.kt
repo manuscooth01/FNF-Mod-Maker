@@ -65,6 +65,7 @@ internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>,
     if (speed != null) retained.forEach { speeds.addProperty(it, speed) }
     drafts.forEach { (difficulty, draft) ->
         val previous = if (difficulty in editable && notes.has(difficulty)) runCatching { readVSliceDifficulty(projection, draft.songFolder, difficulty, draft.bpm, draft.scrollSpeed) }.getOrNull() else null
+        require(previous != null || difficulty !in editable || !notes.has(difficulty)) { "$difficulty: no se puede reconstruir el chart original sin pérdida." }
         if (previous == null || previous.notes != draft.notes) {
             draft.requireExportable()
             require(draft.notes.none { it.psychTypeJson.isNotEmpty() }) { "Los tipos numéricos Psych no tienen traducción reversible a V-Slice." }
@@ -80,6 +81,17 @@ internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>,
                         addProperty("t", note.timeMs); addProperty("d", note.lane); addProperty("l", note.lengthMs)
                         if (note.kind.isNotEmpty()) addProperty("k", note.kind)
                     })
+                }
+                // An edited/deleted projected note may have fractional source timing. Do not
+                // silently replace its exact original t/l with the rounded editor values.
+                for ((oldNote, indices) in unmatched) for (index in indices) {
+                    val row = originals[index].asJsonObject
+                    val originalTime = row.get("t").asBigDecimal
+                    val originalLength = row.get("l")?.takeUnless { it.isJsonNull }?.asBigDecimal ?: java.math.BigDecimal.ZERO
+                    require(originalTime.compareTo(java.math.BigDecimal.valueOf(oldNote.timeMs)) == 0 &&
+                        originalLength.compareTo(java.math.BigDecimal.valueOf(oldNote.lengthMs)) == 0) {
+                        "$difficulty: una nota original con tiempo o sostenido fraccionario fue modificada; la edición no se puede exportar sin pérdida. Restaura la nota original."
+                    }
                 }
                 notes.add(difficulty, updated)
             }

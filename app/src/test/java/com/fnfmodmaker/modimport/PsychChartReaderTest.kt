@@ -65,6 +65,17 @@ class PsychChartReaderTest {
         assertThrows(IllegalArgumentException::class.java) { draft.toVSliceNotes() }
     }
 
+    @Test fun eventTimesRetainDecimalTokensInBothPsychFormats() {
+        val events = """[[100.1234567890123456789,[["Custom","a","b"]]]]"""
+        val draft = readPsychChart(chart("", true), "test", "normal").copy(psychEventsJson = events)
+        val v1 = draft.toPsychJson()
+        val legacy = com.fnfmodmaker.mod.JsonBuilders.psych073Chart(v1)
+        val v1Events = com.google.gson.JsonParser.parseString(v1).asJsonObject.get("events").toString()
+        val legacyEvents = com.google.gson.JsonParser.parseString(legacy).asJsonObject.getAsJsonObject("song").get("events").toString()
+        assertEquals(events, v1Events)
+        assertEquals(events, legacyEvents)
+    }
+
     @Test fun unsupportedGameplayFailsExplicitly() {
         val tempo = chart("", true).replace("\"sectionBeats\":4", "\"sectionBeats\":4,\"changeBPM\":true")
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(tempo, "test", "normal") }

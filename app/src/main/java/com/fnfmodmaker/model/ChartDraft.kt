@@ -145,10 +145,10 @@ data class ChartDraft(
             )
         }
 
-        return JSONObject()
+        val json = JSONObject()
             .put("song", songFolder)
             .put("notes", sections)
-            .put("events", JSONArray(if (psychEventsJson.isBlank()) "[]" else com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson)))
+            .put("events", JSONArray())
             .put("bpm", if (bpm > 0) bpm else 150)
             .put("needsVoices", needsVoices)
             .put("speed", scrollSpeed)
@@ -158,7 +158,11 @@ data class ChartDraft(
             .put("gfVersion", gfVersion)
             .put("stage", stage)
             .put("format", "psych_v1")
-            .toString(2)
+        // Gson retains the original event number tokens instead of rounding them through org.json.
+        val tree = com.google.gson.JsonParser.parseString(json.toString()).asJsonObject
+        val events = if (psychEventsJson.isBlank()) "[]" else com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson)
+        tree.add("events", com.google.gson.JsonParser.parseString(events))
+        return tree.toString()
     }
 
     /** Convierte a JSON V-Slice (esquema 2.0.0). */

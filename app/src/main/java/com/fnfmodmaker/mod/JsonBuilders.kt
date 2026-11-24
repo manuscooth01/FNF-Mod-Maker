@@ -187,21 +187,19 @@ object JsonBuilders {
 
     /** Psych 0.7.3 reads Json.parse(raw).song and treats lanes as relative to mustHitSection. */
     internal fun psych073Chart(v1: String): String {
-        val song = JSONObject(v1)
-        val sections = song.getJSONArray("notes")
-        for (i in 0 until sections.length()) {
-            val section = sections.getJSONObject(i)
-            val mustHit = section.optBoolean("mustHitSection", false)
-            val rows = section.getJSONArray("sectionNotes")
-            for (j in 0 until rows.length()) {
-                val row = rows.getJSONArray(j)
-                val lane = row.getInt(1)
+        val song = com.google.gson.JsonParser.parseString(v1).asJsonObject
+        song.getAsJsonArray("notes").forEach { item ->
+            val section = item.asJsonObject
+            val mustHit = section.get("mustHitSection")?.asBoolean ?: false
+            section.getAsJsonArray("sectionNotes").forEach { note ->
+                val row = note.asJsonArray
+                val lane = row[1].asInt
                 require(lane in 0..7) { "Carril Psych inválido." }
-                if (!mustHit) row.put(1, (lane + 4) % 8)
+                if (!mustHit) row.set(1, com.google.gson.JsonPrimitive((lane + 4) % 8))
             }
         }
         song.remove("format")
-        return JSONObject().put("song", song).toString(2)
+        return com.google.gson.JsonObject().apply { add("song", song) }.toString()
     }
 
     /** Versión legacy sin ModConfig (para compatibilidad). */

@@ -228,12 +228,12 @@ object ProjectProposalPlanner {
                     if (array.size() > 1000) fail("máximo 1000 notas por propuesta de chart")
                     val notes = array.map { e ->
                         if (!e.isJsonObject) fail("cada nota debe ser un objeto")
-                        val n = e.asJsonObject; keys(n, setOf("timeMs", "lane", "lengthMs"))
+                        val n = e.asJsonObject; keys(n, setOf("timeMs", "lane", "lengthMs", "kind"))
                         val time = requiredInt(n, "timeMs", 0, 1_200_000)
                         val lane = requiredInt(n, "lane", 0, 7)
                         val len = int(n, "lengthMs", 0, 60_000) ?: 0
                         if (time + len > 1_200_000) fail("la nota excede el límite de 20 minutos")
-                        ChartNote(time.toLong(), lane, len.toLong())
+                        ChartNote(time.toLong(), lane, len.toLong(), kind = string(n, "kind", 128) ?: "")
                     }.sortedWith(compareBy<ChartNote> { it.timeMs }.thenBy { it.lane })
                     if (notes.map { it.timeMs to it.lane }.distinct().size != notes.size) fail("hay notas duplicadas en el mismo instante y carril")
                     val previous = current.getChart(song.songFolder, diff)

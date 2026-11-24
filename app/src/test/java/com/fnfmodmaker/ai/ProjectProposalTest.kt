@@ -30,12 +30,13 @@ class ProjectProposalTest {
     }
 
     @Test fun aiCanProposeCustomDifficultyAndRealChart() {
-        val args = """{"summary":"Insane","changes":[{"type":"difficulty","songIndex":0,"difficulty":"insane","action":"add"},{"type":"chart","songIndex":0,"difficulty":"insane","notes":[{"timeMs":500,"lane":2}]}]}"""
+        val args = """{"summary":"Insane","changes":[{"type":"difficulty","songIndex":0,"difficulty":"insane","action":"add"},{"type":"chart","songIndex":0,"difficulty":"insane","notes":[{"timeMs":500,"lane":2,"kind":"Hurt Note"}]}]}"""
         val plan = ProjectProposalPlanner.plan(base, args)
         assertFalse("insane" in base.firstSong.difficulties)
         val applied = ProjectProposalPlanner.applyIfUnchanged(base, plan)
         assertTrue("insane" in applied.firstSong.difficulties)
         assertEquals(500L, applied.getChart("first", "insane")!!.notes.single().timeMs)
+        assertEquals("Hurt Note", applied.getChart("first", "insane")!!.notes.single().kind)
     }
 
     @Test fun rejectsInvalidBatchWithoutPartialMutation() {

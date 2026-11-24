@@ -44,13 +44,15 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
             require(row.length() in 2..4) { "Datos adicionales de nota no compatibles." }
             val t = row.optDouble(0, Double.NaN); val data = row.optDouble(1, Double.NaN); val duration = if (row.length() >= 3) row.optDouble(2, Double.NaN) else 0.0
             require(t.isFinite() && duration.isFinite() && t >= 0 && duration >= 0 && t <= 86_400_000 && duration <= 86_400_000 && data.isFinite() && data % 1.0 == 0.0 && data in 0.0..7.0) { "Nota o evento no compatible en sección $i." }
-            if (row.length() == 4 && !row.isNull(3)) {
-                val type = row.opt(3)
-                require(type == "" || (type is Number && type.toInt() == 0 && type.toDouble() == 0.0)) { "Tipo de nota no compatible en sección $i." }
+            val kind = if (row.length() < 4 || row.isNull(3)) "" else when (val type = row.opt(3)) {
+                is String -> type
+                is Number -> if (type.toDouble() == 0.0) "" else error("Tipo de nota numérico no compatible en sección $i.")
+                else -> error("Tipo de nota inválido en sección $i.")
             }
+            require(kind.length <= 128 && kind.none(Char::isISOControl)) { "Tipo de nota inválido en sección $i." }
             val d = data.toInt()
             val lane = if (absoluteLanes) d else if (mustHit) d else (d + 4) % 8
-            notes.add(ChartNote(t.roundToLong(), lane, duration.roundToLong()))
+            notes.add(ChartNote(t.roundToLong(), lane, duration.roundToLong(), kind = kind))
         }
     }
     return ChartDraft(songFolder = folder, difficulty = difficulty, notes = notes, scrollSpeed = speed.toFloat(), bpm = bpmDouble.toInt(),

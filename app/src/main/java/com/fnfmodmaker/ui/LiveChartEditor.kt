@@ -241,6 +241,7 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
     var pending by remember { mutableStateOf<ChartNote?>(null) }
     var editing by remember { mutableStateOf<ChartNote?>(null) }
     var lengthText by remember { mutableStateOf("") }
+    var kindText by remember { mutableStateOf("") }
     var editError by remember { mutableStateOf<String?>(null) }
     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar notas cercanas ↑" else "Editar notas cercanas ↓") }
     if (expanded) {
@@ -249,21 +250,23 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("${clock(note.timeMs)}.${(note.timeMs % 1000).toString().padStart(3, '0')} · ${if (note.lane < 4) "Jugador" else "Rival"} ${arrows[note.lane.coerceIn(0, 7) % 4]}${if (note.lengthMs > 0) " · sostenida ${note.lengthMs} ms" else ""}",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { editing = note; lengthText = note.lengthMs.toString(); editError = null }, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable) { Text("Duración") }
+                TextButton(onClick = { editing = note; lengthText = note.lengthMs.toString(); kindText = note.kind; editError = null }, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable) { Text("Editar") }
                 TextButton(onClick = { pending = note }, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable) { Text("Quitar") }
             }
         }
     }
-    editing?.let { note -> AlertDialog(onDismissRequest = { editing = null }, title = { Text("Duración de la nota") },
+    editing?.let { note -> AlertDialog(onDismissRequest = { editing = null }, title = { Text("Editar nota") },
         text = { Column {
             Text("0 ms es una nota corta. Una duración mayor crea un sostenido; no puede pasar del final de la canción ni cubrir otra nota del mismo carril.")
             OutlinedTextField(value = lengthText, onValueChange = { lengthText = it.filter(Char::isDigit).take(9); editError = null },
                 label = { Text("Duración en milisegundos") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
+            OutlinedTextField(value = kindText, onValueChange = { kindText = it.filterNot(Char::isISOControl).take(128); editError = null }, label = { Text("Tipo de nota (vacío = normal)") }, singleLine = true)
+            Text("Usa el identificador admitido por el motor y el mod; no se traduce entre motores.", style = MaterialTheme.typography.labelSmall)
             editError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         } },
         confirmButton = { TextButton(onClick = {
             val length = lengthText.toLongOrNull()
-            if (length != null && vm.editLiveNoteLength(note, length)) editing = null
+            if (length != null && vm.editLiveNoteProperties(note, length, kindText)) editing = null
             else editError = "Duración inválida o se superpone a otra nota o al final de la canción."
         }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancelar") } }) }

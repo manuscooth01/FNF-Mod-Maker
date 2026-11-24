@@ -36,10 +36,12 @@ internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty:
         require(note.has("t") && note.has("d")) { "$difficulty: falta t o d." }
         val time = number(note, "t", Double.NaN); val lane = number(note, "d", Double.NaN); val length = number(note, "l", 0.0)
         require(lane % 1.0 == 0.0 && lane in 0.0..7.0 && time + length <= 86_400_000) { "$difficulty: carril o duración incompatibles." }
-        require(!note.has("k") || note.isNull("k") || note.optString("k") == "") { "$difficulty: contiene tipos de nota especiales." }
+        require(!note.has("k") || note.isNull("k") || note.opt("k") is String) { "$difficulty: tipo de nota inválido." }
+        val kind = if (note.isNull("k") || !note.has("k")) "" else note.getString("k")
+        require(kind.length <= 128 && kind.none(Char::isISOControl)) { "$difficulty: tipo de nota inválido." }
         val params = note.optJSONArray("p")
         require(!note.has("p") || note.isNull("p") || (params != null && params.length() == 0)) { "$difficulty: contiene parámetros de nota." }
-        val result = ChartNote(time.roundToLong(), lane.toInt(), length.roundToLong())
+        val result = ChartNote(time.roundToLong(), lane.toInt(), length.roundToLong(), kind = kind)
         val exact = time to length
         val prior = projected.putIfAbsent(result, exact)
         require(prior == null || prior == exact) { "$difficulty: notas distintas coinciden al redondear; se conserva la dificultad original." }
@@ -69,7 +71,7 @@ internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>,
                 for (note in draft.notes) {
                     val originalIndex = unmatched[note]?.pollFirst()
                     if (originalIndex != null) updated.put(originals.getJSONObject(originalIndex))
-                    else updated.put(JSONObject().put("t", note.timeMs).put("d", note.lane).put("l", note.lengthMs))
+                    else updated.put(JSONObject().put("t", note.timeMs).put("d", note.lane).put("l", note.lengthMs).apply { if (note.kind.isNotEmpty()) put("k", note.kind) })
                 }
                 notes.put(difficulty, updated)
             }

@@ -21,7 +21,9 @@ data class ChartNote(
     val timeMs: Long = 0L,
     val lane: Int = 0,
     val lengthMs: Long = 0L,
-    val isSustain: Boolean = false
+    val isSustain: Boolean = false,
+    // Engine-specific note type (V-Slice k / Psych noteType); empty means ordinary note.
+    val kind: String = ""
 ) {
     val endTimeMs: Long get() = timeMs + lengthMs
     val isHold: Boolean get() = lengthMs > 0
@@ -81,6 +83,7 @@ data class ChartDraft(
     fun exportProblems(): List<String> = buildList {
         if (events.isNotEmpty()) add("eventos")
         if (sections.isNotEmpty()) add("secciones personalizadas")
+        if (notes.any { it.kind.length > 128 || it.kind.any(Char::isISOControl) }) add("tipos de nota inválidos")
         if (notes.any { it.isSustain }) add("notas de cola independientes")
         if (notes.any { it.lane !in 0..7 || it.timeMs < 0 || it.lengthMs < 0 || it.timeMs > Long.MAX_VALUE - it.lengthMs }) add("notas inválidas")
     }
@@ -123,7 +126,7 @@ data class ChartDraft(
                     JSONArray()
                         .put(note.timeMs)
                         .put(data)
-                        .put(sustain)
+                        .put(sustain).apply { if (note.kind.isNotEmpty()) put(note.kind) }
                 )
             }
 
@@ -168,7 +171,7 @@ data class ChartDraft(
                 JSONObject()
                     .put("t", note.timeMs)
                     .put("d", data)
-                    .put("l", note.lengthMs.coerceAtLeast(0L))
+                    .put("l", note.lengthMs.coerceAtLeast(0L)).apply { if (note.kind.isNotEmpty()) put("k", note.kind) }
             )
         }
         notesJson.put(difficulty, notesArray)
@@ -192,7 +195,7 @@ data class ChartDraft(
                 JSONObject()
                     .put("t", note.timeMs)
                     .put("d", data)
-                    .put("l", note.lengthMs.coerceAtLeast(0L))
+                    .put("l", note.lengthMs.coerceAtLeast(0L)).apply { if (note.kind.isNotEmpty()) put("k", note.kind) }
             )
         }
         return notesArray

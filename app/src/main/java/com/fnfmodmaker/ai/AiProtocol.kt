@@ -63,7 +63,7 @@ object AiProtocol {
                 "artist":{"type":"string"},"bpm":{"type":"integer"},"speed":{"type":"number"},"offsetMs":{"type":"integer"},"practiceNotes":{"type":"boolean"},
                 "stagePsych":{"type":"string"},"stageVSlice":{"type":"string"},
                 "difficulty":{"type":"string","description":"ID seguro en minúsculas, por ejemplo easy, normal, hard o insane"},
-                "notes":{"type":"array","maxItems":1000,"items":{"type":"object","additionalProperties":false,"required":["timeMs","lane"],"properties":{"timeMs":{"type":"integer"},"lane":{"type":"integer"},"lengthMs":{"type":"integer"}}}}
+                "notes":{"type":"array","maxItems":1000,"items":{"type":"object","additionalProperties":false,"required":["timeMs","lane"],"properties":{"timeMs":{"type":"integer"},"lane":{"type":"integer"},"lengthMs":{"type":"integer"},"kind":{"type":"string","description":"Tipo de nota del motor, vacío para nota normal"}}}}
               }
             }}
           }

@@ -147,7 +147,7 @@ class VSliceImportCycleTest {
         val active = store.newId(); store.save(active, gson.toJsonTree(ModConfig(modTitle = "Existing")).asJsonObject); store.setActive(active)
         val prepared = prepare(zip(), store)
         assertEquals(TargetEngine.VSLICE, prepared.config.engine); assertEquals(setOf("normal", "hard"), prepared.config.firstSong.difficulties)
-        assertTrue(prepared.config.character.enabled); assertTrue(prepared.warnings.any { it.contains("eventos") }); assertTrue(prepared.warnings.any { it.contains("hard") })
+        assertTrue(prepared.config.character.enabled); assertTrue(prepared.warnings.any { it.contains("eventos") }); assertEquals("mine", prepared.config.getChart("test", "hard")!!.notes.single().kind)
         val id = store.publishModImport(prepared.stage, gson.toJsonTree(prepared.config).asJsonObject) { }
         assertEquals(active, store.activeId())
         var project = gson.fromJson(store.load(id).config, ModConfig::class.java)
@@ -423,6 +423,23 @@ class VSliceImportCycleTest {
         val next = ModBuilder.buildInternal(added, File(temp.root, "added-build"), temp.root, {}, services())
         assertTrue(JSONObject(File(next.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("notes").has("easy"))
     }
+    @Test fun importedVSliceNoteTypeCanBeEditedAndSurvivesProjectAndZip() {
+        val store = ProjectStore(File(temp.root, "vs-note-type"), temp.root)
+        val prepared = prepare(zip(), store)
+        val original = prepared.config.getChart("test", "hard")!!
+        assertEquals("mine", original.notes.single().kind)
+        val edited = prepared.config.withChart("test", "hard", original.copy(notes = listOf(original.notes.single().copy(kind = "custom-kind"))))
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(edited).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "vs-note-type-out"), temp.root, {}, services())
+        val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val notes = JSONObject(files.getValue("data/songs/test/test-chart.json").toString(Charsets.UTF_8)).getJSONObject("notes")
+        assertEquals("custom-kind", notes.getJSONArray("hard").getJSONObject(0).getString("k"))
+        assertEquals(2, notes.getJSONArray("normal").length())
+    }
+
     @Test fun customVSliceDifficultySurvivesImportAndCanBeRemoved() {
         val store = ProjectStore(File(temp.root, "vs-custom"), temp.root)
         val meta = metadata.replace("[\"normal\",\"hard\"]", "[\"normal\",\"hard\",\"insane\"]")
@@ -442,7 +459,9 @@ class VSliceImportCycleTest {
 
     @Test fun removingUnsupportedDifficultyIsIntentionalAndPersists() {
         val store = ProjectStore(File(temp.root, "remove-special"), temp.root)
-        val prepared = prepare(zip(), store)
+        val unsupported = chart.replace("\"k\":\"mine\"", "\"k\":\"mine\",\"unrepresented\":true")
+        val prepared = prepare(zip(chartText = unsupported), store)
+        assertTrue("hard" in prepared.config.firstSong.vSliceOrigin!!.uneditableDifficulties)
         val removed = removeSongDifficulty(prepared.config, 0, "hard")
         val id = store.publishModImport(prepared.stage, gson.toJsonTree(removed).asJsonObject) { }
         val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)

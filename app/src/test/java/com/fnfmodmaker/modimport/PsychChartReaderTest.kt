@@ -46,8 +46,15 @@ class PsychChartReaderTest {
         assertEquals(draft.notes, readPsychChart(encoded.toString(), "test", "normal").notes)
     }
 
+    @Test fun stringNoteTypesRoundTripWithoutBecomingNormalNotes() {
+        val source = chart("", true, ",[300,1,0,\"Hurt Note\"]")
+        val draft = readPsychChart(source, "test", "normal")
+        assertEquals("Hurt Note", draft.notes.last().kind)
+        val encoded = draft.toPsychJson()
+        assertEquals("Hurt Note", readPsychChart(encoded, "test", "normal").notes.single { it.timeMs == 300L }.kind)
+    }
+
     @Test fun unsupportedGameplayFailsExplicitly() {
-        assertThrows(IllegalArgumentException::class.java) { readPsychChart(chart("", true, ",[300,1,0,\"Hurt Note\"]"), "test", "normal") }
         val events = chart("", true).replace("\"events\":[]", "\"events\":[[100,[]]]")
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(events, "test", "normal") }
         val tempo = chart("", true).replace("\"sectionBeats\":4", "\"sectionBeats\":4,\"changeBPM\":true")

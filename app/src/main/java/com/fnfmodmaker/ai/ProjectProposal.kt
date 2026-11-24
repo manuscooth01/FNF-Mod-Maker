@@ -178,12 +178,14 @@ object ProjectProposalPlanner {
                 }
                 "song" -> {
                     val metadata = setOf("type", "songIndex")
-                    keys(change, metadata + setOf("artist", "bpm", "speed", "offsetMs", "practiceNotes", "stagePsych", "stageVSlice"))
+                    keys(change, metadata + setOf("name", "artist", "bpm", "speed", "offsetMs", "practiceNotes", "stagePsych", "stageVSlice"))
                     nonEmpty(change, metadata)
                     val (index, old) = song(current, change)
                     if (change.has("stagePsych") && !current.engine.includesPsych) fail("Psych no está seleccionado; su escenario no se exportaría")
                     if (change.has("stageVSlice") && !current.engine.includesVSlice) fail("V-Slice no está seleccionado; su escenario no se exportaría")
-                    val updated = old.copy(artist = string(change, "artist") ?: old.artist,
+                    val name = string(change, "name", 100)
+                    if (name != null) current = try { renameSong(current, index, name) } catch (e: IllegalArgumentException) { fail(e.message ?: "nombre inválido") }
+                    val updated = current.songs[index].copy(artist = string(change, "artist") ?: old.artist,
                         bpm = int(change, "bpm", 1, 400)?.toString() ?: old.bpm,
                         speed = number(change, "speed", 0.1f, 10f)?.toString() ?: old.speed,
                         offsetMs = int(change, "offsetMs", -999999, 999999)?.toString() ?: old.offsetMs,
@@ -191,7 +193,20 @@ object ProjectProposalPlanner {
                         stagePsych = string(change, "stagePsych", 64) ?: old.stagePsych, stageVSlice = string(change, "stageVSlice", 64) ?: old.stageVSlice)
                     val songs = current.songs.toMutableList().also { it[index] = updated }
                     current = current.copy(songs = songs)
-                    items.add(ProposalItem("Canción ${index + 1} · ${old.songName}", "${if (current.character.enabled) "Aviso: el personaje propio sobrescribe el ID de su lado al exportar.\n" else ""}Antes: BPM ${old.bpm}, velocidad ${old.speed}, offset ${old.offsetMs}, práctica ${old.practiceNotes}, artista ${old.artist}, jugador ${old.player}, rival ${old.opponent}, acompañante ${old.girlfriend}, escenarios ${old.stagePsych} / ${old.stageVSlice}\nDespués: BPM ${updated.bpm}, velocidad ${updated.speed}, offset ${updated.offsetMs}, práctica ${updated.practiceNotes}, artista ${updated.artist}, jugador ${updated.player}, rival ${updated.opponent}, acompañante ${updated.girlfriend}, escenarios ${updated.stagePsych} / ${updated.stageVSlice}"))
+                    items.add(ProposalItem("Canción ${index + 1} · ${old.songName}", "Nombre: ${old.songName} → ${updated.songName}\n${if (current.character.enabled) "Aviso: el personaje propio sobrescribe el ID de su lado al exportar.\n" else ""}Antes: BPM ${old.bpm}, velocidad ${old.speed}, offset ${old.offsetMs}, práctica ${old.practiceNotes}, artista ${old.artist}, jugador ${old.player}, rival ${old.opponent}, acompañante ${old.girlfriend}, escenarios ${old.stagePsych} / ${old.stageVSlice}\nDespués: BPM ${updated.bpm}, velocidad ${updated.speed}, offset ${updated.offsetMs}, práctica ${updated.practiceNotes}, artista ${updated.artist}, jugador ${updated.player}, rival ${updated.opponent}, acompañante ${updated.girlfriend}, escenarios ${updated.stagePsych} / ${updated.stageVSlice}"))
+                }
+                "difficulty" -> {
+                    keys(change, setOf("type", "songIndex", "difficulty", "action"))
+                    val (index, target) = song(current, change)
+                    val difficulty = requiredString(change, "difficulty", 20)
+                    if (difficulty !in ALL_DIFFICULTIES) fail("dificultad no compatible")
+                    val action = requiredString(change, "action", 20)
+                    current = when (action) {
+                        "add" -> { if (difficulty in target.difficulties) fail("la dificultad ya existe"); addSongDifficulty(current, index, difficulty) }
+                        "remove", "delete_chart" -> { if (difficulty !in target.difficulties && current.getChart(target.songFolder, difficulty) == null) fail("la dificultad no existe"); removeSongDifficulty(current, index, difficulty) }
+                        else -> fail("acción de dificultad inválida")
+                    }
+                    items.add(ProposalItem("${target.songName} · $difficulty", if (action == "add") "Añadir dificultad; chart vacío en proyectos importados." else "Eliminar chart y dificultad del proyecto y del ZIP."))
                 }
                 "new_song" -> {
                     keys(change, setOf("type", "name", "bpm"))
@@ -255,9 +270,6 @@ object ProjectProposalPlanner {
             val newlyInvalid = if (changes.any { it.asJsonObject.get("type")?.asString == "assignment" }) problems else problems.filterNot { it in before }
             if (newlyInvalid.isNotEmpty()) fail(newlyInvalid.joinToString(" "))
         }
-        val effective = current.effectiveExportConfig()
-        val protected = current.songs.zip(effective.songs).flatMap { (raw, projected) -> com.fnfmodmaker.mod.vSliceExportProblems(raw, projected, current) }
-        if (protected.isNotEmpty()) fail(protected.joinToString(" "))
         if (current == base) fail("el lote no cambia ningún valor")
         return ProjectProposal(base, current, summary, items)
     }
@@ -305,7 +317,7 @@ fun projectContext(config: ModConfig, characterOnly: Boolean): String {
         result["songs"] = config.songs.take(20).mapIndexed { index, song ->
             mapOf("index" to index, "name" to song.songName.take(100), "artist" to song.artist.take(100),
                 "bpm" to song.bpm, "speed" to song.speed, "offsetMs" to song.offsetMs,
-                "practiceNotes" to song.practiceNotes, "difficulties" to song.orderedDifficulties,
+                "practiceNotes" to song.practiceNotes, "difficulties" to song.orderedDifficulties, "exportedDifficulties" to exportDifficulties(config, song),
                 "instrumentalDurationMs" to (song.instrumental?.durationMs ?: 0), "player" to song.player,
                 "opponent" to song.opponent, "girlfriend" to song.girlfriend, "stagePsych" to song.stagePsych, "stageVSlice" to song.stageVSlice,
                 "charts" to song.orderedDifficulties.map { difficulty ->

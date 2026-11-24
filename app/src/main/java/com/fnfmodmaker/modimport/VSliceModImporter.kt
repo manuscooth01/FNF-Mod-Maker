@@ -125,9 +125,9 @@ internal class VSliceModImporter(
                 songs.add(song); charts[folder] = perSong; converted.add(chartPath)
             }
             require(songs.size in 1..20) { "Se admiten de 1 a 20 canciones V-Slice." }
-            warnings.add("La metadata original, sus campos adicionales y la velocidad por dificultad se conservan sin edición. Solo se editan notas de las dificultades indicadas y las pistas seleccionadas. El editor redondea tiempos al milisegundo; las notas no modificadas conservan su precisión original.")
-            warnings.add("Las asignaciones explícitas de la biblioteca actualizan los personajes solo en la metadata del ZIP; nombre, BPM, velocidad, offset y escenario siguen protegidos.")
-            warnings.add("Los recursos y scripts no editables se conservan sin ejecución; los scripts pueden ejecutarse en el juego. Colisiones desconocidas bloquean el ZIP.")
+            warnings.add("Modo de edición libre: los cambios pueden regenerar datos no representados. Los originales se conservan en el proyecto.")
+            warnings.add("Las dificultades y los campos compatibles se actualizarán al exportar.")
+            warnings.add("Los recursos y scripts no editables se conservan sin ejecución; los scripts pueden ejecutarse en el juego. Los archivos generados tienen prioridad sobre los originales de la misma ruta.")
             var character = CharacterDraft()
             val candidates = files.filter { Regex("^data/characters/[^/]+\\.json$").matches(it) }
             for (path in candidates) {

@@ -8,7 +8,8 @@ internal fun renameSong(config: ModConfig, index: Int, name: String): ModConfig 
     val song = config.songs[index]
     if (song.songName == clean) return config
     val oldFolder = song.songFolder
-    val updatedSong = song.copy(songName = clean)
+    val psychImported = config.importedModResources.any { it.converted && it.originalPath.startsWith("data/${song.songFolder}/") }
+    val updatedSong = song.copy(songName = clean, importedPsychFolder = if (song.importedPsychFolder.isEmpty() && psychImported) song.songFolder else song.importedPsychFolder)
     val newFolder = updatedSong.songFolder
     require(config.songs.withIndex().none { it.index != index && it.value.songFolder.equals(newFolder, ignoreCase = true) }) {
         "Ya existe una canción con ese nombre o carpeta; elige otro."

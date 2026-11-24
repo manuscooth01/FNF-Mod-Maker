@@ -31,7 +31,7 @@ class PsychImportCycleTest {
     }).create()
     private fun image(f: File, name: String): PickedImage = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null}""", PickedImage::class.java)
     private fun audio(f: File, name: String, ms: Long): PickedAudio = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null,"durationMs":$ms}""", PickedAudio::class.java)
-    private fun fixture(): ByteArray {
+    private fun fixture(allDifficulties: Boolean = false): ByteArray {
         val files = linkedMapOf(
             "pack.json" to """{"name":"Psych Fixture","description":"example"}""",
             "data/test/test.json" to """{"song":{"song":"test","format":"psych_v1","bpm":120,"speed":2,"player1":"bf","player2":"dad","stage":"stage","events":[],"notes":[{"mustHitSection":false,"sectionNotes":[[100,0,0],[500,6,200]]}]}}""",
@@ -39,6 +39,10 @@ class PsychImportCycleTest {
             "characters/dad.json" to """{"image":"characters/dad","animations":[{"anim":"idle","name":"idle","fps":24,"loop":false,"offsets":[0,0]}]}""",
             "images/characters/dad.png" to "fake-png-for-unit-test", "images/characters/dad.xml" to """<TextureAtlas imagePath="dad.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>""",
             "scripts/custom.lua" to "print('hello')", "unknown/config.json" to "{\"opaque\":true}")
+        if (allDifficulties) {
+            files["data/test/test-easy.json"] = files.getValue("data/test/test.json")
+            files["data/test/test-hard.json"] = files.getValue("data/test/test.json")
+        }
         val realFiles = mapOf(
             "songs/test/Inst.ogg" to "/psych-fixture/Inst.ogg",
             "songs/test/Voices.ogg" to "/psych-fixture/Voices.ogg",
@@ -103,6 +107,24 @@ class PsychImportCycleTest {
         assertEquals("new-enemy", json.getString("player2"))
         assertEquals("fnfmm-test-stage", json.getString("stage"))
     }
+    @Test fun deletedPsychDifficultyDoesNotReappearInZip() {
+        val store = ProjectStore(File(temp.root, "psych-free"), temp.root)
+        val prepared = ModZipInspector(File(temp.root, "cache-free")).withExtracted(fixture(true).inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, store.newImportStage())
+        }
+        val modified = com.fnfmodmaker.model.removeSongDifficulty(prepared.config, 0, "easy")
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(modified).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val services = ModBuildServices(object : AudioEncoder {
+            override fun convert(input: File, output: File): String? = error("OGG no requiere conversión")
+            override fun mix(first: File, second: File, output: File): String? = error("Una voz")
+        }, { _, _, _, _ -> }, { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "psych-output"), temp.root, {}, services)
+        assertFalse(File(built.rootDir, "data/test/test-easy.json").exists())
+        assertTrue(File(built.rootDir, "data/test/test.json").isFile)
+        assertTrue(File(built.rootDir, "data/test/test-hard.json").isFile)
+    }
+
     @Test fun extractedPsychProjectCanBeSavedReopenedPackagedAndOpaqueAssetsSurvive() {
         val real = File(temp.root, "real").apply { mkdirs() }
         val alias = File(temp.root, "android-data-user-alias")

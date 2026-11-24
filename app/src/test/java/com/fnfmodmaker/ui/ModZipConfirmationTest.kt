@@ -175,6 +175,8 @@ class ModZipConfirmationTest {
         val assignment = """{"summary":"Cambiar rival","changes":[{"type":"assignment","role":"opponent","characterId":"${vm.config.selectedCharacterId}"},{"type":"animation","characterId":"${vm.config.selectedCharacterId}","name":"idle","fps":18,"offsetX":7}]}"""
         vm.acceptAiProposal(vm.config, com.fnfmodmaker.ai.AiProtocol.ProjectResponse(null, assignment), false)
         assertNotNull(vm.aiError, vm.aiProposal); vm.applyAiProposal()
+        vm.openLiveChart(); vm.selectLiveDifficulty("easy"); vm.deleteLiveCustomChart(); vm.closeLiveChart()
+        assertFalse(vm.config.firstSong.difficulties.contains("easy"))
         assertEquals("metza", vm.config.effectiveExportConfig().firstSong.opponent)
         vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
         assertEquals("dad", vm.config.firstSong.opponent)
@@ -189,7 +191,13 @@ class ModZipConfirmationTest {
         val exported = org.json.JSONObject(files.getValue(prefix + "data/songs/tarde/tarde-metadata.json").toString(Charsets.UTF_8))
         val chars = exported.getJSONObject("playData").getJSONObject("characters")
         assertEquals("metza", chars.getString("opponent")); chars.put("opponent", "dad")
-        assertEquals(com.google.gson.JsonParser.parseString(original), com.google.gson.JsonParser.parseString(exported.toString())); assertEquals(original, File(originalPath).readText())
+        val exportedDiffs = exported.getJSONObject("playData").getJSONArray("difficulties")
+        assertEquals(listOf("normal", "hard"), (0 until exportedDiffs.length()).map { exportedDiffs.getString(it) })
+        val notes = org.json.JSONObject(files.getValue(prefix + "data/songs/tarde/tarde-chart.json").toString(Charsets.UTF_8)).getJSONObject("notes")
+        assertFalse(notes.has("easy")); assertTrue(notes.has("normal")); assertTrue(notes.has("hard"))
+        val originalTree = com.google.gson.JsonParser.parseString(original).asJsonObject
+        originalTree.getAsJsonObject("playData").add("difficulties", com.google.gson.JsonArray().apply { add("normal"); add("hard") })
+        assertEquals(originalTree, com.google.gson.JsonParser.parseString(exported.toString())); assertEquals(original, File(originalPath).readText())
         listOf("data/characters/metza.json", "images/characters/metza.png", "images/characters/metza.xml").forEach { assertTrue(it, files.containsKey(prefix + it)) }
         val characterJson = org.json.JSONObject(files.getValue(prefix + "data/characters/metza.json").toString(Charsets.UTF_8))
         val idle = characterJson.getJSONArray("animations").getJSONObject(0)

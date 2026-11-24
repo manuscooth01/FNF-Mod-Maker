@@ -83,12 +83,11 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
     }
     config.songs.forEachIndexed { index, song ->
         val label = "Canción ${index + 1}"
-        com.fnfmodmaker.mod.vSliceExportProblems(song, exportConfig.songs[index], config).forEach { add(WizardIssue(1, it, index)) }
         if (song.songName.isBlank()) add(WizardIssue(1, "$label: escribe un nombre.", index))
         if (song.songName.isNotBlank() && song.songFolder.lowercase() in repeated) {
             add(WizardIssue(1, "$label: usa un nombre de carpeta distinto al de las otras canciones.", index))
         }
-        if (song.songFolder.contains('/') || song.songFolder.contains('\\')) {
+        if (!song.songFolder.matches(Regex("[a-z0-9_-]{1,80}"))) {
             add(WizardIssue(1, "$label: el nombre no puede contener barras.", index))
         }
         if (song.bpmValue !in 1..400) add(WizardIssue(1, "$label: el BPM debe estar entre 1 y 400.", index))

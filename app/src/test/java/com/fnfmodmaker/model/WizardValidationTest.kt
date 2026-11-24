@@ -22,7 +22,7 @@ class WizardValidationTest {
         assertTrue(issues.count { it.message.contains("carpeta distinto") } == 2)
         assertTrue(issues.any { it.songIndex == 1 && it.message.contains("BPM") })
         assertTrue(issues.any { it.songIndex == 1 && it.message.contains("velocidad") })
-        assertTrue(issues.any { it.songIndex == 1 && it.message.contains("dificultad") })
+        assertFalse(issues.any { it.songIndex == 1 && it.message.contains("dificultad") })
         assertTrue(issues.count { it.step == 3 } == 2)
     }
 

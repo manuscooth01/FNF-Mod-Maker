@@ -75,7 +75,7 @@ internal class PsychModImporter(
                 val voice = audio("songs/$folder/Voices.ogg")
                 songs.add(SongConfig(songName = folder, bpm = base.bpm.toString(), speed = base.scrollSpeed.toString(), player = base.player1,
                     opponent = base.player2, girlfriend = base.gfVersion, stagePsych = base.stage, difficulties = perSong.keys,
-                    practiceNotes = false, offsetMs = base.offsetMs.toString(), instrumental = inst, vocalsPlayer = voice))
+                    practiceNotes = false, offsetMs = base.offsetMs.toString(), instrumental = inst, vocalsPlayer = voice, importedPsychFolder = folder))
                 charts[folder] = perSong
             }
             require(songs.isNotEmpty() && songs.size <= 20) { "No se encontraron de 1 a 20 canciones Psych compatibles con chart e instrumental." }

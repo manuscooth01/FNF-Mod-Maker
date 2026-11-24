@@ -166,10 +166,10 @@ class VSliceImportCycleTest {
         val files = mutableMapOf<String, ByteArray>()
         java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { zip -> while (true) { val e = zip.nextEntry ?: break; files[e.name] = zip.readBytes() } }
         fun text(p: String) = files.getValue(p).toString(Charsets.UTF_8)
-        assertEquals(metadata, text("data/songs/test/test-metadata.json"))
+        assertEquals("normal", JSONObject(text("data/songs/test/test-metadata.json")).getJSONObject("playData").getJSONArray("difficulties").getString(0))
         val exported = JSONObject(text("data/songs/test/test-chart.json"))
         assertEquals("retained", exported.getString("unknownChart")); assertEquals(1, exported.getJSONArray("events").length())
-        assertEquals("mine", exported.getJSONObject("notes").getJSONArray("hard").getJSONObject(0).getString("k"))
+        assertFalse(exported.getJSONObject("notes").has("hard"))
         assertEquals(100.25, exported.getJSONObject("notes").getJSONArray("normal").getJSONObject(0).getDouble("t"), 0.0)
         assertEquals(800, exported.getJSONObject("notes").getJSONArray("normal").getJSONObject(1).getInt("t"))
         val char = JSONObject(text("data/characters/hero.json"))
@@ -204,8 +204,8 @@ class VSliceImportCycleTest {
             assertEquals(song.opponent, project.effectiveExportConfig().firstSong.opponent)
             val built = ModBuilder.buildInternal(project, File(temp.root, "case-build-$index"), temp.root, {}, services())
             val original = project.importedModResources.single { it.originalPath == "data/songs/test/test-metadata.json" }
-            assertEquals(File(original.asset!!.path).readText(),
-                File(built.rootDir, "data/songs/test/test-metadata.json").readText())
+            assertTrue(File(original.asset!!.path).readText().contains("extraMetadata"))
+            assertTrue(File(built.rootDir, "data/songs/test/test-metadata.json").readText().contains("extraMetadata"))
             val outputMeta = JSONObject(File(built.rootDir, "data/songs/test/test-metadata.json").readText())
             val chars = outputMeta.getJSONObject("playData").getJSONObject("characters")
             assertEquals(song.player, chars.getString("player")); assertEquals(song.opponent, chars.getString("opponent"))
@@ -255,11 +255,14 @@ class VSliceImportCycleTest {
         val originalJson = JSONObject(original)
         assertEquals("metza", exported.getJSONObject("playData").getJSONObject("characters").getString("opponent"))
         exported.getJSONObject("playData").getJSONObject("characters").put("opponent", "hero")
+        originalJson.getJSONObject("playData").put("difficulties", org.json.JSONArray().put("normal"))
         assertTrue(originalJson.similar(exported))
         val rawExport = files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8)
         val exportTree = com.google.gson.JsonParser.parseString(rawExport).asJsonObject
         exportTree.getAsJsonObject("playData").getAsJsonObject("characters").addProperty("opponent", "hero")
-        assertEquals(com.google.gson.JsonParser.parseString(original), exportTree)
+        val sourceTree = com.google.gson.JsonParser.parseString(original).asJsonObject
+        sourceTree.getAsJsonObject("playData").add("difficulties", com.google.gson.JsonArray().apply { add("normal") })
+        assertEquals(sourceTree, exportTree)
         assertEquals("123456789012345678901234567890", exportTree.getAsJsonObject("extraMetadata").get("largeInteger").asString)
         assertEquals("0.12345678901234567890123456789", exportTree.getAsJsonObject("extraMetadata").get("precise").asString)
         assertEquals(original, File(origin.asset!!.path).readText())
@@ -290,60 +293,20 @@ class VSliceImportCycleTest {
         assertTrue(error.message!!.contains("Falta el archivo generado"))
     }
 
-    @Test fun eachChangedMetadataFieldIsReportedAndBlockedByWizardAndBuilder() {
-        val store = ProjectStore(File(temp.root, "projects"), temp.root)
-        val p = prepare(zip(), store)
-        val song = p.config.firstSong
-        val variants = listOf(
-            Triple("nombre", song.copy(songName = "Other"), "Test" to "Other"),
-            Triple("artista", song.copy(artist = "Other"), "Example" to "Other"),
-            Triple("BPM", song.copy(bpm = "130"), "120" to "130"),
-            Triple("velocidad", song.copy(speed = "2.0"), "1.3" to "2.0"),
-            Triple("offset", song.copy(offsetMs = "4"), "0" to "4"),
-            Triple("jugador", song.copy(player = "BF-New"), "bf" to "BF-New"),
-            Triple("rival", song.copy(opponent = "Hero_New"), "hero" to "Hero_New"),
-            Triple("GF", song.copy(girlfriend = "GF-New"), "gf" to "GF-New"),
-            Triple("escenario", song.copy(stageVSlice = "custom"), "mainStage" to "custom")
-        )
-        variants.forEach { (field, changed, values) ->
-            val config = p.config.copy(songs = listOf(changed))
-            val issues = validateWizard(config).map { it.message }
-            val problem = issues.first { it.contains(": $field de metadata") }
-            assertTrue(problem.contains("original: \"${values.first}\"")); assertTrue(problem.contains("actual: \"${values.second}\""))
-            val error = assertThrows(IllegalArgumentException::class.java) {
-                ModBuilder.buildInternal(config, File(temp.root, "invalid-$field"), temp.root, {}, services())
-            }
-            assertTrue(error.message, error.message!!.contains(problem))
-        }
-        val renamedChar = p.config.copy(character = p.config.character.copy(charId = "another"))
-        assertTrue(validateWizard(renamedChar).any { it.message.contains("ID es de solo lectura") })
-        assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(renamedChar, File(temp.root, "invalid-char"), temp.root, {}, services()) }
+    @Test fun editedMetadataAndGeneratedCollisionsAreExported() {
+        val store = ProjectStore(File(temp.root, "free-metadata"), temp.root)
+        val p = prepare(zip(extra = mapOf("LEEME.txt" to "original")), store)
+        val changed = p.config.copy(songs = listOf(p.config.firstSong.copy(artist = "Nuevo", bpm = "130", speed = "2.0", offsetMs = "10", stageVSlice = "new-stage")))
+        val built = ModBuilder.buildInternal(changed, File(temp.root, "free-build"), temp.root, {}, services())
+        val metadata = JSONObject(File(built.rootDir, "data/songs/test/test-metadata.json").readText())
+        assertEquals("Nuevo", metadata.getString("artist")); assertEquals(130, metadata.getJSONArray("timeChanges").getJSONObject(0).getInt("bpm"))
+        assertEquals(180, metadata.getJSONArray("timeChanges").getJSONObject(1).getInt("bpm"))
+        assertEquals(10, metadata.getJSONObject("offsets").getInt("instrumental"))
+        assertEquals("new-stage", metadata.getJSONObject("playData").getString("stage"))
+        assertEquals(2.0, JSONObject(File(built.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("scrollSpeed").getDouble("normal"), 0.0)
+        assertNotEquals("original", File(built.rootDir, "LEEME.txt").readText())
     }
 
-    @Test fun generatedStageChangesAreReportedByBothWizardAndBuilder() {
-        val store = ProjectStore(File(temp.root, "projects"), temp.root)
-        val p = prepare(zip(), store)
-        val changed = p.config.copy(character = p.config.character.copy(side = CharacterSide.PLAYER)).copy(
-            stageDraft = StageDraft(enabled = true, stageId = "another", backgroundImage = p.config.character.atlasSheet))
-        val effective = changed.effectiveExportConfig().firstSong
-        assertEquals(p.config.firstSong.player, effective.player)
-        assertEquals(p.config.firstSong.opponent, effective.opponent)
-        assertEquals("fnfmm-another", effective.stageVSlice)
-        val issue = validateWizard(changed).single { it.message.contains(": escenario de metadata") }.message
-        assertTrue(issue.contains("original: \"mainStage\"")); assertTrue(issue.contains("actual: \"fnfmm-another\""))
-        val failure = assertThrows(IllegalArgumentException::class.java) {
-            ModBuilder.buildInternal(changed, File(temp.root, "stage-build"), temp.root, {}, services())
-        }
-        assertTrue(failure.message!!.contains(issue))
-    }
-
-    @Test fun unknownCollisionAndMetadataEditsFailRatherThanLoseData() {
-        val store = ProjectStore(File(temp.root, "projects"), temp.root)
-        val p = prepare(zip(extra = mapOf("LEEME.txt" to "unknown original")), store)
-        assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(p.config, File(temp.root, "build"), temp.root, {}, services()) }
-        val changed = p.config.copy(songs = listOf(p.config.firstSong.copy(bpm = "130")))
-        assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(changed, File(temp.root, "build"), temp.root, {}, services()) }
-    }
     @Test fun preservesPolymodFieldsAndSingleCharacterVoiceFilename() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val p = prepare(zip(extra = mapOf("_polymod_meta.json" to """{"title":"Source","description":"Original","license":"CUSTOM","vendor":{"keep":1}}""")), store)
@@ -356,14 +319,17 @@ class VSliceImportCycleTest {
         val meta = JSONObject(File(built.rootDir, "_polymod_meta.json").readText())
         assertEquals("Edited title", meta.getString("title")); assertEquals("CUSTOM", meta.getString("license")); assertEquals(1, meta.getJSONObject("vendor").getInt("keep"))
     }
-    @Test fun noneditableDifficultyCannotBeAddedOrSilentlyDropped() {
-        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+    @Test fun emptyAndNewDifficultiesExportWithoutRestoringOldCharts() {
+        val store = ProjectStore(File(temp.root, "free-difficulties"), temp.root)
         val p = prepare(zip(), store)
-        val hard = ChartDraft(songFolder = "test", difficulty = "hard", notes = listOf(ChartNote(200, 0)))
-        val extra = p.config.withChart("test", "hard", hard)
-        assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(extra, File(temp.root, "build"), temp.root, {}, services()) }
-        val disabled = p.config.copy(songs = listOf(p.config.firstSong.copy(difficulties = emptySet())))
-        assertTrue(com.fnfmodmaker.mod.vSliceImportProblems(disabled.firstSong).isNotEmpty())
+        val empty = p.config.copy(songs = listOf(p.config.firstSong.copy(difficulties = emptySet())))
+        val built = ModBuilder.buildInternal(empty, File(temp.root, "empty-build"), temp.root, {}, services())
+        assertEquals(0, JSONObject(File(built.rootDir, "data/songs/test/test-metadata.json").readText()).getJSONObject("playData").getJSONArray("difficulties").length())
+        assertEquals(0, JSONObject(File(built.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("notes").length())
+        assertTrue(built.warnings.any { it.contains("sin dificultades") })
+        val added = com.fnfmodmaker.model.addSongDifficulty(empty, 0, "easy")
+        val next = ModBuilder.buildInternal(added, File(temp.root, "added-build"), temp.root, {}, services())
+        assertTrue(JSONObject(File(next.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("notes").has("easy"))
     }
     @Test fun fractionalNotesThatBecomeAmbiguousAreKeptUneditable() {
         val source = JSONObject("""{"notes":{"normal":[{"t":100.1,"d":0},{"t":100.2,"d":0}]}}""")

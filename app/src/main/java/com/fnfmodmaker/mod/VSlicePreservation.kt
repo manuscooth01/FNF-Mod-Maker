@@ -116,12 +116,39 @@ internal fun originalVSliceText(config: ModConfig, path: String, appRoot: File, 
 
 internal fun buildImportedVSliceChart(config: ModConfig, song: SongConfig, appRoot: File): String {
     val origin = song.vSliceOrigin ?: error("No hay origen V-Slice.")
-    require(vSliceImportProblems(song, assignedVSliceRoles(config)).isEmpty()) { vSliceImportProblems(song, assignedVSliceRoles(config)).joinToString(" ") }
-    require(config.charts[song.songFolder].orEmpty().keys.all { it in origin.editableDifficulties }) {
-        "${song.songFolder}: un chart no editable contiene cambios que no se pueden exportar sin pérdida."
+    val difficulties = com.fnfmodmaker.model.exportDifficulties(config, song)
+    val drafts = difficulties.associateWith { diff -> config.getChart(song.songFolder, diff)!! }
+    val speed = if (song.speed != origin.originalSpeed) song.speedValue else null
+    return patchVSliceChart(originalVSliceText(config, origin.chartPath, appRoot, true), drafts, origin.editableDifficulties, speed)
+}
+
+/** Free editing patches known fields while leaving unrelated metadata in the original tree. */
+internal fun freeVSliceMetadata(original: String, raw: SongConfig, effective: SongConfig, difficulties: List<String>): String {
+    val origin = raw.vSliceOrigin ?: error("Falta origen V-Slice.")
+    readVSliceJson(original, "metadata original"); rejectDuplicateJsonKeys(original)
+    val json = com.google.gson.JsonParser.parseString(original).asJsonObject
+    val play = json.getAsJsonObject("playData") ?: error("Falta playData.")
+    val chars = play.getAsJsonObject("characters") ?: com.google.gson.JsonObject().also { play.add("characters", it) }
+    fun text(obj: com.google.gson.JsonObject, key: String, value: String, old: String) { if (value != old) obj.addProperty(key, value) }
+    text(json, "songName", raw.songName, origin.originalName); text(json, "artist", raw.artist, origin.originalArtist)
+    text(chars, "player", effective.player, origin.originalPlayer); text(chars, "opponent", effective.opponent, origin.originalOpponent)
+    text(chars, "girlfriend", effective.girlfriend, origin.originalGirlfriend); text(play, "stage", effective.stageVSlice, origin.originalStage)
+    if (raw.bpm != origin.originalBpm) {
+        val times = json.getAsJsonArray("timeChanges") ?: error("Falta timeChanges.")
+        require(times.size() > 0 && times[0].isJsonObject) { "Tempo inicial inválido." }
+        times[0].asJsonObject.addProperty("bpm", raw.bpmValue)
     }
-    val drafts = song.difficulties.associateWith { diff -> config.getChart(song.songFolder, diff) ?: error("Falta el chart editable $diff de ${song.songFolder}; no se reemplazó el original.") }
-    return patchVSliceChart(originalVSliceText(config, origin.chartPath, appRoot, true), drafts, origin.editableDifficulties)
+    if (raw.offsetMs != origin.originalOffset) {
+        val offsets = json.getAsJsonObject("offsets") ?: com.google.gson.JsonObject().also { json.add("offsets", it) }
+        offsets.addProperty("instrumental", raw.offsetValue)
+    }
+    val arr = com.google.gson.JsonArray().apply { difficulties.forEach { add(it) } }
+    play.add("difficulties", arr)
+    play.get("ratings")?.takeIf { it.isJsonObject }?.asJsonObject?.let { ratings ->
+        ratings.keySet().toList().filter { it !in difficulties }.forEach { ratings.remove(it) }
+        difficulties.filterNot { ratings.has(it) }.forEach { ratings.addProperty(it, 1) }
+    }
+    return json.toString()
 }
 
 /** Preserve source-only character data and animation fields; replace only editable fields. */

@@ -64,13 +64,11 @@ object ModBuilder {
         val libraryProblems = com.fnfmodmaker.model.characterLibraryProblems(rawConfig)
         require(libraryProblems.isEmpty()) { libraryProblems.joinToString(" ") }
         val config = rawConfig.effectiveExportConfig()
-        val metadataProblems = rawConfig.songs.zip(config.songs).flatMap { (raw, effective) -> vSliceExportProblems(raw, effective, rawConfig) } +
-            config.charactersToExport().flatMap { vSliceCharacterProblems(config.copy(selectedCharacterId = it.id)) }
-        require(metadataProblems.isEmpty()) { metadataProblems.joinToString(" ") }
         val importedCharts = config.songs.filter { it.vSliceOrigin != null }.associate { song ->
-            require(song.difficulties.isNotEmpty()) { "${song.songFolder}: elige una dificultad editable." }
             song.songFolder to buildImportedVSliceChart(config, song, appRoot)
         }
+        config.songs.forEach { if (com.fnfmodmaker.model.exportDifficulties(config, it).isEmpty()) warnings.add("${it.songName}: sin dificultades; no será jugable hasta añadir un chart.") }
+        if (config.importedModResources.isNotEmpty()) warnings.add("Edición libre: los archivos editados se regeneran y pueden descartar datos no representados; el proyecto conserva los originales.")
         if (rawConfig.characterAssignments == null && config.character.enabled && config.songs.any { song ->
                 song.vSliceOrigin != null && (if (config.character.side == com.fnfmodmaker.model.CharacterSide.PLAYER) song.player else song.opponent) != config.character.charFolder
             }) warnings.add("Las canciones V-Slice importadas conservan sus personajes originales; el personaje generado no se asigna automáticamente a su metadata.")
@@ -157,13 +155,12 @@ object ModBuilder {
                 ) else {
                     val raw = rawConfig.songs.single { it.songFolder == songFolder }
                     val origin = song.vSliceOrigin
-                    require(origin.folder == songFolder && origin.metadataPath == "data/songs/$songFolder/$songFolder-metadata.json") { "Ruta de metadata V-Slice incompatible; no se exportó." }
+                    require(origin.folder.matches(Regex("[a-z0-9_-]{1,80}")) && origin.metadataPath == "data/songs/${origin.folder}/${origin.folder}-metadata.json") { "Ruta de metadata V-Slice incompatible; no se exportó." }
                     val original = originalVSliceText(config, origin.metadataPath, appRoot, false)
-                    val patched = patchImportedVSliceMetadata(original, raw, song, assignedVSliceRoles(rawConfig))
-                    if (patched != original) {
-                        writeText(root, origin.metadataPath, patched)
-                        patchedMetadataPaths.add(origin.metadataPath)
-                    }
+                    val patched = freeVSliceMetadata(original, raw, song, com.fnfmodmaker.model.exportDifficulties(config, song))
+                    val target = "data/songs/$songFolder/$songFolder-metadata.json"
+                    writeText(root, target, patched)
+                    if (target == origin.metadataPath) patchedMetadataPaths.add(target)
                 }
                 writeText(root, "data/songs/$songFolder/$songFolder-chart.json",
                     importedCharts[songFolder] ?: JsonBuilders.vsliceChart(config, song, entry.durationMs))
@@ -199,14 +196,14 @@ object ModBuilder {
             for (entry in songEntries) {
                 val song = entry.song
                 val songFolder = song.songFolder
-                val difficulties = song.orderedDifficulties
+                val difficulties = com.fnfmodmaker.model.exportDifficulties(config, song)
                 for (difficulty in difficulties) {
                     val fileName = if (difficulty == "normal") "$songFolder.json" else "$songFolder-$difficulty.json"
                     val chartJson = JsonBuilders.psychChart(config, song, entry.durationMs, difficulty)
                     writeText(root, "data/$songFolder/$fileName", chartJson)
                 }
                 // Psych abre siempre la dificultad "Normal", que es el archivo SIN sufijo.
-                if (difficulties.none { it == "normal" }) {
+                if (config.importedModResources.isEmpty() && difficulties.isNotEmpty() && difficulties.none { it == "normal" }) {
                     val chartJson = JsonBuilders.psychChart(config, song, entry.durationMs, difficulties.first())
                     writeText(root, "data/$songFolder/$songFolder.json", chartJson)
                     warnings.add(
@@ -259,9 +256,26 @@ object ModBuilder {
         writeText(root, "LEEME.txt", readmeText(config, songEntries))
         if (config.importedModResources.isNotEmpty()) {
             onProgress("Conservando recursos originales…")
-            mergeImportedResources(root, config.importedModResources.map { resource ->
+            val omitted = mutableSetOf<String>()
+            config.songs.forEach { song ->
+                song.vSliceOrigin?.let { origin ->
+                    if (origin.folder != song.songFolder) {
+                        omitted.add(origin.metadataPath); omitted.add(origin.chartPath)
+                        config.importedModResources.filter { it.converted && it.originalPath.startsWith("songs/${origin.folder}/") }.forEach { omitted.add(it.originalPath) }
+                    }
+                }
+                val oldFolder = song.importedPsychFolder.ifEmpty { song.songFolder }
+                if (config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) {
+                    com.fnfmodmaker.model.ALL_DIFFICULTIES.forEach { difficulty ->
+                        val path = "data/$oldFolder/$oldFolder${if (difficulty == "normal") "" else "-$difficulty"}.json"
+                        if (oldFolder != song.songFolder || difficulty !in com.fnfmodmaker.model.exportDifficulties(config, song)) omitted.add(path)
+                    }
+                    if (oldFolder != song.songFolder) config.importedModResources.filter { it.converted && it.originalPath.startsWith("songs/$oldFolder/") }.forEach { omitted.add(it.originalPath) }
+                }
+            }
+            mergeImportedResources(root, config.importedModResources.filterNot { it.originalPath in omitted }.map { resource ->
                 if (resource.originalPath in patchedMetadataPaths) resource.copy(converted = true) else resource
-            }, appRoot)
+            }, appRoot, replaceExisting = true)
             warnings.add("Los archivos convertidos se regeneraron; sus originales se conservan en el proyecto. Revisa el mod en el motor correspondiente.")
         }
 

@@ -6,7 +6,7 @@ import java.text.Normalizer
 import java.util.Locale
 
 /** Nonconverted files never overwrite generated data. Converted originals remain in the project. */
-internal fun mergeImportedResources(root: File, resources: List<ImportedModResource>, allowedAssetRoot: File) {
+internal fun mergeImportedResources(root: File, resources: List<ImportedModResource>, allowedAssetRoot: File, replaceExisting: Boolean = false) {
     fun key(path: String) = Normalizer.normalize(path, Normalizer.Form.NFKC).lowercase(Locale.ROOT)
     fun valid(path: String): Boolean = path.length <= 1024 && !path.startsWith('/') && !path.contains('\\') && path.split('/').let { parts ->
         parts.size in 1..32 && parts.all { p -> p.isNotBlank() && p != "." && p != ".." && !p.endsWith('.') && !p.endsWith(' ') && p.length <= 255 &&
@@ -30,7 +30,7 @@ internal fun mergeImportedResources(root: File, resources: List<ImportedModResou
         require(key(path) !in directories) { "Conflicto de archivo y carpeta original: $path" }
         val existing = generated[key(path)]
         if (existing != null) {
-            require(resource.converted && existing.relativeTo(root).invariantSeparatorsPath == path) { "Colisión entre archivo original y generado: $path. No se exportó el ZIP." }
+            require((resource.converted || replaceExisting) && existing.relativeTo(root).invariantSeparatorsPath == path) { "Colisión entre archivo original y generado: $path. No se exportó el ZIP." }
         } else {
             val target = File(root, path)
             require(target.canonicalPath.startsWith(root.canonicalPath + File.separator) && !target.exists()) { "Ruta original insegura: $path" }

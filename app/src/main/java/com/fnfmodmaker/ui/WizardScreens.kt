@@ -109,6 +109,7 @@ internal fun WizardScreen(vm: WizardViewModel) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             WizardProgress(vm.step, !vm.busy, vm::goTo)
+            if (config.importedModResources.isNotEmpty()) Text("MODO DE EDICIÓN LIBRE", modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
             Text(vm.projectSaveStatus, modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall)
             vm.projectMessage?.let { Text(it, modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Row(Modifier.horizontalScroll(rememberScrollState())) {
@@ -402,8 +403,13 @@ private fun WizardExportStep(vm: WizardViewModel) {
         }
     }
     Spacer(Modifier.height(14.dp))
-    if (vm.validationIssues.isNotEmpty()) WizardIssueCard(vm.validationIssues, vm::resolveIssue)
+    if (vm.validationIssues.isNotEmpty()) { SectionTitle("Errores que impiden exportar"); WizardIssueCard(vm.validationIssues, vm::resolveIssue) }
     else HelpCard("Todo listo para guardar. Después, descomprime el ZIP en la carpeta mods del juego y pruébalo allí.")
     Spacer(Modifier.height(12.dp))
+    if (config.importedModResources.isNotEmpty() || config.songs.any { com.fnfmodmaker.model.exportDifficulties(config, it).isEmpty() }) {
+        SectionTitle("Advertencias · no bloquean el ZIP")
+        if (config.importedModResources.isNotEmpty()) Text("Los archivos editados pueden regenerarse y descartar datos no representados; los originales se conservan en el proyecto.")
+        config.songs.filter { com.fnfmodmaker.model.exportDifficulties(config, it).isEmpty() }.forEach { Text("${it.songName}: sin charts; no será jugable hasta añadir una dificultad.") }
+    }
     ToolStatus(status = "", error = null, saved = vm.savedName, warnings = vm.warnings, savedLabel = "ZIP guardado")
 }

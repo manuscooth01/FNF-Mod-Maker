@@ -86,7 +86,8 @@ data class SongConfig(
     val vocalsPlayer: PickedAudio? = null,
     val vocalsOpponent: PickedAudio? = null,
     val chartAudioMix: ChartAudioMix = ChartAudioMix(),
-    val vSliceOrigin: VSliceSongOrigin? = null
+    val vSliceOrigin: VSliceSongOrigin? = null,
+    val importedPsychFolder: String = ""
 ) {
     val songFolder: String get() = psychSongPath(songName)
     val bpmValue: Int get() = bpm.toIntOrNull() ?: 0
@@ -94,7 +95,7 @@ data class SongConfig(
     val offsetValue: Int get() = offsetMs.toIntOrNull() ?: 0
 
     val orderedDifficulties: List<String>
-        get() = ALL_DIFFICULTIES.filter { it in difficulties }.ifEmpty { listOf("normal") }
+        get() = ALL_DIFFICULTIES.filter { it in difficulties }
 
     val hasVocals: Boolean get() = vocalsPlayer != null || vocalsOpponent != null
     val hasSplitVocals: Boolean get() = vocalsPlayer != null && vocalsOpponent != null

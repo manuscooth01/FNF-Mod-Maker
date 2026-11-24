@@ -799,9 +799,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun deleteLiveCustomChart() {
         if (livePlaying || liveLoading) return
         val song = liveSong ?: return
-        storeLiveChartTransition(config.getChart(song.songFolder, liveDifficulty), null)
+        config = com.fnfmodmaker.model.removeSongDifficulty(config, liveSongIndex, liveDifficulty)
         liveUndo.clear(); liveUndoCount = 0
-        liveNotice = "Se eliminó el chart personalizado de esta dificultad."; scheduleAutoSave()
+        liveNotice = "Se eliminaron el chart y la dificultad de la canción."; scheduleAutoSave(); forceAutoSave()
     }
     private fun removeChartFromConfig(config: ModConfig, folder: String, difficulty: String): ModConfig {
         val remaining = config.charts[folder].orEmpty() - difficulty
@@ -2034,15 +2034,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun toggleActiveSongDifficulty(difficulty: String) {
-        if (config.songs.getOrNull(activeSongIndex)?.vSliceOrigin != null) {
-            error = "Las dificultades importadas de V-Slice son de solo lectura; las compatibles se pueden editar, las demás se conservan intactas."
-            return
+        if (busy || difficulty !in com.fnfmodmaker.model.ALL_DIFFICULTIES) return
+        val song = config.songs.getOrNull(activeSongIndex) ?: return
+        if (difficulty in song.difficulties) {
+            config = com.fnfmodmaker.model.removeSongDifficulty(config, activeSongIndex, difficulty)
+        } else {
+            config = com.fnfmodmaker.model.addSongDifficulty(config, activeSongIndex, difficulty)
         }
-        updateActiveSong { song ->
-            val current = song.difficulties
-            val updated = if (difficulty in current) current - difficulty else current + difficulty
-            song.copy(difficulties = updated)
-        }
+        scheduleAutoSave()
     }
 
     internal fun setActiveSongPracticeNotes(enabled: Boolean) {

@@ -49,26 +49,31 @@ internal fun readVSliceDifficulty(chart: JSONObject, folder: String, difficulty:
 }
 
 /** Patch only explicitly editable difficulties, preserving events, extra difficulties and unknown fields. */
-internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>, editable: Set<String>): String {
+internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>, editable: Set<String>, speed: Float? = null): String {
     val chart = readVSliceJson(original, "chart")
-    val notes = chart.optJSONObject("notes") ?: error("Faltan notas en el chart original.")
-    require(drafts.keys.all { it in editable }) { "La dificultad solicitada no es editable sin pérdida." }
+    val notes = chart.optJSONObject("notes") ?: JSONObject().also { chart.put("notes", it) }
+    val removed = notes.keys().asSequence().filter { it !in drafts.keys }.toList()
+    removed.forEach { notes.remove(it) }
+    val speeds = chart.optJSONObject("scrollSpeed") ?: JSONObject().also { chart.put("scrollSpeed", it) }
+    speeds.keys().asSequence().filter { it != "default" && it !in drafts.keys }.toList().forEach { speeds.remove(it) }
     drafts.forEach { (difficulty, draft) ->
-        val previous = readVSliceDifficulty(chart, draft.songFolder, difficulty, draft.bpm, draft.scrollSpeed)
-        // Keep the exact original object (including fractional times) for every unchanged note.
-        if (previous.notes != draft.notes) {
+        val previous = if (difficulty in editable && notes.has(difficulty)) runCatching { readVSliceDifficulty(chart, draft.songFolder, difficulty, draft.bpm, draft.scrollSpeed) }.getOrNull() else null
+        if (previous == null || previous.notes != draft.notes) {
             draft.requireExportable()
-            val originals = notes.getJSONArray(difficulty)
-            val unmatched = mutableMapOf<ChartNote, java.util.ArrayDeque<Int>>()
-            previous.notes.forEachIndexed { i, note -> unmatched.getOrPut(note) { java.util.ArrayDeque() }.addLast(i) }
-            val updated = JSONArray()
-            for (note in draft.notes) {
-                val originalIndex = unmatched[note]?.pollFirst()
-                if (originalIndex != null) updated.put(originals.getJSONObject(originalIndex))
-                else updated.put(JSONObject().put("t", note.timeMs).put("d", note.lane).put("l", note.lengthMs))
+            if (previous == null) notes.put(difficulty, draft.toVSliceNotes()) else {
+                val originals = notes.getJSONArray(difficulty)
+                val unmatched = mutableMapOf<ChartNote, java.util.ArrayDeque<Int>>()
+                previous.notes.forEachIndexed { i, note -> unmatched.getOrPut(note) { java.util.ArrayDeque() }.addLast(i) }
+                val updated = JSONArray()
+                for (note in draft.notes) {
+                    val originalIndex = unmatched[note]?.pollFirst()
+                    if (originalIndex != null) updated.put(originals.getJSONObject(originalIndex))
+                    else updated.put(JSONObject().put("t", note.timeMs).put("d", note.lane).put("l", note.lengthMs))
+                }
+                notes.put(difficulty, updated)
             }
-            notes.put(difficulty, updated)
         }
+        if (speed != null || !speeds.has(difficulty)) speeds.put(difficulty, speed ?: draft.scrollSpeed)
     }
     return chart.toString(2)
 }

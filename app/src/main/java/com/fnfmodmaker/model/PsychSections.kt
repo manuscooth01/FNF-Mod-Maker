@@ -67,7 +67,8 @@ internal fun psychSectionsToJson(chart: ChartDraft): String {
         require(index >= 0) { "La nota en ${note.timeMs} ms queda fuera de las secciones Psych; amplía las secciones antes de exportar." }
         val row = JsonArray().apply {
             add(note.timeMs); add(note.lane); add(note.lengthMs)
-            if (note.kind.isNotEmpty()) add(note.kind)
+            val type = psychNoteTypeToken(note)
+            if (type != null) add(type) else if (note.kind.isNotEmpty()) add(note.kind)
         }
         groups[index].add(row)
     }

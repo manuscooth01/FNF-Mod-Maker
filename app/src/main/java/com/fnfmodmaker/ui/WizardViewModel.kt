@@ -878,13 +878,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         endLiveArrow(direction, id)
     }
     internal fun editLiveNoteLength(note: ChartNote, length: Long): Boolean = editLiveNoteProperties(note, length, note.kind)
-    internal fun editLiveNoteProperties(note: ChartNote, length: Long, kind: String): Boolean {
+    internal fun editLiveNoteProperties(note: ChartNote, length: Long, kind: String, psychTypeJson: String = if (kind == note.kind) note.psychTypeJson else ""): Boolean {
         if (livePlaying || liveLoading || !liveChartAvailable || length < 0 || kind.length > 128 || kind.any(Char::isISOControl)) return false
         val song = liveSong ?: return false
         val chart = config.getChart(song.songFolder, liveDifficulty) ?: return false
         val index = chart.notes.indexOf(note)
         if (index < 0 || com.fnfmodmaker.model.safeHoldLength(note, length, liveDurationMs, chart.notes) != length) return false
-        val replacement = note.copy(lengthMs = length, kind = kind)
+        val replacement = note.copy(lengthMs = length, kind = kind, psychTypeJson = psychTypeJson)
+        if (runCatching { com.fnfmodmaker.model.psychNoteTypeToken(replacement) }.isFailure) return false
         storeLiveChartTransition(chart, chart.copy(notes = chart.notes.toMutableList().apply { this[index] = replacement }))
         val undoIndex = liveUndo.indexOfLast { it.note == note }
         if (undoIndex >= 0) liveUndo[undoIndex] = liveUndo[undoIndex].copy(note = replacement)

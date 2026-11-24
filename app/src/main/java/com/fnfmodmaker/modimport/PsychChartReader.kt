@@ -93,15 +93,20 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
             val t = row.optDouble(0, Double.NaN); val data = row.optDouble(1, Double.NaN); val duration = if (row.length() >= 3) row.optDouble(2, Double.NaN) else 0.0
             require(t.isFinite() && duration.isFinite() && t >= 0 && duration >= 0 && t <= 86_400_000 && duration <= 86_400_000 && data.isFinite() && data % 1.0 == 0.0 && data in 0.0..7.0) { "Nota o evento no compatible en sección $i." }
             require(t % 1.0 == 0.0 && duration % 1.0 == 0.0) { "Sección $i: tiempos fraccionarios de nota no editables sin pérdida." }
-            val kind = if (row.length() < 4 || row.isNull(3)) "" else when (val type = row.opt(3)) {
-                is String -> type
-                is Number -> error("Tipo de nota numérico $type en sección $i: la tabla puede variar por mod y el editor no puede conservarlo de forma reversible.")
-                else -> error("Tipo de nota inválido en sección $i.")
-            }
+            val token = if (row.length() < 4) null else sourceSections[i].asJsonObject.getAsJsonArray("sectionNotes")[j].asJsonArray[3]
+            require(token == null || token.isJsonNull || token.isJsonPrimitive && (token.asJsonPrimitive.isString || token.asJsonPrimitive.isNumber)) { "Tipo de nota inválido en sección $i." }
+            val kind = if (token?.isJsonPrimitive == true && token.asJsonPrimitive.isString) token.asString else ""
             require(kind.length <= 128 && kind.none(Char::isISOControl)) { "Tipo de nota inválido en sección $i." }
+            val rawType = when {
+                token == null -> ""
+                token.isJsonNull || token.asJsonPrimitive.isNumber || kind.isEmpty() -> token.toString()
+                else -> ""
+            }
             val d = data.toInt()
             val lane = if (absoluteLanes) d else if (mustHit) d else (d + 4) % 8
-            notes.add(ChartNote(t.roundToLong(), lane, duration.roundToLong(), kind = kind)); notesBySection.add(i)
+            val note = ChartNote(t.roundToLong(), lane, duration.roundToLong(), kind = kind, psychTypeJson = rawType)
+            com.fnfmodmaker.model.psychNoteTypeToken(note)
+            notes.add(note); notesBySection.add(i)
         }
     }
     val spans = com.fnfmodmaker.model.psychSectionSpans(layout, bpmDouble)

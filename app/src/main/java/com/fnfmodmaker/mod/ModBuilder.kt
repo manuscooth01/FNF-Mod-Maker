@@ -58,6 +58,7 @@ object ModBuilder {
         rawConfig.songs.forEach { song -> song.orderedDifficulties.forEach { difficulty ->
             rawConfig.getChart(song.songFolder, difficulty)?.let { chart ->
                 chart.requireExportable()
+                require(!rawConfig.engine.includesVSlice || chart.notes.none { it.psychTypeJson.isNotEmpty() }) { "V-Slice no admite tipos Psych numéricos o explícitos sin conversión reversible." }
                 require(rawConfig.engine.includesPsych || (chart.psychLayout.isEmpty() && chart.psychSongExtras.isBlank())) { "El chart contiene secciones Psych; no se exporta solo a V-Slice sin pérdida." }
                 if (rawConfig.engine.includesPsych && chart.psychLayout.isNotEmpty()) chart.copy(bpm = song.bpmValue).toPsychJson()
             }

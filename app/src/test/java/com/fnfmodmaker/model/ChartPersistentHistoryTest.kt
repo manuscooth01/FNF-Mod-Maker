@@ -86,4 +86,18 @@ class ChartPersistentHistoryTest {
         assertEquals(after, restoreChartHistory(undo.history, before, true)!!.chart)
     }
 
+    @Test fun oldTypedNoteHistoryStillWorksAfterOpaquePsychTypes() {
+        val before = ChartDraft(bpm = 120.0, psychLayout = listOf(PsychSectionData(bpm = 120.0)))
+        val after = before.copy(notes = listOf(ChartNote(100, 2, kind = "Custom")))
+        val fresh = recordChartHistory(ChartPersistentHistory(), before, after)
+        fun oldHash(c: ChartDraft): String {
+            val text = c.toString().replace(", psychTypeJson=)", ")")
+            return java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+        }
+        val entry = fresh.undo.single().copy(beforeHash = oldHash(before), afterHash = oldHash(after))
+        val undo = restoreChartHistory(ChartPersistentHistory(undo = listOf(entry)), after, false)!!
+        assertEquals(before, undo.chart)
+        assertEquals(after, restoreChartHistory(undo.history, before, true)!!.chart)
+    }
+
 }

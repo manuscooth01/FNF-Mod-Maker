@@ -99,6 +99,7 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
         song.orderedDifficulties.forEach { difficulty ->
             val chart = config.getChart(song.songFolder, difficulty)
             val problems = chart?.exportProblems().orEmpty().toMutableList()
+            if (config.engine.includesVSlice && chart?.notes?.any { it.psychTypeJson.isNotEmpty() } == true) problems.add("tipos Psych sin traducción reversible a V-Slice")
             if (!config.engine.includesPsych && chart != null && (chart.psychLayout.isNotEmpty() || chart.psychSongExtras.isNotBlank())) problems.add("secciones Psych sin destino Psych")
             if (config.engine.includesPsych && chart != null && chart.psychLayout.isNotEmpty()) {
                 runCatching { chart.copy(bpm = song.bpmValue).toPsychJson() }.exceptionOrNull()?.let { problems.add(it.message ?: "secciones Psych inválidas") }

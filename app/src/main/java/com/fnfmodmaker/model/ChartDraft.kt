@@ -23,10 +23,21 @@ data class ChartNote(
     val lengthMs: Long = 0L,
     val isSustain: Boolean = false,
     // Engine-specific note type (V-Slice k / Psych noteType); empty means ordinary note.
-    val kind: String = ""
+    val kind: String = "",
+    // Exact JSON token for a numeric, explicit empty-string, or null Psych type. Empty means no extra token.
+    val psychTypeJson: String = ""
 ) {
     val endTimeMs: Long get() = timeMs + lengthMs
     val isHold: Boolean get() = lengthMs > 0
+}
+
+/** Validate opaque Psych note-type tokens without mapping numbers to default engine names. */
+internal fun psychNoteTypeToken(note: ChartNote): com.google.gson.JsonElement? {
+    val raw = note.psychTypeJson
+    if (raw.isEmpty()) return null
+    require(note.kind.isEmpty() && raw.length <= 128) { "Tipo Psych ambiguo o demasiado largo." }
+    require(raw == "null" || raw == "\"\"" || raw.matches(Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?"))) { "Tipo numérico Psych inválido." }
+    return com.google.gson.JsonParser.parseString(raw)
 }
 
 /** Evento de chart (cámara, BPM change, speed change, etc.). */
@@ -94,7 +105,7 @@ data class ChartDraft(
         }.isFailure)) add("propiedades Psych inválidas")
         if (psychEventsJson.isNotBlank() && runCatching { com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson) }.isFailure) add("eventos Psych inválidos")
         if (sections.isNotEmpty()) add("secciones personalizadas")
-        if (notes.any { it.kind.length > 128 || it.kind.any(Char::isISOControl) }) add("tipos de nota inválidos")
+        if (notes.any { it.kind.length > 128 || it.kind.any(Char::isISOControl) || runCatching { psychNoteTypeToken(it) }.isFailure }) add("tipos de nota inválidos")
         if (notes.any { it.isSustain }) add("notas de cola independientes")
         if (notes.any { it.lane !in 0..7 || it.timeMs < 0 || it.lengthMs < 0 || it.timeMs > Long.MAX_VALUE - it.lengthMs }) add("notas inválidas")
     }
@@ -138,7 +149,11 @@ data class ChartDraft(
                     JSONArray()
                         .put(note.timeMs)
                         .put(data)
-                        .put(sustain).apply { if (note.kind.isNotEmpty()) put(note.kind) }
+                        .put(sustain).apply {
+                            val token = psychNoteTypeToken(note)
+                            if (token != null) put(if (token.isJsonNull) JSONObject.NULL else if (token.asJsonPrimitive.isString) "" else token.asBigDecimal)
+                            else if (note.kind.isNotEmpty()) put(note.kind)
+                        }
                 )
             }
 
@@ -177,6 +192,7 @@ data class ChartDraft(
     /** Convierte a JSON V-Slice (esquema 2.0.0). */
     fun toVSliceJson(): String {
         requireExportable()
+        require(notes.none { it.psychTypeJson.isNotEmpty() }) { "V-Slice no admite tipos Psych numéricos o explícitos sin conversión reversible." }
         require(psychLayout.isEmpty() && psychSongExtras.isBlank() && (psychEventsJson.isBlank() || psychEventsJson == "[]")) { "Los datos Psych no se traducen automáticamente a V-Slice." }
         val scrollSpeed = JSONObject().put(difficulty, scrollSpeed)
         val notesJson = JSONObject()
@@ -205,6 +221,7 @@ data class ChartDraft(
     /** Convierte solo las notas a JSONArray para V-Slice (una dificultad). */
     fun toVSliceNotes(preservePsychSeparately: Boolean = false): JSONArray {
         requireExportable()
+        require(notes.none { it.psychTypeJson.isNotEmpty() }) { "V-Slice no admite tipos Psych numéricos o explícitos sin conversión reversible." }
         require(preservePsychSeparately || (psychLayout.isEmpty() && psychSongExtras.isBlank() && (psychEventsJson.isBlank() || psychEventsJson == "[]"))) { "Los datos Psych no se traducen automáticamente a V-Slice." }
         val notesArray = JSONArray()
         for (note in notes) {

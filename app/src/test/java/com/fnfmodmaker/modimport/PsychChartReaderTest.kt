@@ -80,15 +80,21 @@ class PsychChartReaderTest {
         val tempo = chart("", true).replace("\"sectionBeats\":4", "\"sectionBeats\":4,\"changeBPM\":true")
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(tempo, "test", "normal") }
     }
-    @Test fun numericNoteTypesAreRejectedUntilTheirOriginalRepresentationCanBePreserved() {
-        // Even 0 must not silently become a missing type; mods may also redefine the table.
-        for (value in listOf("0", "1", "2", "3", "4", "5", "6", "-1", "1.5")) {
-            assertThrows(IllegalStateException::class.java) {
-                readPsychChart(chart("", true, ",[300,1,0,$value]"), "test", "normal")
-            }
+    @Test fun numericAndTextTypesRetainTheirJsonKindsInBothPsychFormats() {
+        val source = chart("", true, ",[300,1,0,0],[400,2,0,99],[600,3,50,\"99\"],[700,0,0,\"\"],[800,1,0,null]")
+        val original = readPsychChart(source, "test", "normal")
+        assertEquals("0", original.notes.single { it.timeMs == 300L }.psychTypeJson)
+        assertEquals("99", original.notes.single { it.timeMs == 400L }.psychTypeJson)
+        assertEquals("99", original.notes.single { it.timeMs == 600L }.kind)
+        assertEquals("\"\"", original.notes.single { it.timeMs == 700L }.psychTypeJson)
+        assertEquals("null", original.notes.single { it.timeMs == 800L }.psychTypeJson)
+        val edited = original.copy(notes = original.notes.map { if (it.timeMs == 400L) it.copy(lengthMs = 250) else it })
+        for (json in listOf(edited.toPsychJson(), com.fnfmodmaker.mod.JsonBuilders.psych073Chart(edited.toPsychJson()))) {
+            val again = readPsychChart(json, "test", "normal")
+            assertEquals(edited.notes, again.notes)
         }
-        val text = readPsychChart(chart("", true, ",[300,1,0,\"Hey!\"]"), "test", "normal")
-        assertEquals("Hey!", readPsychChart(text.toPsychJson(), "test", "normal").notes.last().kind)
+        assertThrows(IllegalArgumentException::class.java) { edited.toVSliceNotes(true) }
+        assertThrows(IllegalArgumentException::class.java) { edited.copy(notes = listOf(edited.notes[0].copy(psychTypeJson = "1e"))).toPsychJson() }
     }
 
 }

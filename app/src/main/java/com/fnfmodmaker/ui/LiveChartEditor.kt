@@ -328,6 +328,7 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
     var editing by remember { mutableStateOf<ChartNote?>(null) }
     var lengthText by remember { mutableStateOf("") }
     var kindText by remember { mutableStateOf("") }
+    var kindMode by remember { mutableStateOf(0) } // normal, text, numeric, explicit null
     var editError by remember { mutableStateOf<String?>(null) }
     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ocultar notas cercanas ↑" else "Editar notas cercanas ↓") }
     if (expanded) {
@@ -336,7 +337,9 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("${clock(note.timeMs)}.${(note.timeMs % 1000).toString().padStart(3, '0')} · ${if (note.lane < 4) "Jugador" else "Rival"} ${arrows[note.lane.coerceIn(0, 7) % 4]}${if (note.lengthMs > 0) " · sostenida ${note.lengthMs} ms" else ""}",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = { editing = note; lengthText = note.lengthMs.toString(); kindText = note.kind; editError = null }, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable) { Text("Editar") }
+                TextButton(onClick = { editing = note; lengthText = note.lengthMs.toString()
+                    kindMode = when { note.psychTypeJson == "null" -> 3; note.psychTypeJson == "\"\"" || note.kind.isNotEmpty() -> 1; note.psychTypeJson.isNotEmpty() -> 2; else -> 0 }
+                    kindText = if (kindMode == 2) note.psychTypeJson else note.kind; editError = null }, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable) { Text("Editar") }
                 TextButton(onClick = { pending = note }, enabled = !vm.livePlaying && !vm.liveLoading && vm.liveChartAvailable) { Text("Quitar") }
             }
         }
@@ -346,14 +349,24 @@ private fun RecentNotes(vm: WizardViewModel, notes: List<ChartNote>) {
             Text("0 ms es una nota corta. Una duración mayor crea un sostenido; no puede pasar del final de la canción ni cubrir otra nota del mismo carril.")
             OutlinedTextField(value = lengthText, onValueChange = { lengthText = it.filter(Char::isDigit).take(9); editError = null },
                 label = { Text("Duración en milisegundos") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-            OutlinedTextField(value = kindText, onValueChange = { kindText = it.filterNot(Char::isISOControl).take(128); editError = null }, label = { Text("Tipo de nota (vacío = normal)") }, singleLine = true)
-            Text("Usa el identificador admitido por el motor y el mod; no se traduce entre motores.", style = MaterialTheme.typography.labelSmall)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                FilterChip(kindMode == 0, { kindMode = 0; kindText = "" }, label = { Text("Sin tipo") })
+                FilterChip(kindMode == 1, { kindMode = 1; kindText = "" }, label = { Text("Texto") })
+                if (vm.config.engine.includesPsych) {
+                    FilterChip(kindMode == 2, { kindMode = 2; kindText = "" }, label = { Text("Número Psych") })
+                    FilterChip(kindMode == 3, { kindMode = 3; kindText = "" }, label = { Text("Nulo Psych") })
+                }
+            }
+            if (kindMode == 1 || kindMode == 2) OutlinedTextField(value = kindText, onValueChange = { kindText = it.filterNot(Char::isISOControl).take(128); editError = null }, label = { Text(if (kindMode == 2) "Identificador numérico JSON" else "Identificador textual") }, singleLine = true)
+            Text("Los tipos numéricos Psych se conservan sin traducir; no pueden exportarse a V-Slice sin una conversión segura.", style = MaterialTheme.typography.labelSmall)
             editError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         } },
         confirmButton = { TextButton(onClick = {
             val length = lengthText.toLongOrNull()
-            if (length != null && vm.editLiveNoteProperties(note, length, kindText)) editing = null
-            else editError = "Duración inválida o se superpone a otra nota o al final de la canción."
+            val kind = if (kindMode == 1) kindText else ""
+            val token = when (kindMode) { 1 -> if (kindText.isEmpty()) "\"\"" else ""; 2 -> kindText; 3 -> "null"; else -> "" }
+            if (length != null && (kindMode != 2 || token.isNotEmpty()) && vm.editLiveNoteProperties(note, length, kind, token)) editing = null
+            else editError = "Tipo o duración inválidos, o el sostenido se superpone a otra nota o al final de la canción."
         }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancelar") } }) }
     pending?.let { note -> AlertDialog(onDismissRequest = { pending = null }, title = { Text("¿Quitar esta nota?") },

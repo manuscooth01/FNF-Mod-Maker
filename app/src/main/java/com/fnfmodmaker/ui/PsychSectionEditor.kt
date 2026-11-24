@@ -60,7 +60,7 @@ internal fun PsychSectionEditor(vm: WizardViewModel) {
                 Text("Sección ${selected + 1}: ${"%.2f".format(span.startMs)}–${"%.2f".format(span.endMs)} ms · ${section.beats} beats · BPM efectivo ${span.bpm}")
                 Text("${if (section.mustHit) "Jugador" else "Rival"} · alt ${if (section.altAnim) "sí" else "no"} · GF ${if (section.gfSection) "sí" else "no"} · cambio BPM ${if (section.changeBpm) "sí" else "no"}")
                 Text("Notas en esta sección: ${notes.size}")
-                notes.take(30).forEach { note -> Text("${note.timeMs} ms · ${if (note.lane < 4) "Jugador" else "Rival"} ${note.lane % 4 + 1} · sostenido ${note.lengthMs} ms${if (note.kind.isNotBlank()) " · ${note.kind}" else ""}", style = MaterialTheme.typography.labelSmall) }
+                notes.take(30).forEach { note -> Text("${note.timeMs} ms · ${if (note.lane < 4) "Jugador" else "Rival"} ${note.lane % 4 + 1} · sostenido ${note.lengthMs} ms${if (note.psychTypeJson.isNotEmpty()) " · tipo JSON ${note.psychTypeJson}" else if (note.kind.isNotBlank()) " · ${note.kind}" else ""}", style = MaterialTheme.typography.labelSmall) }
                 if (notes.size > 30) Text("Se muestran las primeras 30 notas; edítalas en la cuadrícula.", style = MaterialTheme.typography.labelSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState())) {
                     TextButton(onClick = {

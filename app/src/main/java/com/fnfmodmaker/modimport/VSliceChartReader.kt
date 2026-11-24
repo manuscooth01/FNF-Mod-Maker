@@ -67,6 +67,7 @@ internal fun patchVSliceChart(original: String, drafts: Map<String, ChartDraft>,
         val previous = if (difficulty in editable && notes.has(difficulty)) runCatching { readVSliceDifficulty(projection, draft.songFolder, difficulty, draft.bpm, draft.scrollSpeed) }.getOrNull() else null
         if (previous == null || previous.notes != draft.notes) {
             draft.requireExportable()
+            require(draft.notes.none { it.psychTypeJson.isNotEmpty() }) { "Los tipos numéricos Psych no tienen traducción reversible a V-Slice." }
             if (previous == null) notes.add(difficulty, com.google.gson.JsonParser.parseString(draft.toVSliceNotes().toString())) else {
                 val originals = notes.getAsJsonArray(difficulty)
                 val unmatched = mutableMapOf<ChartNote, java.util.ArrayDeque<Int>>()

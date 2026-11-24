@@ -85,13 +85,13 @@ class ModZipConfirmationTest {
         }
         return Uri.fromFile(file)
     }
-    private fun psychZip(advanced: Boolean = false): Uri {
+    private fun psychZip(advanced: Boolean = false, numericType: Boolean = false): Uri {
         val file = File(app.cacheDir, "psych-events-test.zip")
         val chart = if (!advanced) """{"song":{"song":"test","bpm":120,"speed":1,"player1":"bf","player2":"dad","stage":"stage","events":[[100,[["Hey!","0",""]]]],"notes":[{"sectionBeats":4,"mustHitSection":true,"sectionNotes":[[100,0,0]]}]}}""" else """{"song":{"song":"test","bpm":120.5,"speed":1,"player1":"bf","player2":"dad","stage":"stage","customSong":{"huge":123456789012345678901234567890},"events":[[100,[["Hey!","0",""]]]],"notes":[{"lengthInSteps":16,"mustHitSection":true,"sectionNotes":[[100,0,500,"Hurt Note"]],"customSection":{"keep":true}},{"sectionBeats":3,"lengthInSteps":12,"mustHitSection":false,"altAnim":true,"gfSection":true,"changeBPM":true,"bpm":180,"sectionNotes":[[2200,0,300]]},{"sectionBeats":4,"mustHitSection":true,"changeBPM":true,"bpm":90,"sectionNotes":[[3100,5,100]]}]}}"""
         ZipOutputStream(file.outputStream()).use { out ->
             fun entry(name: String, bytes: ByteArray) { out.putNextEntry(ZipEntry(name)); out.write(bytes); out.closeEntry() }
             entry("pack.json", """{"name":"Test","description":"Test"}""".toByteArray())
-            entry("data/test/test.json", chart.toByteArray())
+            entry("data/test/test.json", (if (numericType) chart.replace("[100,0,0]", "[100,0,0,0]") else chart).toByteArray())
             entry("songs/test/Inst.ogg", javaClass.getResourceAsStream("/psych-fixture/Inst.ogg")!!.use { it.readBytes() })
         }
         return Uri.fromFile(file)
@@ -123,6 +123,39 @@ class ModZipConfirmationTest {
         java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
         val chart = org.json.JSONObject(files.getValue(vm.config.modFolder + "/data/test/test.json").toString(Charsets.UTF_8))
         assertEquals(200, chart.getJSONArray("events").getJSONArray(0).getInt(0))
+    }
+    @Test fun psychNumericNoteTypesEditUndoPortableAndZipRoundTrip() {
+        vm.inspectModZip(psychZip(numericType = true)); await { !vm.busy }; assertNotNull(vm.modZipImportError, vm.modZipReview)
+        vm.confirmModZipImport(); await { !vm.busy }; assertNull(vm.modZipImportError)
+        val imported = vm.currentProjectId!!
+        vm.openLiveChart()
+        val original = vm.liveChart!!.notes.single()
+        assertEquals("0", original.psychTypeJson)
+        assertTrue(vm.editLiveNoteProperties(original, 250, "", "99"))
+        vm.undoLiveChartEdit(); assertEquals("0", vm.liveChart!!.notes.single().psychTypeJson)
+        vm.redoLiveChartEdit(); assertEquals("99", vm.liveChart!!.notes.single().psychTypeJson)
+        vm.closeLiveChart(); vm.switchProject(); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
+        vm.openLiveChart(); assertEquals("99", vm.liveChart!!.notes.single().psychTypeJson); vm.closeLiveChart()
+        vm.preparePortableExport(imported); await { !vm.busy }; assertNotNull(vm.portableMessage, vm.portableExportName)
+        val portable = File(app.cacheDir, "numeric-types.fnfproject")
+        vm.savePortableExport(Uri.fromFile(portable)); await { !vm.busy }; assertTrue(portable.isFile)
+        val known = vm.projects.map { it.id }.toSet()
+        vm.preparePortableImport(Uri.fromFile(portable)); await { !vm.busy }; assertNotNull(vm.portableMessage, vm.portableImportSummary)
+        vm.confirmPortableImport(); await { !vm.busy }
+        val restored = vm.projects.single { it.id !in known }.id
+        vm.switchProject(restored); await { !vm.busy }; vm.openLiveChart()
+        vm.undoLiveChartEdit(); assertEquals("0", vm.liveChart!!.notes.single().psychTypeJson)
+        vm.redoLiveChartEdit(); assertEquals("99", vm.liveChart!!.notes.single().psychTypeJson)
+        for (format in com.fnfmodmaker.model.PsychChartFormat.entries) {
+            vm.setPsychChartFormat(format); vm.closeLiveChart()
+            val output = File(app.cacheDir, "numeric-${format.name}.zip")
+            vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
+            vm.inspectModZip(Uri.fromFile(output)); await { !vm.busy }; assertNotNull(vm.portableMessage, vm.modZipReview)
+            vm.confirmModZipImport(); await { !vm.busy }; assertNull(vm.modZipImportError)
+            vm.openLiveChart(); assertEquals("99", vm.liveChart!!.notes.single().psychTypeJson)
+            assertEquals(250L, vm.liveChart!!.notes.single().lengthMs)
+            vm.closeLiveChart(); vm.switchProject(restored); await { !vm.busy }; vm.openLiveChart()
+        }
     }
     @Test fun psychSectionsEditPersistHistoryExportAndReimportBothFormats() {
         val previous = vm.currentProjectId!!

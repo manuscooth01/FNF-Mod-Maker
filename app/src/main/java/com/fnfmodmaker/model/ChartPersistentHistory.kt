@@ -28,7 +28,7 @@ private fun chartFingerprint(chart: ChartDraft?): String = hashChartText(normali
 /** Hash written before ChartNote gained kind; only untyped charts can match it. */
 private fun legacyChartFingerprint(chart: ChartDraft?): String? {
     val c = normalizedChart(chart) ?: return chartFingerprint(null)
-    if (c.notes.any { it.kind.isNotEmpty() }) return null
+    if (c.notes.any { it.kind.isNotEmpty() || it.psychTypeJson.isNotEmpty() }) return null
     val notes = c.notes.joinToString(prefix = "[", postfix = "]") {
         "ChartNote(timeMs=${it.timeMs}, lane=${it.lane}, lengthMs=${it.lengthMs}, isSustain=${it.isSustain})"
     }
@@ -37,6 +37,21 @@ private fun legacyChartFingerprint(chart: ChartDraft?): String? {
 private fun fingerprintMatches(chart: ChartDraft?, hash: String): Boolean {
     if (chartFingerprint(chart) == hash) return true
     val c = normalizedChart(chart) ?: return false
+    // Histories written before opaque Psych types were added omitted this field from every note.
+    if (c.notes.all { it.psychTypeJson.isEmpty() }) {
+        val oldNotes = c.notes.joinToString(prefix = "[", postfix = "]") { it.toString().removeSuffix(", psychTypeJson=)") + ")" }
+        val oldText = c.toString().replaceFirst("notes=${c.notes}", "notes=$oldNotes")
+        val variants = mutableListOf(oldText)
+        if (c.bpm.isFinite() && c.bpm % 1.0 == 0.0) variants.add(oldText.replace(", bpm=${c.bpm}, offsetMs=", ", bpm=${c.bpm.toLong()}, offsetMs="))
+        for (text in variants) {
+            if (hashChartText(text) == hash) return true
+            if (c.psychLayout.isEmpty() && c.psychSongExtras.isEmpty()) {
+                val noLayout = text.removeSuffix(", psychLayout=[], psychSongExtras=)") + ")"
+                if (hashChartText(noLayout) == hash) return true
+                if (c.psychEventsJson.isEmpty() && hashChartText(noLayout.removeSuffix(", psychEventsJson=)") + ")") == hash) return true
+            }
+        }
+    }
     // Before BPM became Double, integral BPMs were rendered without ".0" in history hashes.
     if (c.bpm.isFinite() && c.bpm % 1.0 == 0.0) {
         val old = c.toString().replace(", bpm=${c.bpm}, offsetMs=", ", bpm=${c.bpm.toLong()}, offsetMs=")

@@ -103,7 +103,9 @@ data class SongConfig(
     val vSliceEventsRedo: List<String> = emptyList(),
     val vSliceTempoJson: String? = null,
     val vSliceTempoUndo: List<String> = emptyList(),
-    val vSliceTempoRedo: List<String> = emptyList()
+    val vSliceTempoRedo: List<String> = emptyList(),
+    /** BOTH can edit V-Slice's initial tempo without changing Psych's song BPM. */
+    val vSliceIndependentInitialBpm: Boolean = false
 ) {
     val songFolder: String get() = psychSongPath(songName)
     val bpmValue: Int get() = bpm.toIntOrNull() ?: 0

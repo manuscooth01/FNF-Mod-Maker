@@ -179,6 +179,43 @@ class ModZipConfirmationTest {
         val meta = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/songs/tarde/tarde-metadata.json").toString(Charsets.UTF_8)).asJsonObject
         assertEquals(com.google.gson.JsonParser.parseString(edited), meta.get("timeChanges"))
     }
+    @Test fun bothTempoPersistsAndExportsWithoutChangingPsychChart() {
+        val project = vm.currentProjectId!!
+        vm.setEngine(TargetEngine.BOTH)
+        assertTrue(vm.setActiveSongName("Shared"))
+        vm.setActiveSongBpm("120")
+        val source = File(app.cacheDir, "both-inst.ogg")
+        javaClass.getResourceAsStream("/psych-fixture/Inst.ogg")!!.use { source.writeBytes(it.readBytes()) }
+        vm.pickActiveSongAudio(Uri.fromFile(source), com.fnfmodmaker.model.AudioSlot.INSTRUMENTAL)
+        await { !vm.busy }; assertNull(vm.error)
+        vm.openLiveChart()
+        val duration = vm.liveSong!!.instrumental!!.durationMs
+        val before = com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.psychChart(vm.config, vm.liveSong!!, duration, "normal"))
+        val initial = vm.liveVSliceTempo()
+        var changed = com.fnfmodmaker.mod.changeVSliceTempo(initial, 0, "0", "150", "3", "4", true)
+        changed = com.fnfmodmaker.mod.changeVSliceTempo(changed, null, "1000", "180", "3", "8")
+        vm.saveLiveVSliceTempo(changed)
+        assertEquals("120", vm.liveSong!!.bpm)
+        assertEquals(before, com.google.gson.JsonParser.parseString(com.fnfmodmaker.mod.JsonBuilders.psychChart(vm.config, vm.liveSong!!, duration, "normal")))
+        vm.selectLiveSnap(com.fnfmodmaker.model.RecordingSnap.HALF_BEAT)
+        val grid = vm.recordingTempoGrid()!!
+        assertEquals(3, grid.tempoChanges.first().numerator)
+        assertEquals(2.5, grid.beatAt(1000.0), 0.0001)
+        assertEquals(1167L, com.fnfmodmaker.model.recordedNoteTime(1150, 0, 120, com.fnfmodmaker.model.RecordingSnap.HALF_BEAT, 5000, grid))
+        vm.closeLiveChart(); vm.switchProject(); await { !vm.busy }; vm.switchProject(project); await { !vm.busy }
+        vm.openLiveChart(); assertEquals(changed, vm.liveVSliceTempo())
+        vm.restoreLiveVSliceTempo(false); assertEquals(initial, vm.liveVSliceTempo()); assertEquals("120", vm.liveSong!!.bpm)
+        vm.restoreLiveVSliceTempo(true); assertEquals(changed, vm.liveVSliceTempo()); assertEquals("120", vm.liveSong!!.bpm)
+        vm.closeLiveChart()
+        val output = File(app.cacheDir, "both-tempo.zip")
+        vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val metadata = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/songs/shared/shared-metadata.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals(com.google.gson.JsonParser.parseString(changed), metadata.get("timeChanges"))
+        val psych = com.google.gson.JsonParser.parseString(files.getValue(vm.config.modFolder + "/data/shared/shared.json").toString(Charsets.UTF_8))
+        assertEquals(before, psych)
+    }
     @Test fun vSliceEventEditsPersistUndoAndExport() {
         val previous = vm.currentProjectId!!
         vm.inspectModZip(zip()); await { !vm.busy }; vm.confirmModZipImport(); await { !vm.busy }

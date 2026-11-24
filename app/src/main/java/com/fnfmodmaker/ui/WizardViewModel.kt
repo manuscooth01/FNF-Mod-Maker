@@ -401,7 +401,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // Snapshot once per recording session: tempo cannot be edited during playback.
     private var liveRecordingGrid: com.fnfmodmaker.model.TouchGrid? = null
     internal fun recordingTempoGrid(): com.fnfmodmaker.model.TouchGrid? {
-        if (config.engine != TargetEngine.VSLICE || liveSnap == com.fnfmodmaker.model.RecordingSnap.FREE) return null
+        if (!config.engine.includesVSlice || liveSnap == com.fnfmodmaker.model.RecordingSnap.FREE) return null
         val song = liveSong ?: error("Selecciona una canción.")
         return com.fnfmodmaker.model.TouchGrid(song.bpmValue, liveSnap.divisionsPerBeat,
             liveDurationMs.coerceAtLeast(1L), com.fnfmodmaker.mod.vSliceGridTempos(liveVSliceTempo()))
@@ -492,29 +492,32 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             com.fnfmodmaker.mod.rejectDuplicateJsonKeys(text)
             com.google.gson.JsonParser.parseString(text).asJsonObject.get("timeChanges")?.toString() ?: error("Falta timeChanges.")
         } ?: """[{"t":0,"bpm":${song.bpmValue},"n":4,"d":4}]"""
-        return com.fnfmodmaker.mod.tempoWithInitialBpm(stored, song.bpmValue)
+        return if (song.vSliceIndependentInitialBpm && song.vSliceTempoJson != null) com.fnfmodmaker.mod.validateVSliceTempo(stored)
+            else com.fnfmodmaker.mod.tempoWithInitialBpm(stored, song.bpmValue)
     }
     internal fun saveLiveVSliceTempo(text: String) {
-        check(config.engine == TargetEngine.VSLICE && !livePlaying && !liveLoading && !busy) { "Pausa el editor y selecciona V-Slice." }
+        check(config.engine.includesVSlice && !livePlaying && !liveLoading && !busy) { "Pausa el editor y selecciona V-Slice." }
         val song = liveSong ?: error("Selecciona una canción.")
         val before = liveVSliceTempo()
         val edited = com.fnfmodmaker.mod.validateVSliceTempo(text)
         if (before == edited) return
         val bpm = com.google.gson.JsonParser.parseString(edited).asJsonArray[0].asJsonObject.get("bpm").asInt
         val songs = config.songs.toMutableList()
-        songs[liveSongIndex] = song.copy(bpm = bpm.toString(), vSliceTempoJson = edited, vSliceTempoUndo = (song.vSliceTempoUndo + before).takeLast(10), vSliceTempoRedo = emptyList())
+        val independent = song.vSliceIndependentInitialBpm || config.engine == TargetEngine.BOTH
+        songs[liveSongIndex] = song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = edited, vSliceTempoUndo = (song.vSliceTempoUndo + before).takeLast(10), vSliceTempoRedo = emptyList())
         config = config.copy(songs = songs); scheduleAutoSave(); forceAutoSave()
     }
     internal fun restoreLiveVSliceTempo(redo: Boolean) {
-        check(config.engine == TargetEngine.VSLICE && !livePlaying && !liveLoading && !busy) { "Pausa el editor y selecciona V-Slice." }
+        check(config.engine.includesVSlice && !livePlaying && !liveLoading && !busy) { "Pausa el editor y selecciona V-Slice." }
         val song = liveSong ?: error("Selecciona una canción.")
         val previous = (if (redo) song.vSliceTempoRedo else song.vSliceTempoUndo).lastOrNull() ?: error("No hay cambio de tempo que restaurar.")
         val checked = com.fnfmodmaker.mod.validateVSliceTempo(previous)
         val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asInt
         val current = liveVSliceTempo()
+        val independent = song.vSliceIndependentInitialBpm || config.engine == TargetEngine.BOTH
         val songs = config.songs.toMutableList()
-        songs[liveSongIndex] = if (redo) song.copy(bpm = bpm.toString(), vSliceTempoJson = checked, vSliceTempoRedo = song.vSliceTempoRedo.dropLast(1), vSliceTempoUndo = (song.vSliceTempoUndo + current).takeLast(10))
-            else song.copy(bpm = bpm.toString(), vSliceTempoJson = checked, vSliceTempoUndo = song.vSliceTempoUndo.dropLast(1), vSliceTempoRedo = (song.vSliceTempoRedo + current).takeLast(10))
+        songs[liveSongIndex] = if (redo) song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = checked, vSliceTempoRedo = song.vSliceTempoRedo.dropLast(1), vSliceTempoUndo = (song.vSliceTempoUndo + current).takeLast(10))
+            else song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = checked, vSliceTempoUndo = song.vSliceTempoUndo.dropLast(1), vSliceTempoRedo = (song.vSliceTempoRedo + current).takeLast(10))
         config = config.copy(songs = songs); scheduleAutoSave(); forceAutoSave()
     }
 

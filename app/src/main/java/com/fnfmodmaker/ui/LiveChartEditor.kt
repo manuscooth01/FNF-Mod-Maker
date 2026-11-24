@@ -229,7 +229,7 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         }.getOrDefault(emptyList())
     }
     val tempoTimes = remember(vm.config, vm.liveSongIndex) {
-        if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.VSLICE)
+        if (vm.config.engine.includesVSlice)
             runCatching { com.google.gson.JsonParser.parseString(vm.liveVSliceTempo()).asJsonArray.drop(1).map { it.asJsonObject.get("t").asDouble } }.getOrDefault(emptyList())
         else emptyList()
     }
@@ -244,7 +244,7 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         confirmButton = { TextButton(onClick = { vm.deleteLiveCustomChart(); confirmDelete = false }) { Text("Borrar") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } })
     if (vm.config.engine.includesVSlice) {
-        if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) VSliceTempoEditor(vm)
+        VSliceTempoEditor(vm)
         VSliceVisualEvents(vm)
         VSliceEventsEditor(vm)
     }

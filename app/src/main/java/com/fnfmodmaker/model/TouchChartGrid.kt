@@ -4,13 +4,13 @@ import kotlin.math.ceil
 import kotlin.math.roundToLong
 
 /** Timestamped V-Slice tempo; beat duration follows the engine time signature denominator. */
-data class GridTempo(val timeMs: Double, val bpm: Double, val denominator: Int = 4)
+data class GridTempo(val timeMs: Double, val bpm: Double, val denominator: Int = 4, val numerator: Int = 4)
 /** A four-beat page. Visual columns are opponent first; the model stores player first. */
 data class TouchGrid(val bpm: Int, val divisionsPerBeat: Int, val durationMs: Long, val tempoChanges: List<GridTempo> = emptyList()) {
     init {
         require(bpm in 1..400 && divisionsPerBeat in setOf(1, 2, 4, 8) && durationMs > 0)
         require(tempoChanges.isEmpty() || tempoChanges.first().timeMs == 0.0 && tempoChanges.zipWithNext().all { it.first.timeMs < it.second.timeMs })
-        require(tempoChanges.all { it.timeMs.isFinite() && it.timeMs >= 0 && it.bpm.isFinite() && it.bpm > 0 && it.denominator in setOf(1, 2, 4, 8, 16, 32, 64) })
+        require(tempoChanges.all { it.timeMs.isFinite() && it.timeMs >= 0 && it.bpm.isFinite() && it.bpm > 0 && it.numerator in 1..64 && it.denominator in setOf(1, 2, 4, 8, 16, 32, 64) })
     }
     private val points = (tempoChanges.ifEmpty { listOf(GridTempo(0.0, bpm.toDouble())) }).let { changes ->
         var beats = 0.0
@@ -22,6 +22,31 @@ data class TouchGrid(val bpm: Int, val divisionsPerBeat: Int, val durationMs: Lo
             change to beats
         }
     }
+    // Measure time integrates fractions through every change, including changes mid-measure,
+    // matching Conductor.getTimeInMeasures rather than treating each four-beat page as a bar.
+    private val measures = MutableList(points.size) { 0.0 }.apply {
+        for (i in 1 until points.size) {
+            val previous = points[i - 1].first
+            this[i] = this[i - 1] + (points[i].first.timeMs - previous.timeMs) * previous.bpm /
+                60_000.0 * previous.denominator / 4.0 / previous.numerator
+        }
+    }
+    fun measureAt(ms: Double): Double {
+        val index = pointIndex(ms.coerceAtLeast(0.0), false)
+        val p = points[index].first
+        return measures[index] + (ms.coerceAtLeast(0.0) - p.timeMs) * p.bpm / 60_000.0 * p.denominator / 4.0 / p.numerator
+    }
+    fun timeAtMeasure(measure: Double): Double {
+        require(measure.isFinite() && measure >= 0.0)
+        var low = 0; var high = measures.lastIndex
+        while (low < high) {
+            val mid = (low + high + 1) ushr 1
+            if (measures[mid] <= measure) low = mid else high = mid - 1
+        }
+        val p = points[low].first
+        return p.timeMs + (measure - measures[low]) * 60_000.0 / p.bpm * 4.0 / p.denominator * p.numerator
+    }
+    fun shiftMeasure(ms: Long, amount: Double): Long = timeAtMeasure((measureAt(ms.toDouble()) + amount).coerceAtLeast(0.0)).roundToLong()
     private fun pointIndex(value: Double, byBeat: Boolean): Int {
         var low = 0; var high = points.lastIndex
         while (low < high) {

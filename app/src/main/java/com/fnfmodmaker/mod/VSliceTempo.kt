@@ -115,6 +115,6 @@ internal fun vSliceGridTempos(source: String): List<com.fnfmodmaker.model.GridTe
     return rows.map { entry ->
         val row = entry.asJsonObject
         bpm = row.get("bpm")?.asDouble ?: bpm
-        com.fnfmodmaker.model.GridTempo(row.get("t").asDouble, bpm, row.get("d")?.asInt ?: 4)
+        com.fnfmodmaker.model.GridTempo(row.get("t").asDouble, bpm, row.get("d")?.asInt ?: 4, row.get("n")?.asInt ?: 4)
     }
 }

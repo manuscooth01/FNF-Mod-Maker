@@ -62,7 +62,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
     if (song.bpmValue !in 1..400 || vm.liveDurationMs <= 0L) return
     var divisions by rememberSaveable { mutableStateOf(4) }
     val tempos = remember(vm.config, vm.liveSongIndex) {
-        if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) runCatching { com.fnfmodmaker.mod.vSliceGridTempos(vm.liveVSliceTempo()) }.getOrNull() else emptyList()
+        if (vm.config.engine.includesVSlice) runCatching { com.fnfmodmaker.mod.vSliceGridTempos(vm.liveVSliceTempo()) }.getOrNull() else emptyList()
     }
     val grid = remember(song.bpmValue, divisions, vm.liveDurationMs, tempos) { TouchGrid(song.bpmValue, divisions, vm.liveDurationMs, tempos.orEmpty()) }
     var page by rememberSaveable { mutableStateOf(grid.pageForTime(vm.livePositionMs)) }
@@ -91,7 +91,7 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                         Text("Cuadrícula de notas", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         Text("${song.songName} · ${vm.liveDifficulty} · ${gridClock(grid.pageStart(page))}", style = MaterialTheme.typography.labelSmall)
                         if (tempos == null) Text("No se pudo leer el mapa de tempo; se usa el BPM inicial. Los tiempos exactos no cambian.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
-                        else Text("Páginas de cuatro beats; el compás puede tener otra duración.", style = MaterialTheme.typography.labelSmall)
+                        else Text("Página de cuatro beats · compás ${kotlin.math.floor(grid.measureAt(grid.pageStart(page).toDouble())).toInt() + 1}. Líneas violetas: límites de compás.", style = MaterialTheme.typography.labelSmall)
                     }
                     LocalToolbarIcon()
                     TextButton(onClick = onClose) { Text("Listo") }
@@ -158,8 +158,8 @@ internal fun TouchChartGridEditor(vm: WizardViewModel, onClose: () -> Unit) {
                             if (pasted != null && vm.applyGridChanges(emptyList(), pasted)) group = pasted.toSet()
                         }, enabled = clipboard.isNotEmpty() && !locked) { Text("Pegar al inicio de página") }
                         TextButton(onClick = {
-                            val copies = chosen.map { it.copy(timeMs = grid.shiftTime(it.timeMs, 4.0)) }
-                            if (copies != null && vm.applyGridChanges(emptyList(), copies)) group = copies.toSet()
+                            val copies = chosen.map { it.copy(timeMs = grid.shiftMeasure(it.timeMs, 1.0)) }
+                            if (vm.applyGridChanges(emptyList(), copies)) group = copies.toSet()
                         }, enabled = chosen.isNotEmpty() && !locked) { Text("Duplicar +1 compás") }
                         TextButton(onClick = { confirmDelete = true }, enabled = chosen.isNotEmpty() && !locked) { Text("Quitar grupo") }
                         TextButton(onClick = { group = emptySet() }, enabled = chosen.isNotEmpty()) { Text("Deseleccionar") }
@@ -277,6 +277,15 @@ private fun GridCanvas(grid: TouchGrid, page: Int, notes: List<ChartNote>, playh
         for (column in 0..7) drawRect(gridColors[column % 4].copy(alpha = .08f), Offset(column * colW, 0f), Size(colW, size.height))
         for (column in 0..8) drawLine(Color.White.copy(alpha = if (column == 4) .7f else .2f), Offset(column * colW, 0f), Offset(column * colW, size.height), if (column == 4) 3f else 1f)
         for (row in 0..grid.rows) drawLine(Color.White.copy(alpha = if (row % grid.divisionsPerBeat == 0) .45f else .14f), Offset(0f, row * rowH), Offset(size.width, row * rowH), if (row % grid.divisionsPerBeat == 0) 2f else 1f)
+        val startMeasure = grid.measureAt(grid.pageStart(page).toDouble())
+        val endMeasure = grid.measureAt(grid.pageEnd(page).toDouble())
+        var boundary = kotlin.math.ceil(startMeasure - 0.0000001).toInt()
+        while (boundary <= kotlin.math.floor(endMeasure + 0.0000001).toInt()) {
+            val time = grid.timeAtMeasure(boundary.toDouble()).roundToLong()
+            val y = (grid.rowPosition(time, page) * rowH).toFloat()
+            if (y in 0f..size.height) drawLine(Color(0xFFD69AF9), Offset(0f, y), Offset(size.width, y), 3f)
+            boundary++
+        }
         fun noteY(time: Long) = (grid.rowPosition(time, page) + .5).toFloat() * rowH
         for (note in notes) {
             val col = grid.columnForLane(note.lane) ?: continue

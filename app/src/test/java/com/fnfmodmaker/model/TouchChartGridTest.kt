@@ -29,6 +29,15 @@ class TouchChartGridTest {
         assertEquals(3667L, grid.shiftTime(3000, 1.0))
         assertEquals(4333L, grid.pageEnd(2))
     }
+    @Test fun measuresIntegrateNumeratorAndDenominatorAcrossMidMeasureChange() {
+        val grid = TouchGrid(120, 4, 5000, listOf(GridTempo(0.0, 120.0, 4, 3), GridTempo(1000.0, 180.0, 8, 3)))
+        assertEquals(2.0 / 3.0, grid.measureAt(1000.0), 0.000001)
+        assertEquals(1.0, grid.measureAt(1166.6666666667), 0.000001)
+        assertEquals(1666.6666666667, grid.timeAtMeasure(2.0), 0.000001)
+        assertEquals(1417L, grid.shiftMeasure(750, 1.0))
+        assertEquals(0L, grid.shiftMeasure(100, -1.0))
+        assertEquals(4, grid.rows / grid.divisionsPerBeat) // pages, not bars
+    }
     @Test fun replaceIsAtomicAndPreservesOtherNotes() {
         val hold = ChartNote(500, 0, 500)
         val chord = ChartNote(500, 4)

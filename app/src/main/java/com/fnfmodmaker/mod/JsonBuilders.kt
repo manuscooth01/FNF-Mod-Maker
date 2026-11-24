@@ -69,7 +69,7 @@ object JsonBuilders {
             .put("playData", playData)
             .put("generatedBy", GENERATED_BY)
         val tree = com.google.gson.JsonParser.parseString(metadata.toString()).asJsonObject
-        song.vSliceTempoJson?.let { tree.add("timeChanges", com.google.gson.JsonParser.parseString(tempoWithInitialBpm(it, song.bpmValue))) }
+        song.vSliceTempoJson?.let { tree.add("timeChanges", com.google.gson.JsonParser.parseString(if (song.vSliceIndependentInitialBpm) validateVSliceTempo(it) else tempoWithInitialBpm(it, song.bpmValue))) }
         return tree.toString()
     }
 
@@ -124,14 +124,18 @@ object JsonBuilders {
         val bpm = song.bpmValue
         if (bpm <= 0) return notes
         val beatMs = 60000.0 / bpm
-        val beats = totalBeats(song, durationMs)
+        val tempoGrid = song.vSliceTempoJson?.let { text ->
+            val source = if (song.vSliceIndependentInitialBpm) validateVSliceTempo(text) else tempoWithInitialBpm(text, bpm)
+            com.fnfmodmaker.model.TouchGrid(bpm, 1, durationMs.coerceAtLeast(1L), vSliceGridTempos(source))
+        }
+        val beats = if (tempoGrid != null && durationMs > 0) max(8, min(tempoGrid.beatAt(durationMs.toDouble()).toInt(), 4000)) else totalBeats(song, durationMs)
         for (beat in 0 until beats) {
             val isPlayerSide = beat % 2 == 0
             val lane = beat % 4
             val data = if (isPlayerSide) lane else lane + 4
             notes.put(
                 JSONObject()
-                    .put("t", (beat * beatMs).roundToLong())
+                    .put("t", (tempoGrid?.timeAtBeat(beat.toDouble()) ?: (beat * beatMs)).roundToLong())
                     .put("d", data)
                     .put("l", 0)
             )

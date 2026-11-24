@@ -290,6 +290,31 @@ class PsychImportCycleTest {
         assertTrue(File(reopened.importedModResources.single { it.originalPath == "data/test/test.json" }.asset!!.path).isFile)
     }
 
+    @Test fun psychDuplicatedDifficultyPersistsAndExportsNotesAndEvents() {
+        val store = ProjectStore(File(temp.root, "psych-copy"), temp.root)
+        val prepared = ModZipInspector(File(temp.root, "psych-copy-cache")).withExtracted(fixture(withEvents = true).inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, store.newImportStage())
+        }
+        val copied = duplicateSongDifficulty(prepared.config, 0, "normal", "insane")
+        assertThrows(IllegalArgumentException::class.java) { duplicateSongDifficulty(copied, 0, "normal", "insane") }
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(copied).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        assertEquals(reopened.getChart("test", "normal")!!.notes, reopened.getChart("test", "insane")!!.notes)
+        val services = ModBuildServices(object : AudioEncoder {
+            override fun convert(input: File, output: File): String? = error("OGG")
+            override fun mix(first: File, second: File, output: File): String? = error("Una voz")
+        }, { root, cfg, _, _ -> File(root, "characters/${cfg.character.charFolder}.json").apply { parentFile.mkdirs(); writeText("{}") } }, { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        for (format in PsychChartFormat.entries) {
+            val built = ModBuilder.buildInternal(reopened.copy(psychChartFormat = format), File(temp.root, "psych-copy-${format.name}"), temp.root, {}, services)
+            val out = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, out, false)
+            val files = mutableMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(out.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+            val copy = readPsychChart(files.getValue("data/test/test-insane.json").toString(Charsets.UTF_8), "test", "insane")
+            assertEquals(reopened.getChart("test", "normal")!!.notes.sortedBy { it.timeMs }, copy.notes.sortedBy { it.timeMs })
+            assertEquals(reopened.getChart("test", "normal")!!.psychEventsJson, copy.psychEventsJson)
+        }
+    }
+
     @Test fun customPsychDifficultySurvivesSaveAndCanBeRemoved() {
         val store = ProjectStore(File(temp.root, "psych-custom"), temp.root)
         val prepared = ModZipInspector(File(temp.root, "psych-custom-cache")).withExtracted(fixture(withInsane = true).inputStream()) { dir, names ->

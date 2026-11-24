@@ -25,3 +25,16 @@ internal fun exportDifficulties(config: ModConfig, song: SongConfig): List<Strin
         (config.engine == TargetEngine.PSYCH && config.importedModResources.any { it.converted && it.originalPath.startsWith("data/${song.songFolder}/") }))
         song.orderedDifficulties.filter { config.getChart(song.songFolder, it) != null || it in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet()) }
     else song.orderedDifficulties
+
+/** Copy only an editable, explicit chart; never synthesize or overwrite a retained original. */
+internal fun duplicateSongDifficulty(config: ModConfig, index: Int, source: String, target: String): ModConfig {
+    val song = config.songs.getOrNull(index) ?: error("La canción no existe.")
+    require(source in song.difficulties && isValidDifficulty(target)) { "Dificultad de origen o destino inválida." }
+    require(target !in song.difficulties && config.getChart(song.songFolder, target) == null) { "El destino ya existe." }
+    require(song.difficulties.size < 64) { "La canción ya tiene el máximo de dificultades." }
+    val chart = config.getChart(song.songFolder, source) ?: error("La dificultad de origen no tiene un chart editable; no se puede copiar sin pérdida.")
+    val copy = chart.copy(difficulty = target)
+    val updated = addSongDifficulty(config, index, target).withChart(song.songFolder, target, copy)
+    val history = recordChartHistory(ChartPersistentHistory(), null, copy)
+    return updated.copy(chartHistories = updated.chartHistories + (song.songFolder to (updated.chartHistories[song.songFolder].orEmpty() + (target to history))))
+}

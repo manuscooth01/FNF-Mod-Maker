@@ -278,6 +278,18 @@ private fun WizardSongsStep(vm: WizardViewModel) {
     var newDifficulty by remember(vm.activeSongIndex) { mutableStateOf("") }
     Field("Nueva dificultad", newDifficulty, { newDifficulty = it.lowercase().filter { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' || c == '_' }.take(32) }, hint = "ID, por ejemplo insane", enabled = !vm.busy)
     TextButton(onClick = { vm.toggleActiveSongDifficulty(newDifficulty); newDifficulty = "" }, enabled = !vm.busy && com.fnfmodmaker.model.isValidDifficulty(newDifficulty) && newDifficulty !in song.difficulties) { Text("Añadir dificultad") }
+    var copySource by remember(vm.activeSongIndex) { mutableStateOf<String?>(null) }
+    var copyTarget by remember(vm.activeSongIndex) { mutableStateOf("") }
+    Text("Duplicar un chart editable a una dificultad nueva:", style = MaterialTheme.typography.bodySmall)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        song.orderedDifficulties.forEach { difficulty ->
+            FilterChip(copySource == difficulty, { copySource = difficulty }, enabled = !vm.busy && vm.config.getChart(song.songFolder, difficulty) != null,
+                label = { Text(difficulty) })
+        }
+    }
+    Field("ID del duplicado", copyTarget, { copyTarget = it.lowercase().filter { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' || c == '_' }.take(32) }, hint = "Nueva dificultad; no sobrescribe otra.", enabled = !vm.busy)
+    TextButton(onClick = { if (vm.duplicateActiveDifficulty(copySource!!, copyTarget)) copyTarget = "" },
+        enabled = !vm.busy && copySource in song.difficulties && vm.config.getChart(song.songFolder, copySource ?: "") != null && com.fnfmodmaker.model.isValidDifficulty(copyTarget) && copyTarget !in song.difficulties) { Text("Duplicar chart") }
     removeDifficulty?.let { difficulty -> androidx.compose.material3.AlertDialog(
         onDismissRequest = { removeDifficulty = null }, title = { Text("¿Eliminar dificultad $difficulty?") },
         text = { Text("Se quitarán la dificultad y su chart del proyecto y del ZIP. Los originales importados permanecen en el respaldo.") },

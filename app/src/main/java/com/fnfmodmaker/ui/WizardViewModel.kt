@@ -2123,6 +2123,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         scheduleAutoSave()
     }
 
+    internal fun duplicateActiveDifficulty(source: String, target: String): Boolean {
+        if (busy) return false
+        return runCatching { com.fnfmodmaker.model.duplicateSongDifficulty(config, activeSongIndex, source, target) }
+            .onSuccess { config = it; error = null; scheduleAutoSave(); forceAutoSave() }
+            .onFailure { error = it.message ?: "No se pudo duplicar la dificultad." }.isSuccess
+    }
+
     internal fun setActiveSongPracticeNotes(enabled: Boolean) {
         updateActiveSong { it.copy(practiceNotes = enabled) }
     }

@@ -466,6 +466,24 @@ class VSliceImportCycleTest {
         assertEquals(2, notes.getJSONArray("normal").length())
     }
 
+    @Test fun duplicateDifficultyPreservesNotesAndExportedMetadata() {
+        val store = ProjectStore(File(temp.root, "vs-copy"), temp.root)
+        val prepared = prepare(zip(), store)
+        val copied = duplicateSongDifficulty(prepared.config, 0, "hard", "insane")
+        assertThrows(IllegalArgumentException::class.java) { duplicateSongDifficulty(copied, 0, "normal", "insane") }
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(copied).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        assertEquals("mine", reopened.getChart("test", "insane")!!.notes.single().kind)
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "vs-copy-out"), temp.root, {}, services())
+        val out = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, out, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(out.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val chart = JSONObject(files.getValue("data/songs/test/test-chart.json").toString(Charsets.UTF_8))
+        assertEquals("mine", chart.getJSONObject("notes").getJSONArray("insane").getJSONObject(0).getString("k"))
+        val meta = JSONObject(files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8))
+        assertTrue(meta.getJSONObject("playData").getJSONArray("difficulties").toString().contains("insane"))
+    }
+
     @Test fun customVSliceDifficultySurvivesImportAndCanBeRemoved() {
         val store = ProjectStore(File(temp.root, "vs-custom"), temp.root)
         val meta = metadata.replace("[\"normal\",\"hard\"]", "[\"normal\",\"hard\",\"insane\"]")

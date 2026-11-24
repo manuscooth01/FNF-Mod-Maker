@@ -136,7 +136,7 @@ internal class ModZipInspector(private val tempRoot: File, private val limits: M
         // A single enclosing mod folder is common. Match known structure at any directory depth.
         val lower = paths.associateWith { it.lowercase(Locale.ROOT) }
         fun matches(path: String, pattern: String) = Regex("(?:^|/)$pattern", RegexOption.IGNORE_CASE).containsMatchIn(path)
-        val psychCharts = paths.filter { matches(it, "data/(?!songs/)[^/]+/[^/]+\\.json$") }
+        val psychCharts = paths.filter { matches(it, "data/(?!(?:songs|characters|stages|levels|weeks)/)[^/]+/[^/]+\\.json$") }
         val vsCharts = paths.filter { matches(it, "data/songs/[^/]+/[^/]+-chart(?:-[^/]+)?\\.json$") }
         val vsMetadata = paths.filter { matches(it, "data/songs/[^/]+/[^/]+-metadata(?:-[^/]+)?\\.json$") }
         val psychIndicators = paths.any { matches(it, "pack\\.json$") } || paths.any { matches(it, "weeks/[^/]+\\.json$") }

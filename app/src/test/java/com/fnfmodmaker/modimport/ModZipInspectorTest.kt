@@ -47,7 +47,18 @@ class ModZipInspectorTest {
     }
     @Test fun rejectsTraversalAbsoluteAndDangerousPaths() {
         for (name in listOf("../escape", "/absolute", "C:/x", "foo/../x", "foo\\x", "a//b", "a/./b", "a/．．/b", "a/name?.txt")) {
-            assertThrows(Exception::class.java) { inspect(zip(file(name))) }; emptyTemp()
+            // Commons normalizes a leading slash on write; patch the headers to make a real absolute path.
+            val bytes = if (name.startsWith('/')) {
+                val replacement = name.toByteArray()
+                val safe = ("X" + name.substring(1)).toByteArray()
+                zip(file("X" + name.substring(1))).also { archive ->
+                    for (i in 0..archive.size - safe.size) {
+                        if (safe.indices.all { archive[i + it] == safe[it] }) replacement.copyInto(archive, i)
+                    }
+                }
+            } else zip(file(name))
+            try { inspect(bytes); fail("Se aceptó la ruta: $name") } catch (expected: Exception) { }
+            emptyTemp()
         }
     }
     @Test fun rejectsDuplicatesCaseUnicodeAndFileFolderConflicts() {

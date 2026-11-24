@@ -101,6 +101,10 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
             perSong.asJsonObject.entrySet().forEach { (_, chart) ->
                 require(chart.isJsonObject) { "Chart inválido." }
                 compare(chart.asJsonObject, configJsonChartTemplate())
+                chart.asJsonObject.get("psychEventsJson")?.let { events ->
+                    require(events.isJsonPrimitive && events.asJsonPrimitive.isString) { "Eventos Psych inválidos." }
+                    if (events.asString.isNotBlank()) com.fnfmodmaker.mod.validatePsychEvents(events.asString)
+                }
                 objectArray(chart.asJsonObject, "events", autoSaveGson.toJsonTree(com.fnfmodmaker.model.ChartEvent()).asJsonObject) { event ->
                     event.get("type")?.let { require(it.asString in com.fnfmodmaker.model.ChartEvent.EventType.entries.map { type -> type.name }) { "Evento inválido." } }
                 }

@@ -244,9 +244,10 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
 private fun PsychEventsEditor(vm: WizardViewModel) {
     var open by remember { mutableStateOf(false) }
     var value by remember { mutableStateOf("") }
+    var original by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val enabled = !vm.livePlaying && !vm.liveLoading && !vm.busy && vm.liveChartAvailable
-    TextButton(onClick = { value = vm.livePsychEvents(); error = null; open = true }, enabled = enabled && vm.liveChart != null) { Text("Eventos Psych (JSON)") }
+    TextButton(onClick = { value = vm.livePsychEvents(); original = value; error = null; open = true }, enabled = enabled && vm.liveChart != null) { Text("Eventos Psych (JSON)") }
     TextButton(onClick = vm::undoLiveChartEdit, enabled = enabled && vm.gridUndoCount > 0) { Text("Deshacer cambio del chart") }
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Eventos Psych · ${vm.liveDifficulty}") },
         text = { Column {
@@ -255,7 +256,10 @@ private fun PsychEventsEditor(vm: WizardViewModel) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
         confirmButton = { TextButton(onClick = {
-            runCatching { vm.saveLivePsychEvents(value) }.onSuccess { open = false }.onFailure { error = it.message ?: "Eventos inválidos." }
+            runCatching {
+                check(vm.livePsychEvents() == original) { "Los eventos cambiaron mientras editabas; vuelve a abrir el editor." }
+                vm.saveLivePsychEvents(value)
+            }.onSuccess { open = false }.onFailure { error = it.message ?: "Eventos inválidos." }
         }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = { open = false }) { Text("Cancelar") } })
 }

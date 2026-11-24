@@ -52,6 +52,8 @@ object ModBuilder {
 
     internal fun buildInternal(rawConfig: ModConfig, workRoot: File, appRoot: File, onProgress: (String) -> Unit, services: ModBuildServices): BuildResult {
         // Fail before creating or clearing output directories, even if called outside the wizard.
+        require(rawConfig.songs.isNotEmpty()) { "Añade al menos una canción." }
+        require(rawConfig.songs.all { it.songFolder.matches(Regex("[a-z0-9_-]{1,80}")) }) { "Nombre de carpeta de canción inválido." }
         rawConfig.songs.forEach { song -> song.orderedDifficulties.forEach { difficulty ->
             rawConfig.getChart(song.songFolder, difficulty)?.requireExportable()
         } }

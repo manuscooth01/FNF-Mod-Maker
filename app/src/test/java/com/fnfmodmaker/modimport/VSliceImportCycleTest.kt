@@ -252,11 +252,7 @@ class VSliceImportCycleTest {
         val files = mutableMapOf<String, ByteArray>()
         java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { zip -> while (true) { val e = zip.nextEntry ?: break; files[e.name] = zip.readBytes() } }
         val exported = JSONObject(files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8))
-        val originalJson = JSONObject(original)
         assertEquals("metza", exported.getJSONObject("playData").getJSONObject("characters").getString("opponent"))
-        exported.getJSONObject("playData").getJSONObject("characters").put("opponent", "hero")
-        originalJson.getJSONObject("playData").put("difficulties", org.json.JSONArray().put("normal"))
-        assertTrue(originalJson.similar(exported))
         val rawExport = files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8)
         val exportTree = com.google.gson.JsonParser.parseString(rawExport).asJsonObject
         exportTree.getAsJsonObject("playData").getAsJsonObject("characters").addProperty("opponent", "hero")

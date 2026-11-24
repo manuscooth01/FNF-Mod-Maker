@@ -164,8 +164,14 @@ data class ModConfig(
             }) return CharacterAssignments()
         return if (entry.draft.side == CharacterSide.PLAYER) CharacterAssignments(player = entry.id) else CharacterAssignments(opponent = entry.id)
     }
-    fun charactersToExport(): List<CharacterEntry> =
-        if (characterAssignments == null) characterLibrary.take(1).filter { it.draft.enabled } else assignedCharacters()
+    fun charactersToExport(): List<CharacterEntry> {
+        val selected = if (characterAssignments == null) characterLibrary.take(1).filter { it.draft.enabled } else assignedCharacters()
+        // Imported independent characters remain editable and exportable even when not assigned globally.
+        val imported = characterLibrary.filter { entry -> entry.draft.enabled && entry.draft.importedSourceFormat.isNotEmpty() &&
+            importedModResources.any { resource -> resource.converted && resource.originalPath ==
+                (if (engine == TargetEngine.VSLICE) "data/characters/${entry.draft.importedVSliceCharacterId}.json" else "characters/${entry.draft.charFolder}.json") } }
+        return (selected + imported).distinctBy { it.id }
+    }
     fun assignedCharacters(): List<CharacterEntry> {
         val a = resolvedAssignments()
         val ids = setOf(a.player, a.opponent, a.girlfriend) - ""

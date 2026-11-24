@@ -81,16 +81,12 @@ internal class PsychModImporter(
             warnings.add("Los charts compatibles se regeneran: las secciones y campos adicionales pueden cambiar y los tiempos se redondean al milisegundo; los originales se conservan dentro del proyecto.")
             warnings.add("Los eventos, tipos de notas especiales, secciones GF/alt y cambios de BPM todavía no se convierten; la importación se detiene para evitar pérdidas.")
             warnings.add("Archivos no convertidos, incluidos scripts, se exportarán intactos si no colisionan con archivos generados. Los scripts se ejecutan en el juego, no en la app.")
-            var character = CharacterDraft()
+            val characters = mutableListOf<CharacterEntry>()
             val candidates = files.filter { Regex("^characters/[^/]+\\.json$").matches(it) }
             for (path in candidates) {
-                if (character.enabled) break
+                ensureActive()
                 val id = path.substringAfterLast('/').removeSuffix(".json")
-                val side = when {
-                    songs.all { it.opponent == id } -> CharacterSide.OPPONENT
-                    songs.all { it.player == id } -> CharacterSide.PLAYER
-                    else -> continue
-                }
+                val side = if (songs.any { it.player == id }) CharacterSide.PLAYER else CharacterSide.OPPONENT
                 try {
                     val f = index.getValue(path); require(f.length() <= 512_000)
                     val preview = parseCharacterJson(f.readText(), path.substringAfterLast('/'), side)
@@ -104,7 +100,7 @@ internal class PsychModImporter(
                     val iconId = JSONObject(f.readText()).optString("healthicon", "")
                     val iconPath = "images/icons/icon-$iconId.png"
                     val icon = index[iconPath]?.let { image(it, iconPath.substringAfterLast('/')) }
-                    character = applyCharacterJson(CharacterDraft(side = side), preview).copy(atlasSheet = image(png, pngPath.substringAfterLast('/')),
+                    val character = applyCharacterJson(CharacterDraft(side = side), preview).copy(atlasSheet = image(png, pngPath.substringAfterLast('/')),
                         atlasXml = image(xml, xmlPath.substringAfterLast('/')), atlasSheetWidth = size.first, atlasSheetHeight = size.second, atlasFrames = frames, icon = icon)
                     require(character.problems.isEmpty()) { character.problems.joinToString() }
                     converted.add(path)
@@ -112,16 +108,17 @@ internal class PsychModImporter(
                     if (pngPath == "images/characters/$id.png") converted.add(pngPath)
                     if (xmlPath == "images/characters/$id.xml") converted.add(xmlPath)
                     if (icon != null && iconPath == "images/icons/icon-$id.png") converted.add(iconPath)
+                    require(characters.size < 64) { "Máximo de 64 personajes editables." }
+                    characters.add(CharacterEntry(if (characters.isEmpty()) "legacy" else "imported-${characters.size}", character))
                     warnings.addAll(preview.warnings)
                 } catch (e: Exception) {
-                    character = CharacterDraft()
                     warnings.add("$path: personaje no convertido (${e.message}); sus archivos se conservan sin edición.")
                 }
             }
-            if (candidates.size > if (character.enabled) 1 else 0) warnings.add("Solo se edita un personaje compatible; los demás se conservan sin edición.")
             val resources = files.map { path -> ImportedModResource(path, imageAsset(index.getValue(path), path.substringAfterLast('/')), path in converted) }
             val config = ModConfig(engine = TargetEngine.PSYCH, modTitle = title, modId = slugify(title), description = pack.optString("description").take(1000),
-                songs = songs, charts = charts, characterLibrary = listOf(CharacterEntry(draft = character)), importedModResources = resources)
+                songs = songs, charts = charts, characterLibrary = characters.ifEmpty { listOf(CharacterEntry()) },
+                characterAssignments = if (characters.size > 1) CharacterAssignments() else null, importedModResources = resources)
             return PreparedPsychImport(stage, config, warnings.distinct())
         } catch (e: Throwable) { stage.deleteRecursively(); throw e }
     }

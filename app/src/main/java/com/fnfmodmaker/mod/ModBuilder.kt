@@ -110,6 +110,15 @@ object ModBuilder {
                 val original = originalVSliceText(config, path, appRoot, true)
                 generated.writeText(patchVSliceCharacter(original, generated.readText(), draft.icon != null))
             }
+            if (config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH && draft.importedSourceFormat == "Psych") {
+                val path = "characters/${draft.charFolder}.json"
+                if (config.importedModResources.any { it.converted && it.originalPath == path }) {
+                    val generated = File(root, path)
+                    require(generated.isFile) { "No se generó el personaje importado: $path" }
+                    val original = originalVSliceText(config, path, appRoot, true)
+                    generated.writeText(patchPsychCharacter(original, generated.readText(), draft.icon != null))
+                }
+            }
         }
 
         // ---------------- Stage propio (uno solo para todo el mod) ----------------

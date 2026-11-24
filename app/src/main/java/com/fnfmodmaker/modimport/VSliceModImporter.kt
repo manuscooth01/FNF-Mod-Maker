@@ -128,12 +128,12 @@ internal class VSliceModImporter(
             warnings.add("Modo de edición libre: los cambios pueden regenerar datos no representados. Los originales se conservan en el proyecto.")
             warnings.add("Las dificultades y los campos compatibles se actualizarán al exportar.")
             warnings.add("Los recursos y scripts no editables se conservan sin ejecución; los scripts pueden ejecutarse en el juego. Los archivos generados tienen prioridad sobre los originales de la misma ruta.")
-            var character = CharacterDraft()
+            val characters = mutableListOf<CharacterEntry>()
             val candidates = files.filter { Regex("^data/characters/[^/]+\\.json$").matches(it) }
             for (path in candidates) {
-                ensureActive(); if (character.enabled) break
+                ensureActive()
                 val id = path.substringAfterLast('/').removeSuffix(".json")
-                val side = when { songs.all { it.opponent == id } -> CharacterSide.OPPONENT; songs.all { it.player == id } -> CharacterSide.PLAYER; else -> continue }
+                val side = if (songs.any { it.player == id }) CharacterSide.PLAYER else CharacterSide.OPPONENT
                 try {
                     val data = json(path); require(data.optString("version").matches(Regex("1\\.0\\.[0-9]+"))) { "Versión de personaje no compatible" }
                     require(data.optString("renderType", "sparrow").equals("sparrow", true)) { "Solo se admite renderType Sparrow" }
@@ -147,7 +147,7 @@ internal class VSliceModImporter(
                     require(atlasFramesFit(frames, size.first, size.second))
                     val iconId = data.optJSONObject("healthIcon")?.optString("id", "") ?: ""
                     val iconPath = "images/icons/icon-$iconId.png"
-                    character = applyCharacterJson(CharacterDraft(side = side), preview.copy(id = id)).copy(
+                    val character = applyCharacterJson(CharacterDraft(side = side), preview.copy(id = id)).copy(
                         importedVSliceCharacterId = id,
                         atlasSheet = imageAsset(png, pngPath.substringAfterLast('/')), atlasXml = imageAsset(xml, xmlPath.substringAfterLast('/')),
                         atlasSheetWidth = size.first, atlasSheetHeight = size.second, atlasFrames = frames,
@@ -157,13 +157,15 @@ internal class VSliceModImporter(
                     if (pngPath == "images/characters/$id.png") converted.add(pngPath)
                     if (xmlPath == "images/characters/$id.xml") converted.add(xmlPath)
                     if (character.icon != null && iconPath == "images/icons/icon-$id.png") converted.add(iconPath)
+                    require(characters.size < 64) { "Máximo de 64 personajes editables." }
+                    characters.add(CharacterEntry(if (characters.isEmpty()) "legacy" else "imported-${characters.size}", character))
                     warnings.add("$path: personaje Sparrow editable; se conservan campos adicionales e índices originales, pero comprueba sus animaciones en el juego.")
-                } catch (e: Exception) { character = CharacterDraft(); warnings.add("$path: personaje conservado sin edición (${e.message}).") }
+                } catch (e: Exception) { warnings.add("$path: personaje conservado sin edición (${e.message}).") }
             }
-            if (candidates.size > if (character.enabled) 1 else 0) warnings.add("Solo se edita un personaje compatible; los demás se conservan sin edición.")
             val resources = files.map { path -> ImportedModResource(path, imageAsset(index.getValue(path), path.substringAfterLast('/')), path in converted) }
             val config = ModConfig(engine = TargetEngine.VSLICE, modTitle = title, modId = slugify(title), description = polymod.optString("description", "").take(1000),
-                songs = songs, charts = charts, characterLibrary = listOf(CharacterEntry(draft = character)), importedModResources = resources)
+                songs = songs, charts = charts, characterLibrary = characters.ifEmpty { listOf(CharacterEntry()) },
+                characterAssignments = if (characters.size > 1) CharacterAssignments() else null, importedModResources = resources)
             return PreparedVSliceImport(stage, config, warnings.distinct())
         } catch (e: Throwable) { stage.deleteRecursively(); throw e }
     }

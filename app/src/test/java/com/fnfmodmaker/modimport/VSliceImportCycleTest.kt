@@ -180,6 +180,32 @@ class VSliceImportCycleTest {
         assertEquals("{\"variation\":true}", text("data/songs/test/test-chart-remix.json"))
         for (p in listOf("songs/test/Inst.ogg", "songs/test/Voices-bf.ogg", "songs/test/Voices-hero.ogg", "songs/test/Voices-gf.ogg", "data/stages/custom.json", "data/levels/old.json")) assertTrue(p, p in files)
     }
+    @Test fun multipleImportedCharactersPersistAndExportIndependently() {
+        val store = ProjectStore(File(temp.root, "multi-vslice"), temp.root)
+        val extras = mapOf(
+            "data/characters/metza.json" to character.replace("characters/hero", "characters/metza").replace("Hero", "Metza"),
+            "images/characters/metza.png" to "png",
+            "images/characters/metza.xml" to """<TextureAtlas imagePath="metza.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>"""
+        )
+        val prepared = prepare(zip(extra = extras), store)
+        assertEquals(setOf("hero", "metza"), prepared.config.characterLibrary.map { it.draft.charFolder }.toSet())
+        val metza = prepared.config.characterLibrary.single { it.draft.charFolder == "metza" }
+        val changed = prepared.config.copy(characterLibrary = prepared.config.characterLibrary.map {
+            if (it.id == metza.id) it.copy(draft = it.draft.copy(scale = "1.5")) else it
+        }, characterAssignments = CharacterAssignments(opponent = metza.id))
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(changed).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "multi-output"), temp.root, {}, services())
+        val out = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, out, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(out.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        listOf("hero", "metza").forEach { name -> listOf("data/characters/$name.json", "images/characters/$name.png", "images/characters/$name.xml").forEach { assertTrue(it, files.containsKey(it)) } }
+        val meta = JSONObject(files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8))
+        assertEquals("metza", meta.getJSONObject("playData").getJSONObject("characters").getString("opponent"))
+        val edited = JSONObject(files.getValue("data/characters/metza.json").toString(Charsets.UTF_8))
+        assertEquals(1.5, edited.getDouble("scale"), 0.0); assertEquals(123, edited.getInt("unknownCharacter"))
+    }
+
     @Test fun importedCharacterIdentifiersSurvivePersistenceAndExportWithoutChangingMetadata() {
         listOf("Hero_Day" to CharacterSide.OPPONENT, "Tarde-1" to CharacterSide.PLAYER,
             "hero__night" to CharacterSide.OPPONENT, "hero" to CharacterSide.OPPONENT).forEachIndexed { index, (id, side) ->

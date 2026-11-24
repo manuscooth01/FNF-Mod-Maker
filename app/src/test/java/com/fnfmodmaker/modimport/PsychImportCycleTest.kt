@@ -31,7 +31,7 @@ class PsychImportCycleTest {
     }).create()
     private fun image(f: File, name: String): PickedImage = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null}""", PickedImage::class.java)
     private fun audio(f: File, name: String, ms: Long): PickedAudio = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null,"durationMs":$ms}""", PickedAudio::class.java)
-    private fun fixture(allDifficulties: Boolean = false, withoutNormal: Boolean = false): ByteArray {
+    private fun fixture(allDifficulties: Boolean = false, withoutNormal: Boolean = false, multiCharacter: Boolean = false): ByteArray {
         val files = linkedMapOf(
             "pack.json" to """{"name":"Psych Fixture","description":"example"}""",
             "data/test/test.json" to """{"song":{"song":"test","format":"psych_v1","bpm":120,"speed":2,"player1":"bf","player2":"dad","stage":"stage","events":[],"notes":[{"mustHitSection":false,"sectionNotes":[[100,0,0],[500,6,200]]}]}}""",
@@ -44,6 +44,11 @@ class PsychImportCycleTest {
             files["data/test/test-hard.json"] = files.getValue("data/test/test.json")
         }
         if (withoutNormal) files.remove("data/test/test.json")
+        if (multiCharacter) {
+            files["characters/metza.json"] = """{"image":"characters/metza","scale":1,"unknown":123,"animations":[{"anim":"idle","name":"idle","fps":24,"loop":false,"indices":[0],"extra":true,"offsets":[0,0]}]}"""
+            files["images/characters/metza.png"] = "png"
+            files["images/characters/metza.xml"] = files.getValue("images/characters/dad.xml")
+        }
         val realFiles = mapOf(
             "songs/test/Inst.ogg" to "/psych-fixture/Inst.ogg",
             "songs/test/Voices.ogg" to "/psych-fixture/Voices.ogg",
@@ -108,6 +113,39 @@ class PsychImportCycleTest {
         assertEquals("new-enemy", json.getString("player2"))
         assertEquals("fnfmm-test-stage", json.getString("stage"))
     }
+    @Test fun importsAndExportsMultiplePsychCharactersWithoutLosingUnknownFields() {
+        val store = ProjectStore(File(temp.root, "psych-multi"), temp.root)
+        val prepared = ModZipInspector(File(temp.root, "cache-psych-multi")).withExtracted(fixture(multiCharacter = true).inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, store.newImportStage())
+        }
+        assertEquals(setOf("dad", "metza"), prepared.config.characterLibrary.map { it.draft.charFolder }.toSet())
+        val entry = prepared.config.characterLibrary.single { it.draft.charFolder == "metza" }
+        val changed = prepared.config.copy(characterLibrary = prepared.config.characterLibrary.map {
+            if (it.id == entry.id) it.copy(draft = it.draft.copy(scale = "1.5")) else it
+        }, characterAssignments = CharacterAssignments(opponent = entry.id))
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(changed).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val services = ModBuildServices(object : AudioEncoder {
+            override fun convert(input: File, output: File): String? = error("OGG")
+            override fun mix(first: File, second: File, output: File): String? = error("Una voz")
+        }, { root, cfg, _, _ ->
+            val draft = cfg.character
+            File(root, "characters/${draft.charFolder}.json").apply { parentFile.mkdirs(); writeText("""{"image":"characters/${draft.charFolder}","scale":${draft.scale},"animations":[{"anim":"idle","name":"idle","fps":24,"loop":false,"indices":[],"offsets":[0,0]}]}""") }
+            File(root, "images/characters/${draft.charFolder}.png").apply { parentFile.mkdirs(); File(draft.atlasSheet!!.path).copyTo(this) }
+            File(root, "images/characters/${draft.charFolder}.xml").apply { File(draft.atlasXml!!.path).copyTo(this) }
+        }, { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "psych-multi-output"), temp.root, {}, services)
+        val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        listOf("dad", "metza").forEach { name -> listOf("characters/$name.json", "images/characters/$name.png", "images/characters/$name.xml").forEach { assertTrue(it, files.containsKey(it)) } }
+        val chart = org.json.JSONObject(files.getValue("data/test/test.json").toString(Charsets.UTF_8))
+        assertEquals("metza", chart.getString("player2"))
+        val character = org.json.JSONObject(files.getValue("characters/metza.json").toString(Charsets.UTF_8))
+        assertEquals(1.5, character.getDouble("scale"), 0.0); assertEquals(123, character.getInt("unknown"))
+        assertEquals(0, character.getJSONArray("animations").getJSONObject(0).getJSONArray("indices").getInt(0))
+    }
+
     @Test fun psychWithoutNormalChartImportsRemainingDifficulties() {
         val store = ProjectStore(File(temp.root, "psych-no-normal"), temp.root)
         val prepared = ModZipInspector(File(temp.root, "cache-no-normal")).withExtracted(fixture(true, true).inputStream()) { dir, names ->

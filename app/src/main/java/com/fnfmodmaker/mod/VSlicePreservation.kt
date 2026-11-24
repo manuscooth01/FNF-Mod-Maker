@@ -96,13 +96,13 @@ internal fun patchImportedVSliceMetadata(original: String, raw: SongConfig, effe
 internal fun vSliceCharacterProblems(config: ModConfig): List<String> {
     val character = config.character
     if (!character.enabled || character.importedSourceFormat != "V-Slice" || config.songs.none { it.vSliceOrigin != null }) return emptyList()
-    val paths = config.importedModResources.filter { it.converted && Regex("^data/characters/[A-Za-z0-9_-]{1,64}\\.json$").matches(it.originalPath) }
-    if (paths.size != 1) return listOf("Personaje V-Slice importado: no se encontró un único JSON original editable; conserva el proyecto y revisa el personaje.")
-    val original = paths.single().originalPath.substringAfterLast('/').removeSuffix(".json")
     val savedId = character.importedVSliceCharacterId
+    val expected = "data/characters/$savedId.json"
     return buildList {
-        if (savedId.isNotEmpty() && savedId != original) add("Personaje V-Slice: ID original incompatible (archivo: ${JSONObject.quote(original)}; guardado: ${JSONObject.quote(savedId)}). Restaura el ID original.")
-        if (character.charId != original || character.charFolder != original) add("Personaje V-Slice: el ID es de solo lectura (original: ${JSONObject.quote(original)}; actual: ${JSONObject.quote(character.charId)}). Restaura el ID original.")
+        if (!savedId.matches(Regex("[A-Za-z0-9_-]{1,64}")) || config.importedModResources.count { it.converted && it.originalPath == expected } != 1)
+            add("Personaje V-Slice: no se encontró un único JSON original editable para ${JSONObject.quote(savedId)}.")
+        if (character.charId != savedId || character.charFolder != savedId)
+            add("Personaje V-Slice: el ID original es ${JSONObject.quote(savedId)}. Restaura el ID original.")
     }
 }
 
@@ -174,4 +174,33 @@ internal fun patchVSliceCharacter(original: String, generated: String, hasIcon: 
     }
     source.put("animations", result)
     return source.toString(2)
+}
+
+/** Patch Psych fields represented by Character Studio without discarding source-only data. */
+internal fun patchPsychCharacter(original: String, generated: String, hasIcon: Boolean): String {
+    readVSliceJson(original, "personaje Psych original")
+    readVSliceJson(generated, "personaje Psych generado")
+    rejectDuplicateJsonKeys(original)
+    val source = com.google.gson.JsonParser.parseString(original).asJsonObject
+    val edit = com.google.gson.JsonParser.parseString(generated).asJsonObject
+    listOf("image", "scale", "flip_x", "position", "camera_position").forEach { key ->
+        edit.get(key)?.let { source.add(key, it.deepCopy()) }
+    }
+    if (hasIcon) edit.get("healthicon")?.let { source.add("healthicon", it.deepCopy()) }
+    val edited = edit.get("animations")?.takeIf { it.isJsonArray }?.asJsonArray
+    if (edited != null) {
+        val old = source.get("animations")?.takeIf { it.isJsonArray }?.asJsonArray
+        val byName = old?.filter { it.isJsonObject }?.associateBy { it.asJsonObject.get("anim")?.asString.orEmpty() }.orEmpty()
+        val result = com.google.gson.JsonArray()
+        edited.forEach { element ->
+            require(element.isJsonObject) { "Animación Psych generada inválida." }
+            val next = element.asJsonObject
+            val name = next.get("anim")?.asString ?: error("Animación Psych sin ID.")
+            val merged = byName[name]?.deepCopy()?.asJsonObject ?: com.google.gson.JsonObject()
+            listOf("anim", "name", "fps", "loop", "offsets").forEach { key -> next.get(key)?.let { merged.add(key, it.deepCopy()) } }
+            result.add(merged)
+        }
+        source.add("animations", result)
+    }
+    return source.toString()
 }

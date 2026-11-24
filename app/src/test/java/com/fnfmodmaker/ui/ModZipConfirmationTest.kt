@@ -182,6 +182,7 @@ class ModZipConfirmationTest {
     @Test fun bothTempoPersistsAndExportsWithoutChangingPsychChart() {
         val project = vm.currentProjectId!!
         vm.setEngine(TargetEngine.BOTH)
+        vm.setModTitle("Both Tempo")
         assertTrue(vm.setActiveSongName("Shared"))
         vm.setActiveSongBpm("120")
         val source = File(app.cacheDir, "both-inst.ogg")

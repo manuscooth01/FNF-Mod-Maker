@@ -59,6 +59,11 @@ object ProjectProposalPlanner {
     }
     private fun replaceDraft(config: ModConfig, id: String, draft: CharacterDraft): ModConfig =
         config.copy(characterLibrary = config.characterLibrary.map { if (it.id == id) it.copy(draft = draft) else it })
+    private fun exportWarning(config: ModConfig, entry: CharacterEntry): String = when {
+        !entry.draft.enabled -> "Aviso: personaje desactivado; no se exportará hasta activarlo.\n"
+        config.charactersToExport().none { it.id == entry.id } -> "Aviso: personaje sin asignar; se guardará en el proyecto, pero no se exportará hasta asignarlo.\n"
+        else -> ""
+    }
 
     fun applyIfUnchanged(current: ModConfig, proposal: ProjectProposal): ModConfig {
         if (current != proposal.base) throw AiException("El proyecto cambió desde la propuesta. Solicítala de nuevo antes de aplicar.")
@@ -99,7 +104,7 @@ object ProjectProposalPlanner {
                         scale = number(change, "scale", 0.05f, 20f)?.toString() ?: before.scale,
                         flipX = bool(change, "flipX") ?: before.flipX, side = side)
                     current = replaceDraft(current, selected.id, updated)
-                    items.add(ProposalItem("Personaje ${before.charFolder} · posición y apariencia", "${if (!before.enabled) "Aviso: el personaje propio está desactivado; actívalo para usarlo en el mod.\n" else ""}Antes: posición (${before.positionX}, ${before.positionY}), cámara (${before.cameraX}, ${before.cameraY}), escala ${before.scale}, voltear ${before.flipX}, lado ${before.side.label}\nDespués: posición (${updated.positionX}, ${updated.positionY}), cámara (${updated.cameraX}, ${updated.cameraY}), escala ${updated.scale}, voltear ${updated.flipX}, lado ${updated.side.label}"))
+                    items.add(ProposalItem("Personaje ${before.charFolder} · posición y apariencia", "${exportWarning(current, selected)}Antes: posición (${before.positionX}, ${before.positionY}), cámara (${before.cameraX}, ${before.cameraY}), escala ${before.scale}, voltear ${before.flipX}, lado ${before.side.label}\nDespués: posición (${updated.positionX}, ${updated.positionY}), cámara (${updated.cameraX}, ${updated.cameraY}), escala ${updated.scale}, voltear ${updated.flipX}, lado ${updated.side.label}"))
                 }
                 "animation" -> {
                     val metadata = setOf("type", "name", "characterId")
@@ -127,7 +132,7 @@ object ProjectProposalPlanner {
                         atlasPrefixes = if (prefix != null) draft.atlasPrefixes + (name to prefix) else draft.atlasPrefixes)
                     if (draft.animations.none { it.first == name }) fail("la animación $name no tiene frames; añádelos antes de editarla con IA")
                     current = replaceDraft(current, selected.id, draft)
-                    items.add(ProposalItem("${draft.charFolder} · Animación $name${if (new) " · nueva, revisa sus imágenes" else ""}", "Antes: ${old.fps} FPS, bucle ${old.loop}, offset (${old.offsetX}, ${old.offsetY})${if (draft.useAtlas) ", prefijo '$oldPrefix'" else ""}\nDespués: ${setting.fps} FPS, bucle ${setting.loop}, offset (${setting.offsetX}, ${setting.offsetY})${if (draft.useAtlas) ", prefijo '${draft.prefixFor(name)}'" else ""}"))
+                    items.add(ProposalItem("${draft.charFolder} · Animación $name${if (new) " · nueva, revisa sus imágenes" else ""}", "${exportWarning(current, selected)}Antes: ${old.fps} FPS, bucle ${old.loop}, offset (${old.offsetX}, ${old.offsetY})${if (draft.useAtlas) ", prefijo '$oldPrefix'" else ""}\nDespués: ${setting.fps} FPS, bucle ${setting.loop}, offset (${setting.offsetX}, ${setting.offsetY})${if (draft.useAtlas) ", prefijo '${draft.prefixFor(name)}'" else ""}"))
                 }
                 "assignment" -> {
                     keys(change, setOf("type", "role", "characterId"))
@@ -176,6 +181,8 @@ object ProjectProposalPlanner {
                     keys(change, metadata + setOf("artist", "bpm", "speed", "offsetMs", "practiceNotes", "stagePsych", "stageVSlice"))
                     nonEmpty(change, metadata)
                     val (index, old) = song(current, change)
+                    if (change.has("stagePsych") && !current.engine.includesPsych) fail("Psych no está seleccionado; su escenario no se exportaría")
+                    if (change.has("stageVSlice") && !current.engine.includesVSlice) fail("V-Slice no está seleccionado; su escenario no se exportaría")
                     val updated = old.copy(artist = string(change, "artist") ?: old.artist,
                         bpm = int(change, "bpm", 1, 400)?.toString() ?: old.bpm,
                         speed = number(change, "speed", 0.1f, 10f)?.toString() ?: old.speed,
@@ -281,6 +288,7 @@ fun projectContext(config: ModConfig, characterOnly: Boolean): String {
         result["characterLibrary"] = config.characterLibrary.map { entry ->
             val d = entry.draft
             mapOf("id" to entry.id, "fileId" to d.charFolder, "name" to d.displayName, "enabled" to d.enabled,
+                "exported" to config.charactersToExport().any { it.id == entry.id }, "resourcesReady" to characterInputProblems(d).isEmpty(),
                 "positionX" to d.positionX, "positionY" to d.positionY, "cameraX" to d.cameraX, "cameraY" to d.cameraY,
                 "scale" to d.scale, "side" to d.side.name, "animations" to d.animationNames.map { name ->
                     val a = d.settingsFor(name); mapOf("name" to name, "fps" to a.fps, "loop" to a.loop, "offsetX" to a.offsetX, "offsetY" to a.offsetY)

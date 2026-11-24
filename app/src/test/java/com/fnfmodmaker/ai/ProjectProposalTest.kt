@@ -58,6 +58,8 @@ class ProjectProposalTest {
         assertTrue(runCatching { ProjectProposalPlanner.plan(base, script) }.isFailure)
         assertTrue(runCatching { ProjectProposalPlanner.plan(base, script, characterOnly = true) }.isFailure)
         assertTrue(runCatching { ProjectProposalPlanner.plan(base.copy(engine = TargetEngine.VSLICE), script) }.isFailure)
+        val wrongEngine = """{"summary":"x","changes":[{"type":"song","songIndex":0,"stageVSlice":"club"}]}"""
+        assertTrue(runCatching { ProjectProposalPlanner.plan(base, wrongEngine) }.isFailure)
         val chart = ChartDraft(songFolder = "first", events = listOf(ChartEvent()))
         val withEvents = base.withChart("first", "normal", chart)
         val replacement = """{"summary":"x","changes":[{"type":"chart","songIndex":0,"difficulty":"normal","notes":[]}]}"""

@@ -5,6 +5,9 @@ import com.fnfmodmaker.mod.*
 import com.fnfmodmaker.model.*
 import com.fnfmodmaker.project.PortableProject
 import com.fnfmodmaker.project.ProjectStore
+import com.fnfmodmaker.project.ModImportSession
+import com.fnfmodmaker.project.ProjectConfigValidator
+import com.google.gson.JsonElement
 import com.google.gson.GsonBuilder
 import com.google.gson.TypeAdapter
 import com.google.gson.stream.JsonReader
@@ -62,6 +65,71 @@ class VSliceImportCycleTest {
             }
         }, { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true }
     )
+    // JVM Android stubs cannot construct Uri.EMPTY. Model it as the same empty URI string
+    // written on Android and omit other nulls, matching the production Gson settings.
+    private fun productionJson(config: ModConfig): com.google.gson.JsonObject {
+        val tree = gson.toJsonTree(config).asJsonObject
+        fun normalize(node: JsonElement) {
+            if (node.isJsonArray) { node.asJsonArray.forEach(::normalize); return }
+            if (!node.isJsonObject) return
+            val obj = node.asJsonObject
+            obj.entrySet().toList().forEach { (key, value) ->
+                if (value.isJsonNull) {
+                    if (key == "uri" && obj.has("path") && obj.has("displayName")) obj.addProperty(key, "")
+                    else obj.remove(key)
+                } else normalize(value)
+            }
+        }
+        normalize(tree)
+        return tree
+    }
+    private val productionValidator = ProjectConfigValidator(GsonBuilder().registerTypeAdapter(Uri::class.java,
+        object : TypeAdapter<Uri>() {
+            override fun write(out: JsonWriter, value: Uri?) { out.value("") }
+            override fun read(input: JsonReader): Uri? { input.skipValue(); return null }
+        }.nullSafe()).create())
+
+    @Test fun confirmationPublishesActivatesAndOpensVSliceWithRealValidator() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val old = productionJson(ModConfig(modTitle = "Anterior"))
+        val active = store.newId(); store.save(active, old); store.setActive(active)
+        val prepared = prepare(zip(), store)
+        val session = ModImportSession(prepared.stage, productionJson(prepared.config))
+        val opened = session.publishAndOpen(store, active, old, productionValidator::validate) { gson.fromJson(it, ModConfig::class.java) }
+        assertEquals(opened.id, store.activeId())
+        assertEquals(TargetEngine.VSLICE, opened.config.engine)
+        assertEquals("Test", opened.config.firstSong.songName)
+        assertEquals(2, opened.config.getChart("test", "normal")!!.notes.size)
+        assertTrue(File(opened.config.firstSong.instrumental!!.path).isFile)
+        assertTrue(opened.config.importedModResources.all { File(it.asset!!.path).isFile })
+        assertEquals(old, store.load(active).config)
+    }
+
+    @Test fun confirmationFailuresKeepPreviousProjectAndRetryWithoutLosingOriginals() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val old = productionJson(ModConfig(modTitle = "Anterior"))
+        val active = store.newId(); store.save(active, old); store.setActive(active)
+        val prepared = prepare(zip(), store)
+        val session = ModImportSession(prepared.stage, productionJson(prepared.config))
+        fun parse(value: com.google.gson.JsonObject) = gson.fromJson(value, ModConfig::class.java)
+        assertThrows(IllegalStateException::class.java) {
+            session.publishAndOpen(store, active, old, { error("publication failure") }, ::parse)
+        }
+        assertNull(session.publishedId); assertTrue(prepared.stage.isDirectory)
+        assertEquals(active, store.activeId()); assertEquals(old, store.load(active).config)
+        assertThrows(IllegalStateException::class.java) {
+            session.publishAndOpen(store, active, old, productionValidator::validate) { error("opening failure") }
+        }
+        val published = session.publishedId!!
+        assertFalse(prepared.stage.exists()); assertEquals(active, store.activeId())
+        assertEquals(old, store.load(active).config)
+        val opened = session.publishAndOpen(store, active, old, productionValidator::validate, ::parse)
+        assertEquals(published, opened.id); assertEquals(published, store.activeId())
+        assertEquals(2, store.list().size)
+        val script = opened.config.importedModResources.single { it.originalPath == "scripts/a.hx" }
+        assertEquals("trace('safe data');", File(script.asset!!.path).readText())
+    }
+
     @Test fun completeCyclePreservesEventsUnsupportedChartsTempoVariantsResourcesAndNotes() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val active = store.newId(); store.save(active, gson.toJsonTree(ModConfig(modTitle = "Existing")).asJsonObject); store.setActive(active)

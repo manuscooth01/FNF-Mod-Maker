@@ -7,6 +7,7 @@ import com.fnfmodmaker.mod.mergeImportedResources
 import com.fnfmodmaker.model.*
 import com.fnfmodmaker.project.PortableProject
 import com.fnfmodmaker.project.ProjectStore
+import com.fnfmodmaker.project.ModImportSession
 import com.google.gson.GsonBuilder
 import com.google.gson.TypeAdapter
 import com.google.gson.stream.JsonReader
@@ -48,6 +49,22 @@ class PsychImportCycleTest {
             zip.write(bytesToWrite); zip.closeEntry()
         } }
         return bytes.toByteArray()
+    }
+    @Test fun confirmationAlsoOpensPsychProject() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val old = gson.toJsonTree(ModConfig(modTitle = "Current")).asJsonObject
+        val active = store.newId(); store.save(active, old); store.setActive(active)
+        val stage = store.newImportStage()
+        val prepared = ModZipInspector(File(temp.root, "cache")).withExtracted(fixture().inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, stage)
+        }
+        val session = ModImportSession(stage, gson.toJsonTree(prepared.config).asJsonObject)
+        val opened = session.publishAndOpen(store, active, old, {}) { gson.fromJson(it, ModConfig::class.java) }
+        assertEquals(opened.id, store.activeId())
+        assertEquals(TargetEngine.PSYCH, opened.config.engine)
+        assertEquals(2, opened.config.getChart("test", "normal")!!.notes.size)
+        assertTrue(File(opened.config.firstSong.instrumental!!.path).isFile)
+        assertEquals("Current", store.load(active).config.get("modTitle").asString)
     }
     @Test fun extractedPsychProjectCanBeSavedReopenedPackagedAndOpaqueAssetsSurvive() {
         val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)

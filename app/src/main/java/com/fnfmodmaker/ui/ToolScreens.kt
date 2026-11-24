@@ -99,7 +99,13 @@ internal fun HomeScreen(vm: WizardViewModel) {
     vm.modZipReview?.let { review ->
         AlertDialog(onDismissRequest = vm::closeModZipReview, title = { Text("Revisión del mod ZIP") },
             text = {
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                Column {
+                    if (vm.modZipImporting) Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.height(18.dp).width(18.dp), strokeWidth = 2.dp)
+                        Text("Importando mod…", modifier = Modifier.padding(start = 8.dp))
+                    }
+                    vm.modZipImportError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
                     item {
                         Text(review.name, fontWeight = FontWeight.Bold)
                         Text("Motor: ${review.engines.joinToString(" + ")}")
@@ -115,8 +121,9 @@ internal fun HomeScreen(vm: WizardViewModel) {
                         Text("${file.path} · ${file.kind} · ${file.status}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                         Text(file.detail, style = MaterialTheme.typography.bodySmall)
                     }
+                    }
                 }
-            }, confirmButton = { TextButton(onClick = vm::confirmPsychImport, enabled = !vm.busy) { Text("Importar y abrir") } },
+            }, confirmButton = { TextButton(onClick = vm::confirmModZipImport, enabled = !vm.busy) { Text("Importar y abrir") } },
             dismissButton = { TextButton(onClick = vm::closeModZipReview, enabled = !vm.busy) { Text("Cancelar") } })
     }
     vm.portableImportSummary?.let { summary ->

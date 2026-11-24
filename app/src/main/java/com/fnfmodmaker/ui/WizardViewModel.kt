@@ -49,11 +49,14 @@ import com.fnfmodmaker.modimport.VSliceModImporter
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import com.fnfmodmaker.project.ModImportSession
+import com.fnfmodmaker.project.ProjectConfigValidator
 import com.fnfmodmaker.project.ProjectStore
 import com.fnfmodmaker.project.ProjectSummary
 import com.fnfmodmaker.project.PortableProject
@@ -1015,7 +1018,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal var modZipInspecting by mutableStateOf(false)
         private set
     private var modZipJob: kotlinx.coroutines.Job? = null
-    private var preparedPsych: PreparedPsychImport? = null
+    private var preparedModZip: PreparedPsychImport? = null
+    private var modImportSession: ModImportSession? = null
+    internal var modZipImporting by mutableStateOf(false)
+        private set
+    internal var modZipImportError by mutableStateOf<String?>(null)
+        private set
 
     internal fun inspectModZip(uri: Uri) {
         if (busy || modZipReview != null || currentProjectId == null) return
@@ -1040,7 +1048,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                         } else PsychModImporter(size, duration).prepare(root, names, stage) { context.ensureActive() }
                     }
                 }
-                preparedPsych = prepared
+                preparedModZip = prepared
+                modImportSession = ModImportSession(prepared.stage, configJson(prepared.config))
+                modZipImportError = null
                 val config = prepared.config
                 val items = config.importedModResources.map { r -> InventoriedFile(r.originalPath, if (r.originalPath.endsWith(".lua", true) || r.originalPath.endsWith(".hx", true) || r.originalPath.endsWith(".hscript", true)) "Script" else "Recurso",
                     if (r.converted) "Editable o regenerado" else "Conservado sin edición",
@@ -1063,25 +1073,57 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
     internal fun cancelModZipInspection() { modZipJob?.cancel() }
     internal fun closeModZipReview() {
-        val prepared = preparedPsych
-        preparedPsych = null; modZipReview = null
-        if (prepared != null) viewModelScope.launch(Dispatchers.IO) { projectStore.discardImportStage(prepared.stage) }
+        if (busy || modZipImporting) return
+        val prepared = preparedModZip
+        val published = modImportSession?.publishedId
+        preparedModZip = null; modImportSession = null; modZipReview = null; modZipImportError = null
+        if (published != null) portableMessage = "El proyecto importado quedó guardado; puedes abrirlo desde la lista de proyectos."
+        if (prepared != null && published == null) viewModelScope.launch(Dispatchers.IO) { projectStore.discardImportStage(prepared.stage) }
     }
-    internal fun confirmPsychImport() {
-        if (busy) return
-        val prepared = preparedPsych ?: return
-        busy = true; portableMessage = null; portableProgress = "Guardando proyecto importado…"
+    internal fun confirmModZipImport() {
+        if (modZipImporting) return
+        if (busy) {
+            modZipImportError = "Hay otra operación en curso. Espera a que termine y vuelve a intentarlo."
+            return
+        }
+        val session = modImportSession
+        if (preparedModZip == null || session == null) {
+            modZipImportError = "La preparación del ZIP ya no está disponible. Cierra esta revisión y selecciona el archivo de nuevo."
+            return
+        }
+        val oldId = currentProjectId
+        if (oldId == null) {
+            modZipImportError = "El proyecto actual no está disponible. Cierra la revisión y reinicia la app antes de volver a intentarlo."
+            return
+        }
+        val oldConfig = configJson(config)
+        pendingAutoSaveJob?.cancel()
+        busy = true; modZipImporting = true; modZipImportError = null
+        portableMessage = null; portableProgress = "Importando mod…"
         viewModelScope.launch {
-            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
-                try { projectStore.publishModImport(prepared.stage, configJson(prepared.config), ::validatePortableConfig) }
-                catch (e: Exception) { projectStore.discardImportStage(prepared.stage); throw e }
-            } } }
-            preparedPsych = null; modZipReview = null
-            busy = false; portableProgress = null
-            result.onSuccess { id ->
-                portableMessage = "Proyecto importado como copia independiente. Abriendo…"
-                switchProject(id)
-            }.onFailure { portableMessage = "No se pudo importar el mod: ${it.message}. El proyecto actual no cambió." }
+            try {
+                // Once started, finish both disk publication and UI activation even if the ViewModel
+                // is cancelled. Never leave active.txt pointing at a project the UI hasn't adopted.
+                withContext(NonCancellable) {
+                    projectMutex.withLock {
+                        val opened = withContext(Dispatchers.IO) {
+                            session.publishAndOpen(projectStore, oldId, oldConfig, ::validatePortableConfig, ::parseConfig)
+                        }
+                        applyOpenedProject(opened.id, opened.config, opened.projects, emptyList())
+                        preparedModZip = null; modImportSession = null; modZipReview = null
+                        portableMessage = "Proyecto importado como copia independiente."
+                    }
+                }
+            } catch (e: Exception) {
+                val retained = if (session.publishedId == null) "La preparación se conserva para volver a intentarlo."
+                    else "El proyecto importado ya está guardado; puedes reintentar abrirlo o cancelar y abrirlo desde la lista."
+                modZipImportError = "No se pudo importar y abrir el mod: ${e.message ?: "error desconocido"}. El proyecto anterior sigue activo. $retained"
+                if (session.publishedId != null) {
+                    projects = withContext(Dispatchers.IO) { runCatching { projectStore.list() }.getOrDefault(projects) }
+                }
+            } finally {
+                portableProgress = null; modZipImporting = false; busy = false
+            }
         }
     }
 
@@ -1594,18 +1636,23 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val revision = projectRevision
         projectSaveStatus = "Guardando…"
         viewModelScope.launch {
-            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
-                projectStore.save(id, configJson(snapshot)); projectStore.list()
-            } } }
+            val result = projectMutex.withLock {
+                if (currentProjectId != id || projectRevision != revision) return@launch
+                withContext(Dispatchers.IO) { runCatching {
+                    projectStore.save(id, configJson(snapshot)); projectStore.list()
+                } }
+            }
             result.onSuccess { list ->
-                projects = list
                 if (currentProjectId == id && projectRevision == revision) {
+                    projects = list
                     projectSaveStatus = "Guardado en este dispositivo"
                     if (projectMessage?.startsWith("No se pudo guardar el proyecto:") == true) projectMessage = null
                 }
             }.onFailure {
-                projectSaveStatus = "Error al guardar"
-                projectMessage = "No se pudo guardar el proyecto: ${it.message}. Comprueba el espacio e intenta de nuevo."
+                if (currentProjectId == id && projectRevision == revision) {
+                    projectSaveStatus = "Error al guardar"
+                    projectMessage = "No se pudo guardar el proyecto: ${it.message}. Comprueba el espacio e intenta de nuevo."
+                }
             }
         }
     }
@@ -1723,109 +1770,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Reject malformed model shapes before they can reach screens or be published. */
-    private fun validatePortableConfig(value: com.google.gson.JsonObject) {
-        fun compare(input: com.google.gson.JsonObject, template: com.google.gson.JsonObject) {
-            template.entrySet().forEach { (key, sample) ->
-                val item = input.get(key) ?: return@forEach
-                require(!item.isJsonNull && item.isJsonObject == sample.isJsonObject && item.isJsonArray == sample.isJsonArray && item.isJsonPrimitive == sample.isJsonPrimitive) { "Campo inválido: $key." }
-                if (sample.isJsonPrimitive) {
-                    val a = item.asJsonPrimitive; val b = sample.asJsonPrimitive
-                    require(a.isBoolean == b.isBoolean && a.isNumber == b.isNumber && a.isString == b.isString && (!a.isNumber || a.asDouble.isFinite())) { "Tipo inválido: $key." }
-                } else if (sample.isJsonObject) compare(item.asJsonObject, sample.asJsonObject)
-                else if (sample.isJsonArray && sample.asJsonArray.size() > 0) {
-                    val first = sample.asJsonArray[0]
-                    item.asJsonArray.forEach { child ->
-                        require(!child.isJsonNull && child.isJsonObject == first.isJsonObject && child.isJsonPrimitive == first.isJsonPrimitive) { "Elemento inválido: $key." }
-                        if (first.isJsonObject) compare(child.asJsonObject, first.asJsonObject)
-                        else if (first.isJsonPrimitive) require(child.asJsonPrimitive.isString == first.asJsonPrimitive.isString) { "Elemento inválido: $key." }
-                    }
-                }
-            }
-        }
-        require(value.get("songs")?.isJsonArray == true && value.get("character")?.isJsonObject == true && value.get("stageDraft")?.isJsonObject == true && value.get("charts")?.isJsonObject == true) { "Faltan datos del proyecto." }
-        compare(value, configJson(ModConfig()))
-        value.get("engine")?.let { require(it.asString in TargetEngine.entries.map { engine -> engine.name }) { "Motor desconocido." } }
-        val character = value.getAsJsonObject("character")
-        character.get("side")?.let { require(it.asString in CharacterSide.entries.map { side -> side.name }) { "Lado de personaje inválido." } }
-        fun objectArray(parent: com.google.gson.JsonObject, key: String, template: com.google.gson.JsonObject, extra: (com.google.gson.JsonObject) -> Unit = {}) {
-            parent.get(key)?.let { array ->
-                require(array.isJsonArray) { "$key debe ser una lista." }
-                array.asJsonArray.forEach { item ->
-                    require(item.isJsonObject) { "Elemento inválido en $key." }
-                    compare(item.asJsonObject, template); extra(item.asJsonObject)
-                }
-            }
-        }
-        objectArray(character, "variations", autoSaveGson.toJsonTree(com.fnfmodmaker.model.CharacterVariation()).asJsonObject)
-        objectArray(character, "atlasFrames", autoSaveGson.toJsonTree(com.fnfmodmaker.model.SparrowFrame("frame", 0, 0, 1, 1)).asJsonObject)
-        character.get("animationFrames")?.let { frames ->
-            require(frames.isJsonObject) { "Frames inválidos." }
-            frames.asJsonObject.entrySet().forEach { (_, array) ->
-                require(array.isJsonArray) { "Frames inválidos." }
-                array.asJsonArray.forEach { frame ->
-                    require(frame.isJsonObject && frame.asJsonObject.get("image")?.isJsonObject == true && frame.asJsonObject.get("width")?.isJsonPrimitive == true && frame.asJsonObject.get("height")?.isJsonPrimitive == true) { "Frame sin imagen o dimensiones." }
-                }
-            }
-        }
-        character.get("animationSettings")?.let { settings ->
-            require(settings.isJsonObject) { "Ajustes de animación inválidos." }
-            settings.asJsonObject.entrySet().forEach { (_, item) ->
-                require(item.isJsonObject) { "Ajustes de animación inválidos." }
-                compare(item.asJsonObject, autoSaveGson.toJsonTree(CharacterAnimationSettings()).asJsonObject)
-            }
-        }
-        objectArray(value.getAsJsonObject("stageDraft"), "sprites", autoSaveGson.toJsonTree(com.fnfmodmaker.model.StageSprite()).asJsonObject) { sprite ->
-            sprite.get("layer")?.let { require(it.asString in com.fnfmodmaker.model.StageSprite.Layer.entries.map { layer -> layer.name }) { "Capa inválida." } }
-        }
-        value.getAsJsonObject("charts").entrySet().forEach { (_, perSong) ->
-            require(perSong.isJsonObject) { "Charts inválidos." }
-            perSong.asJsonObject.entrySet().forEach { (_, chart) ->
-                require(chart.isJsonObject) { "Chart inválido." }
-                compare(chart.asJsonObject, configJsonChartTemplate())
-                objectArray(chart.asJsonObject, "events", autoSaveGson.toJsonTree(com.fnfmodmaker.model.ChartEvent()).asJsonObject) { event ->
-                    event.get("type")?.let { require(it.asString in com.fnfmodmaker.model.ChartEvent.EventType.entries.map { type -> type.name }) { "Evento inválido." } }
-                }
-                objectArray(chart.asJsonObject, "sections", autoSaveGson.toJsonTree(com.fnfmodmaker.model.ChartSection()).asJsonObject)
-                chart.asJsonObject.get("notes")?.let { notes ->
-                    require(notes.isJsonArray) { "Notas inválidas." }
-                    notes.asJsonArray.forEach { n -> require(n.isJsonObject); compare(n.asJsonObject, autoSaveGson.toJsonTree(ChartNote()).asJsonObject) }
-                }
-            }
-        }
-        value.get("chartHistories")?.let { all ->
-            require(all.isJsonObject && all.asJsonObject.size() <= 256) { "Historial inválido." }
-            all.asJsonObject.entrySet().forEach { (_, perSong) ->
-                require(perSong.isJsonObject && perSong.asJsonObject.size() <= 16) { "Historial de canción inválido." }
-                perSong.asJsonObject.entrySet().forEach { (_, item) ->
-                    require(item.isJsonObject) { "Historial de dificultad inválido." }
-                    var noteCount = 0
-                    listOf("undo", "redo").forEach { key ->
-                        val stack = item.asJsonObject.get(key) ?: return@forEach
-                        require(stack.isJsonArray && stack.asJsonArray.size() <= 50) { "Historial demasiado grande." }
-                        stack.asJsonArray.forEach { entry ->
-                            require(entry.isJsonObject) { "Entrada de historial inválida." }
-                            val e = entry.asJsonObject
-                            listOf("beforeHash", "afterHash").forEach { h -> require(e.get(h)?.asString?.matches(Regex("[0-9a-f]{64}")) == true) { "Huella de historial inválida." } }
-                            listOf("added", "removed").forEach { n ->
-                                val notes = e.get(n); require(notes != null && notes.isJsonArray) { "Notas de historial inválidas." }
-                                noteCount += notes.asJsonArray.size()
-                                notes.asJsonArray.forEach { note -> require(note.isJsonObject); compare(note.asJsonObject, autoSaveGson.toJsonTree(ChartNote()).asJsonObject) }
-                            }
-                            listOf("beforeTemplate", "afterTemplate").forEach { t -> e.get(t)?.let { template ->
-                                require(template.isJsonObject) { "Plantilla de historial inválida." }
-                                compare(template.asJsonObject, configJsonChartTemplate())
-                                require(template.asJsonObject.get("notes")?.asJsonArray?.size() == 0) { "Plantilla de historial inválida." }
-                            } }
-                        }
-                    }
-                    require(noteCount <= 40000) { "Historial demasiado grande." }
-                }
-            }
-        }
-        parseConfig(value)
-    }
-    private fun configJsonChartTemplate() = autoSaveGson.toJsonTree(ChartDraft()).asJsonObject
+    private fun validatePortableConfig(value: com.google.gson.JsonObject) =
+        ProjectConfigValidator(autoSaveGson).validate(value)
 
     /** Save current work before switching. Failed copies/opening never replace the current draft. */
     internal fun switchProject(target: String? = null, duplicate: Boolean = false) {
@@ -1854,17 +1800,22 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 Triple(loaded.id to validated, projectStore.list(), missing)
             } } }
             result.onSuccess { (project, list, missing) ->
-                closeLiveChart(); releaseMediaPlayer()
-                currentProjectId = project.first; config = project.second; projects = list
-                projectRevision++; projectSaveStatus = "Guardado en este dispositivo"
-                activeSongIndex = 0; activeChartSongIndex = 0; activeChartDifficulty = "normal"; activeVariationIndex = null
-                chartEditorState = ChartEditorState(); aiProposal = null; aiProposalNotice = null; step = 0
-                modIdEdited = config.modId.isNotBlank() && config.modId != slugify(config.modTitle)
-                projectMessage = if (missing.isEmpty()) null else "Faltan recursos: ${missing.joinToString()}."
-                tool = Tool.MOD
+                applyOpenedProject(project.first, project.second, list, missing)
             }.onFailure { projectMessage = "No se pudo abrir el proyecto: ${it.message}. El proyecto actual no se ha reemplazado." }
             busy = false
         }
+    }
+
+    private fun applyOpenedProject(id: String, opened: ModConfig, list: List<ProjectSummary>, missing: List<String>) {
+        // Playback cleanup is best effort; it must not leave active.txt and the UI out of sync.
+        runCatching { closeLiveChart() }; runCatching { releaseMediaPlayer() }
+        currentProjectId = id; config = opened; projects = list
+        projectRevision++; projectSaveStatus = "Guardado en este dispositivo"
+        activeSongIndex = 0; activeChartSongIndex = 0; activeChartDifficulty = "normal"; activeVariationIndex = null
+        chartEditorState = ChartEditorState(); aiProposal = null; aiProposalNotice = null; step = 0
+        modIdEdited = config.modId.isNotBlank() && config.modId != slugify(config.modTitle)
+        projectMessage = if (missing.isEmpty()) null else "Faltan recursos: ${missing.joinToString()}."
+        tool = Tool.MOD
     }
 
     var step by mutableStateOf(0)

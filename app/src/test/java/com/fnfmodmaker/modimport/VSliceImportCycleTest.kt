@@ -180,6 +180,34 @@ class VSliceImportCycleTest {
         assertEquals("{\"variation\":true}", text("data/songs/test/test-chart-remix.json"))
         for (p in listOf("songs/test/Inst.ogg", "songs/test/Voices-bf.ogg", "songs/test/Voices-hero.ogg", "songs/test/Voices-gf.ogg", "data/stages/custom.json", "data/levels/old.json")) assertTrue(p, p in files)
     }
+    @Test fun renamedSongMovesVariationsAudioAndLevelReference() {
+        val store = ProjectStore(File(temp.root, "rename-vslice"), temp.root)
+        val prepared = prepare(zip(extra = mapOf("data/levels/old.json" to """{"songs":["test"],"unknown":true}""")), store)
+        val renamed = renameSong(prepared.config, 0, "Nueva")
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(renamed).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "rename-vslice-output"), temp.root, {}, services())
+        val out = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, out, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(out.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        assertTrue(files.keys.none { it.startsWith("songs/test/") || it.startsWith("data/songs/test/") })
+        listOf("data/songs/nueva/nueva-metadata.json", "data/songs/nueva/nueva-chart.json", "data/songs/nueva/nueva-chart-remix.json", "data/songs/nueva/nueva-metadata-remix.json", "songs/nueva/Inst.ogg", "songs/nueva/Voices-gf.ogg").forEach { assertTrue(it, it in files) }
+        val level = JSONObject(files.getValue("data/levels/old.json").toString(Charsets.UTF_8))
+        assertEquals("nueva", level.getJSONArray("songs").getString(0)); assertTrue(level.getBoolean("unknown"))
+        assertEquals("Nueva", JSONObject(files.getValue("data/songs/nueva/nueva-metadata.json").toString(Charsets.UTF_8)).getString("songName"))
+    }
+
+    @Test fun removedImportedVoiceIsNotRestoredAndMetadataIsUpdated() {
+        val store = ProjectStore(File(temp.root, "remove-voice"), temp.root)
+        val prepared = prepare(zip(), store)
+        val changed = prepared.config.copy(songs = listOf(prepared.config.firstSong.copy(vocalsOpponent = null)))
+        val built = ModBuilder.buildInternal(changed, File(temp.root, "remove-voice-output"), temp.root, {}, services())
+        assertFalse(File(built.rootDir, "songs/test/Voices-hero.ogg").exists())
+        assertTrue(File(built.rootDir, "songs/test/Voices-gf.ogg").isFile)
+        val chars = JSONObject(File(built.rootDir, "data/songs/test/test-metadata.json").readText()).getJSONObject("playData").getJSONObject("characters")
+        assertEquals(0, chars.getJSONArray("opponentVocals").length())
+    }
+
     @Test fun deletedImportedSongStaysInBackupButNotZipOrLevel() {
         val store = ProjectStore(File(temp.root, "removed-vslice-song"), temp.root)
         val prepared = prepare(zip(extra = mapOf("data/levels/old.json" to """{"songs":["test","fresh"],"unknown":true}""")), store)

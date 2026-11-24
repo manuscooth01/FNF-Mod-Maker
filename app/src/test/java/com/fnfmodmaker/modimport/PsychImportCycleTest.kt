@@ -147,6 +147,29 @@ class PsychImportCycleTest {
         assertEquals(0, character.getJSONArray("animations").getJSONObject(0).getJSONArray("indices").getInt(0))
     }
 
+    @Test fun psychRenameUpdatesChartAudioAndWeekReferences() {
+        val store = ProjectStore(File(temp.root, "psych-rename"), temp.root)
+        val prepared = ModZipInspector(File(temp.root, "psych-rename-cache")).withExtracted(fixture(withWeek = true).inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, store.newImportStage())
+        }
+        val renamed = renameSong(prepared.config, 0, "Nueva")
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(renamed).asJsonObject) { }
+        val reopened = gson.fromJson(store.load(id).config, ModConfig::class.java)
+        val services = ModBuildServices(object : AudioEncoder {
+            override fun convert(input: File, output: File): String? = error("OGG")
+            override fun mix(first: File, second: File, output: File): String? = error("Una voz")
+        }, { root, cfg, _, _ -> File(root, "characters/${cfg.character.charFolder}.json").apply { parentFile.mkdirs(); writeText("{}") } },
+            { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "psych-rename-output"), temp.root, {}, services)
+        val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        assertTrue(files.keys.none { it.startsWith("data/test/") || it.startsWith("songs/test/") })
+        listOf("data/nueva/nueva.json", "songs/nueva/Inst.ogg", "songs/nueva/Voices.ogg").forEach { assertTrue(it, it in files) }
+        val week = org.json.JSONObject(files.getValue("weeks/story.json").toString(Charsets.UTF_8))
+        assertEquals("Nueva", week.getJSONArray("songs").getJSONArray(0).getString(0)); assertTrue(week.getBoolean("unknown"))
+    }
+
     @Test fun deletedPsychSongIsRemovedFromWeekAndZipButOriginalRemains() {
         val store = ProjectStore(File(temp.root, "psych-removed-song"), temp.root)
         val prepared = ModZipInspector(File(temp.root, "psych-removed-cache")).withExtracted(fixture(withWeek = true).inputStream()) { dir, names ->

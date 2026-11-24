@@ -274,15 +274,23 @@ object ModBuilder {
                 config.importedModResources.filter { it.originalPath.startsWith(data) || it.originalPath.startsWith("songs/$folder/") }
                     .forEach { omitted.add(it.originalPath) }
             }
-            if (config.deletedImportedSongFolders.isNotEmpty()) {
-                val psych = config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH
+            val psych = config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH
+            val renamedSongs = config.songs.mapNotNull { song ->
+                val original = if (psych) song.importedPsychFolder else song.vSliceOrigin?.folder.orEmpty()
+                if (original.isNotEmpty() && original != song.songFolder) {
+                    require(original.matches(Regex("[a-z0-9_-]{1,80}"))) { "Origen de canción renombrada inválido." }
+                    original to song
+                } else null
+            }.toMap()
+            if (config.deletedImportedSongFolders.isNotEmpty() || renamedSongs.isNotEmpty()) {
                 val prefix = if (psych) "weeks/" else "data/levels/"
                 val referencePath = Regex("^" + Regex.escape(prefix) + "[A-Za-z0-9_-]{1,80}\\.json$")
+                val names = renamedSongs.mapValues { (_, song) -> if (psych) song.songName else song.songFolder }
                 config.importedModResources.filter { referencePath.matches(it.originalPath) }.forEach { resource ->
                     val original = originalVSliceText(config, resource.originalPath, appRoot, false)
-                    removeSongReferences(original, config.deletedImportedSongFolders, psych)?.let { writeText(root, resource.originalPath, it) }
+                    rewriteSongReferences(original, config.deletedImportedSongFolders, names, psych)?.let { writeText(root, resource.originalPath, it) }
                 }
-                warnings.add("Se eliminaron referencias de canciones en listas de niveles o semanas. Revisa los scripts y referencias personalizadas antes de instalar.")
+                warnings.add("Se actualizaron listas de canciones en niveles o semanas. Revisa los scripts y referencias personalizadas antes de instalar.")
             }
             config.songs.forEach { song ->
                 song.vSliceOrigin?.let { origin ->
@@ -300,9 +308,28 @@ object ModBuilder {
                     if (oldFolder != song.songFolder) config.importedModResources.filter { it.converted && it.originalPath.startsWith("songs/$oldFolder/") }.forEach { omitted.add(it.originalPath) }
                 }
             }
-            mergeImportedResources(root, config.importedModResources.filterNot { it.originalPath in omitted }.map { resource ->
-                if (resource.originalPath in patchedMetadataPaths) resource.copy(converted = true) else resource
-            }, appRoot, replaceExisting = true)
+            // Audio selected by the project is regenerated above; never restore a removed imported track.
+            val sourceFolders = config.songs.mapNotNull { song ->
+                (if (psych) song.importedPsychFolder else song.vSliceOrigin?.folder).takeUnless { it.isNullOrEmpty() }
+            }.toSet()
+            val resources = config.importedModResources.mapNotNull { resource ->
+                val path = resource.originalPath
+                if (path in omitted || (resource.converted && sourceFolders.any { path.startsWith("songs/$it/") })) return@mapNotNull null
+                var mapped = path
+                renamedSongs.forEach { (old, song) ->
+                    val audioPrefix = "songs/$old/"
+                    val dataPrefix = if (psych) "data/$old/" else "data/songs/$old/"
+                    if (path.startsWith(audioPrefix)) mapped = "songs/${song.songFolder}/" + path.removePrefix(audioPrefix)
+                    if (path.startsWith(dataPrefix)) {
+                        if (resource.converted || path == song.vSliceOrigin?.metadataPath) return@mapNotNull null
+                        val name = path.removePrefix(dataPrefix)
+                        val renamedName = if (name.startsWith("$old-") || name == "$old.json") song.songFolder + name.removePrefix(old) else name
+                        mapped = (if (psych) "data/${song.songFolder}/" else "data/songs/${song.songFolder}/") + renamedName
+                    }
+                }
+                resource.copy(originalPath = mapped, converted = resource.converted || path in patchedMetadataPaths)
+            }
+            mergeImportedResources(root, resources, appRoot, replaceExisting = true)
             warnings.add("Los archivos convertidos se regeneraron; sus originales se conservan en el proyecto. Revisa el mod en el motor correspondiente.")
         }
 

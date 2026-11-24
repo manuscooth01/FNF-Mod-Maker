@@ -134,6 +134,16 @@ internal fun freeVSliceMetadata(original: String, raw: SongConfig, effective: So
     text(json, "songName", raw.songName, origin.originalName); text(json, "artist", raw.artist, origin.originalArtist)
     text(chars, "player", effective.player, origin.originalPlayer); text(chars, "opponent", effective.opponent, origin.originalOpponent)
     text(chars, "girlfriend", effective.girlfriend, origin.originalGirlfriend); text(play, "stage", effective.stageVSlice, origin.originalStage)
+    fun removeVoiceReference(key: String, originalFile: String, removed: Boolean) {
+        if (!removed || !originalFile.startsWith("Voices-") || !originalFile.endsWith(".ogg")) return
+        val id = originalFile.removePrefix("Voices-").removeSuffix(".ogg")
+        val values = chars.get(key)?.takeIf { it.isJsonArray }?.asJsonArray ?: return
+        val remaining = com.google.gson.JsonArray()
+        values.forEach { value -> if (!(value.isJsonPrimitive && value.asJsonPrimitive.isString && value.asString == id)) remaining.add(value.deepCopy()) }
+        chars.add(key, remaining)
+    }
+    removeVoiceReference("playerVocals", origin.playerVoiceFile, effective.vocalsPlayer == null)
+    removeVoiceReference("opponentVocals", origin.opponentVoiceFile, effective.vocalsOpponent == null)
     if (raw.bpm != origin.originalBpm) {
         val times = json.getAsJsonArray("timeChanges") ?: error("Falta timeChanges.")
         require(times.size() > 0 && times[0].isJsonObject) { "Tempo inicial inválido." }
@@ -206,9 +216,9 @@ internal fun patchPsychCharacter(original: String, generated: String, hasIcon: B
     return source.toString()
 }
 
-/** Remove references only in the documented songs arrays; retain unrelated JSON values. */
-internal fun removeSongReferences(original: String, deleted: Set<String>, psych: Boolean): String? {
-    if (deleted.isEmpty()) return null
+/** Update documented level/week song arrays without rewriting unknown fields. */
+internal fun rewriteSongReferences(original: String, deleted: Set<String>, renamed: Map<String, String>, psych: Boolean): String? {
+    if (deleted.isEmpty() && renamed.isEmpty()) return null
     readVSliceJson(original, "nivel o semana original"); rejectDuplicateJsonKeys(original)
     val json = com.google.gson.JsonParser.parseString(original).asJsonObject
     val songs = json.get("songs")?.takeIf { it.isJsonArray }?.asJsonArray ?: return null
@@ -216,7 +226,19 @@ internal fun removeSongReferences(original: String, deleted: Set<String>, psych:
     songs.forEach { entry ->
         val name = if (psych) entry.takeIf { it.isJsonArray }?.asJsonArray?.firstOrNull() else entry
         val raw = name?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
-        if (raw != null && com.fnfmodmaker.model.psychSongPath(raw) in deleted) changed = true else kept.add(entry.deepCopy())
+        val key = raw?.let { com.fnfmodmaker.model.psychSongPath(it) }
+        when {
+            key in deleted -> changed = true
+            key != null && key in renamed -> {
+                changed = true
+                if (psych) {
+                    val item = entry.deepCopy().asJsonArray
+                    item.set(0, com.google.gson.JsonPrimitive(renamed.getValue(key)))
+                    kept.add(item)
+                } else kept.add(renamed.getValue(key))
+            }
+            else -> kept.add(entry.deepCopy())
+        }
     }
     if (!changed) return null
     json.add("songs", kept)

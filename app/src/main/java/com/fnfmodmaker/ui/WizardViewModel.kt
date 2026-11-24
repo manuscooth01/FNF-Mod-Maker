@@ -1781,28 +1781,36 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         pendingAutoSaveJob?.cancel()
         busy = true; projectMessage = null
         viewModelScope.launch {
-            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
-                projectStore.save(oldId, configJson(oldConfig))
-                val id = if (target != null) target else projectStore.newId()
-                val missing = if (target == null) {
-                    val source = if (duplicate) configJson(oldConfig).also {
-                        val name = oldConfig.modTitle.ifBlank { "Proyecto sin nombre" }
-                        it.addProperty("modTitle", "$name (copia)")
-                    } else configJson(ModConfig())
-                    val copied = projectStore.copyAssets(source, id)
-                    if (duplicate && copied.missing.isNotEmpty()) error("No se puede duplicar: faltan ${copied.missing.joinToString()}. Vuelve a elegirlos.")
-                    projectStore.save(id, copied.config)
-                    copied.missing
-                } else emptyList()
-                val loaded = projectStore.load(id)
-                val validated = parseConfig(loaded.config)
-                projectStore.setActive(id)
-                Triple(loaded.id to validated, projectStore.list(), missing)
-            } } }
-            result.onSuccess { (project, list, missing) ->
-                applyOpenedProject(project.first, project.second, list, missing)
-            }.onFailure { projectMessage = "No se pudo abrir el proyecto: ${it.message}. El proyecto actual no se ha reemplazado." }
-            busy = false
+            try {
+                withContext(NonCancellable) {
+                    projectMutex.withLock {
+                        val (project, list, missing) = withContext(Dispatchers.IO) {
+                            projectStore.save(oldId, configJson(oldConfig))
+                            val id = target ?: projectStore.newId()
+                            val missing = if (target == null) {
+                                val source = if (duplicate) configJson(oldConfig).also {
+                                    val name = oldConfig.modTitle.ifBlank { "Proyecto sin nombre" }
+                                    it.addProperty("modTitle", "$name (copia)")
+                                } else configJson(ModConfig())
+                                val copied = projectStore.copyAssets(source, id)
+                                if (duplicate && copied.missing.isNotEmpty()) error("No se puede duplicar: faltan ${copied.missing.joinToString()}. Vuelve a elegirlos.")
+                                projectStore.save(id, copied.config)
+                                copied.missing
+                            } else emptyList()
+                            val loaded = projectStore.load(id)
+                            val validated = parseConfig(loaded.config)
+                            val projects = projectStore.list()
+                            projectStore.setActive(id)
+                            Triple(loaded.id to validated, projects, missing)
+                        }
+                        applyOpenedProject(project.first, project.second, list, missing)
+                    }
+                }
+            } catch (e: Exception) {
+                projectMessage = "No se pudo abrir el proyecto: ${e.message}. El proyecto actual no se ha reemplazado."
+            } finally {
+                busy = false
+            }
         }
     }
 

@@ -116,12 +116,11 @@ object ModBuilder {
             if (config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH && draft.importedSourceFormat == "Psych") {
                 val path = "characters/${draft.charFolder}.json"
                 val originalPath = "characters/${draft.importedPsychCharacterId.ifEmpty { draft.charFolder }}.json"
-                if (config.importedModResources.any { it.converted && it.originalPath == originalPath }) {
-                    val generated = File(root, path)
-                    require(generated.isFile) { "No se generó el personaje importado: $path" }
-                    val original = originalVSliceText(config, originalPath, appRoot, true)
-                    generated.writeText(patchPsychCharacter(original, generated.readText(), draft.icon != null))
-                }
+                val generated = File(root, path)
+                require(generated.isFile) { "No se generó el personaje importado: $path" }
+                val original = if (config.importedModResources.any { it.converted && it.originalPath == originalPath })
+                    originalVSliceText(config, originalPath, appRoot, true) else draft.importedSourceJson
+                if (original.isNotEmpty()) generated.writeText(patchPsychCharacter(original, generated.readText(), draft.icon != null))
             }
         }
 

@@ -161,6 +161,30 @@ class ModZipConfirmationTest {
         assertEquals(rival, vm.config.resolvedAssignments().opponent)
         assertEquals(hero, vm.config.resolvedAssignments().girlfriend)
     }
+    @Test fun duplicateImportedCharacterIsEditablePersistentAndExported() {
+        val previous = vm.currentProjectId!!
+        vm.inspectModZip(zip(withCharacter = true)); await { !vm.busy }
+        vm.confirmModZipImport(); await { !vm.busy }; assertNull(vm.modZipImportError)
+        val imported = vm.currentProjectId!!
+        vm.createLibraryCharacter(duplicate = true)
+        assertNull(vm.error); assertEquals(2, vm.config.characterLibrary.size)
+        val duplicate = vm.config.selectedCharacterId
+        assertEquals("personaje-1", vm.config.character.charFolder)
+        vm.assignLibraryCharacter(com.fnfmodmaker.model.CharacterRole.OPPONENT, duplicate)
+        vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
+        assertEquals(2, vm.config.characterLibrary.size)
+        assertEquals("personaje-1", vm.config.effectiveExportConfig().firstSong.opponent)
+        assertTrue(vm.validationIssues.joinToString { it.message }, vm.exportReady)
+        val output = File(app.cacheDir, "duplicate-character.zip")
+        vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val prefix = vm.config.modFolder + "/"
+        listOf("data/characters/Hero_Day.json", "data/characters/personaje-1.json", "images/characters/personaje-1.png", "images/characters/personaje-1.xml").forEach { assertTrue(it, prefix + it in files) }
+        val copy = org.json.JSONObject(files.getValue(prefix + "data/characters/personaje-1.json").toString(Charsets.UTF_8))
+        assertEquals("kept", copy.getString("unknown"))
+    }
+
     @Test fun tardeReassignsDadToMetzaAndKeepsOriginalMetadataAfterReopenAndZip() {
         val previous = vm.currentProjectId!!
         vm.inspectModZip(zip()); await { !vm.busy }; vm.confirmModZipImport(); await { !vm.busy }

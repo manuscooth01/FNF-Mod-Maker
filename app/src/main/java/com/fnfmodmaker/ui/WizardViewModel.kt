@@ -2092,15 +2092,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
     internal fun createLibraryCharacter(duplicate: Boolean = false) {
         if (busy || config.characterLibrary.size >= 64) return
-        if (duplicate && config.character.importedSourceJson.isNotEmpty()) {
-            error = "La duplicación de un personaje JSON importado todavía no conserva todos sus campos; crea uno nuevo para evitar pérdidas."
-            return
-        }
         val id = java.util.UUID.randomUUID().toString()
         val used = config.characterLibrary.map { it.draft.charFolder.lowercase() }.toSet()
         var n = 1
         while ("personaje-$n" in used) n++
-        val draft = if (duplicate) config.character.copy(enabled = true, charId = "personaje-$n", displayName = config.character.displayName + " (copia)")
+        val draft = if (duplicate) config.character.copy(enabled = true, charId = "personaje-$n", displayName = config.character.displayName + " (copia)",
+            importedVSliceCharacterId = "", importedPsychCharacterId = "")
             else CharacterDraft(enabled = true, charId = "personaje-$n", displayName = "Personaje $n")
         config = config.copy(characterLibrary = config.characterLibrary + com.fnfmodmaker.model.CharacterEntry(id, draft),
             selectedCharacterId = id, characterAssignments = config.resolvedAssignments())

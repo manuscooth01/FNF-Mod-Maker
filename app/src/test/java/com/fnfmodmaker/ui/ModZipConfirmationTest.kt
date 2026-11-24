@@ -85,6 +85,37 @@ class ModZipConfirmationTest {
         }
         return Uri.fromFile(file)
     }
+    private fun psychZip(): Uri {
+        val file = File(app.cacheDir, "psych-events-test.zip")
+        val chart = """{"song":{"song":"test","bpm":120,"speed":1,"player1":"bf","player2":"dad","stage":"stage","events":[[100,[["Hey!","0",""]]]],"notes":[{"sectionBeats":4,"mustHitSection":true,"sectionNotes":[[100,0,0]]}]}}"""
+        ZipOutputStream(file.outputStream()).use { out ->
+            fun entry(name: String, bytes: ByteArray) { out.putNextEntry(ZipEntry(name)); out.write(bytes); out.closeEntry() }
+            entry("pack.json", """{"name":"Test","description":"Test"}""".toByteArray())
+            entry("data/test/test.json", chart.toByteArray())
+            entry("songs/test/Inst.ogg", javaClass.getResourceAsStream("/psych-fixture/Inst.ogg")!!.use { it.readBytes() })
+        }
+        return Uri.fromFile(file)
+    }
+    @Test fun psychEventEditingUndoReopenAndExport() {
+        val previous = vm.currentProjectId!!
+        vm.inspectModZip(psychZip()); await { !vm.busy }; assertNotNull(vm.modZipImportError, vm.modZipReview)
+        vm.confirmModZipImport(); await { !vm.busy }; assertNull(vm.modZipImportError)
+        val imported = vm.currentProjectId!!
+        vm.openLiveChart()
+        assertEquals("""[[100,[["Hey!","0",""]]]]""", vm.livePsychEvents())
+        vm.saveLivePsychEvents("""[[200,[["Hey!","1",""]]]]""")
+        vm.saveLivePsychEvents("""[[300,[["Hey!","0",""]]]]""")
+        vm.closeLiveChart(); vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
+        vm.openLiveChart(); vm.undoLiveChartEdit()
+        assertEquals("""[[200,[["Hey!","1",""]]]]""", vm.livePsychEvents())
+        vm.closeLiveChart()
+        val output = File(app.cacheDir, "psych-events-export.zip")
+        vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val chart = org.json.JSONObject(files.getValue(vm.config.modFolder + "/data/test/test.json").toString(Charsets.UTF_8))
+        assertEquals(200, chart.getJSONArray("events").getJSONArray(0).getInt(0))
+    }
     private fun inspect() {
         vm.inspectModZip(zip())
         await { !vm.busy }
@@ -118,8 +149,12 @@ class ModZipConfirmationTest {
         val imported = vm.currentProjectId!!
         vm.openLiveChart()
         assertEquals("[]", vm.liveVSliceEvents())
-        vm.saveLiveVSliceEvents("""[{"t":100,"e":"FocusCamera","v":1}]""")
-        vm.saveLiveVSliceEvents("""[{"t":200,"e":"FocusCamera","v":0}]""")
+        var visual = com.fnfmodmaker.mod.changeVSliceEvent(vm.liveVSliceEvents(), null, "100", "FocusCamera", "1")
+        visual = com.fnfmodmaker.mod.duplicateVSliceEvent(visual, 0)
+        visual = com.fnfmodmaker.mod.removeVSliceEvent(visual, 1)
+        vm.saveLiveVSliceEvents(visual)
+        visual = com.fnfmodmaker.mod.changeVSliceEvent(visual, 0, "200", "FocusCamera", "0")
+        vm.saveLiveVSliceEvents(visual)
         vm.closeLiveChart(); vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
         vm.openLiveChart(); vm.undoLiveVSliceEvents()
         assertEquals("""[{"t":100,"e":"FocusCamera","v":1}]""", vm.liveVSliceEvents())

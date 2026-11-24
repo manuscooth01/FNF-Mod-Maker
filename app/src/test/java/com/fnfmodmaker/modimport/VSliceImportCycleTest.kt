@@ -423,6 +423,29 @@ class VSliceImportCycleTest {
         val next = ModBuilder.buildInternal(added, File(temp.root, "added-build"), temp.root, {}, services())
         assertTrue(JSONObject(File(next.rootDir, "data/songs/test/test-chart.json").readText()).getJSONObject("notes").has("easy"))
     }
+    @Test fun editedVSliceEventsSurvivePortableProjectAndZip() {
+        val store = ProjectStore(File(temp.root, "vs-events"), temp.root)
+        val prepared = prepare(zip(), store)
+        val events = """[{"t":1000,"e":"FocusCamera","v":{"char":1,"custom":123456789012345678901234567890}}]"""
+        val songs = prepared.config.songs.toMutableList()
+        songs[0] = songs[0].copy(vSliceEventsJson = events, vSliceEventsUndo = listOf("""[{"t":10,"e":"FocusCamera","v":1}]"""))
+        val id = store.publishModImport(prepared.stage, gson.toJsonTree(prepared.config.copy(songs = songs)).asJsonObject) { }
+        val backup = File(temp.root, "events.fnfproject")
+        val portable = PortableProject(temp.root)
+        portable.export(store.load(id).config, store.assets(id), backup)
+        val restored = store.publishImport(portable.prepare(backup, store.newImportStage()), portable) { }
+        val reopened = gson.fromJson(store.load(restored).config, ModConfig::class.java)
+        assertEquals(events, reopened.firstSong.vSliceEventsJson)
+        assertEquals(1, reopened.firstSong.vSliceEventsUndo.size)
+        val built = ModBuilder.buildInternal(reopened, File(temp.root, "events-out"), temp.root, {}, services())
+        val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val chart = com.google.gson.JsonParser.parseString(files.getValue("data/songs/test/test-chart.json").toString(Charsets.UTF_8)).asJsonObject
+        assertEquals(com.google.gson.JsonParser.parseString(events), chart.get("events"))
+        assertEquals("retained", chart.get("unknownChart").asString)
+    }
+
     @Test fun importedVSliceNoteTypeCanBeEditedAndSurvivesProjectAndZip() {
         val store = ProjectStore(File(temp.root, "vs-note-type"), temp.root)
         val prepared = prepare(zip(), store)

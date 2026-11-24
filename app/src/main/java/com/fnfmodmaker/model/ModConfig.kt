@@ -96,7 +96,10 @@ data class SongConfig(
     val vocalsOpponent: PickedAudio? = null,
     val chartAudioMix: ChartAudioMix = ChartAudioMix(),
     val vSliceOrigin: VSliceSongOrigin? = null,
-    val importedPsychFolder: String = ""
+    val importedPsychFolder: String = "",
+    /** V-Slice events are shared by all difficulties; null retains the imported original. */
+    val vSliceEventsJson: String? = null,
+    val vSliceEventsUndo: List<String> = emptyList()
 ) {
     val songFolder: String get() = psychSongPath(songName)
     val bpmValue: Int get() = bpm.toIntOrNull() ?: 0

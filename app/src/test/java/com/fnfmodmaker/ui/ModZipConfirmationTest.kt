@@ -112,6 +112,25 @@ class ModZipConfirmationTest {
         assertTrue(File(vm.config.firstSong.instrumental!!.path).isFile)
         assertEquals(vm.currentProjectId, File(app.filesDir, "projects/active.txt").readText())
     }
+    @Test fun vSliceEventEditsPersistUndoAndExport() {
+        val previous = vm.currentProjectId!!
+        vm.inspectModZip(zip()); await { !vm.busy }; vm.confirmModZipImport(); await { !vm.busy }
+        val imported = vm.currentProjectId!!
+        vm.openLiveChart()
+        assertEquals("[]", vm.liveVSliceEvents())
+        vm.saveLiveVSliceEvents("""[{"t":100,"e":"FocusCamera","v":1}]""")
+        vm.saveLiveVSliceEvents("""[{"t":200,"e":"FocusCamera","v":0}]""")
+        vm.closeLiveChart(); vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
+        vm.openLiveChart(); vm.undoLiveVSliceEvents()
+        assertEquals("""[{"t":100,"e":"FocusCamera","v":1}]""", vm.liveVSliceEvents())
+        vm.closeLiveChart()
+        val output = File(app.cacheDir, "events-export.zip")
+        vm.export(Uri.fromFile(output)); await { !vm.busy }; assertNull(vm.error)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
+        val chart = org.json.JSONObject(files.getValue(vm.config.modFolder + "/data/songs/tarde/tarde-chart.json").toString(Charsets.UTF_8))
+        assertEquals(100, chart.getJSONArray("events").getJSONObject(0).getInt("t"))
+    }
     @Test fun androidViewModelReopensAndExportsImportedCharacterWithoutChangingMetadata() {
         val previous = vm.currentProjectId!!
         vm.inspectModZip(zip(withCharacter = true))

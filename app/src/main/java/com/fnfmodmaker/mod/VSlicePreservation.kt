@@ -118,7 +118,11 @@ internal fun buildImportedVSliceChart(config: ModConfig, song: SongConfig, appRo
     val drafts = difficulties.mapNotNull { diff -> config.getChart(song.songFolder, diff)?.let { diff to it } }.toMap()
     val retained = difficulties.filter { it !in drafts && it in origin.uneditableDifficulties }.toSet()
     val speed = if (song.speed != origin.originalSpeed) song.speedValue else null
-    return patchVSliceChart(originalVSliceText(config, origin.chartPath, appRoot, true), drafts, origin.editableDifficulties, speed, retained)
+    val patched = patchVSliceChart(originalVSliceText(config, origin.chartPath, appRoot, true), drafts, origin.editableDifficulties, speed, retained)
+    val events = song.vSliceEventsJson ?: return patched
+    val tree = com.google.gson.JsonParser.parseString(patched).asJsonObject
+    tree.add("events", com.google.gson.JsonParser.parseString(validateVSliceEvents(events)))
+    return tree.toString()
 }
 
 /** Free editing patches known fields while leaving unrelated metadata in the original tree. */

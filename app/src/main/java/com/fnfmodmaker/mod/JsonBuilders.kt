@@ -84,13 +84,15 @@ object JsonBuilders {
                 vsliceNotes(song, durationMs)
             })
         }
-        return JSONObject()
+        val result = JSONObject()
             .put("version", "2.0.0")
             .put("scrollSpeed", scrollSpeed)
             .put("events", JSONArray())
             .put("notes", notes)
             .put("generatedBy", GENERATED_BY)
-            .toString(2)
+        val tree = com.google.gson.JsonParser.parseString(result.toString()).asJsonObject
+        song.vSliceEventsJson?.let { tree.add("events", com.google.gson.JsonParser.parseString(validateVSliceEvents(it))) }
+        return tree.toString()
     }
 
     /** Versión legacy sin ModConfig (para compatibilidad). */

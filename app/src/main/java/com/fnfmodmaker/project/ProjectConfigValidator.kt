@@ -42,6 +42,21 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 }
             }
         }
+        value.getAsJsonArray("songs").forEach { item ->
+            require(item.isJsonObject) { "Canción inválida." }
+            val song = item.asJsonObject
+            song.get("vSliceEventsJson")?.takeUnless { it.isJsonNull }?.let {
+                require(it.isJsonPrimitive && it.asJsonPrimitive.isString) { "Eventos V-Slice inválidos." }
+                com.fnfmodmaker.mod.validateVSliceEvents(it.asString)
+            }
+            song.get("vSliceEventsUndo")?.let { undo ->
+                require(undo.isJsonArray && undo.asJsonArray.size() <= 10) { "Historial de eventos inválido." }
+                undo.asJsonArray.forEach { entry ->
+                    require(entry.isJsonPrimitive && entry.asJsonPrimitive.isString) { "Historial de eventos inválido." }
+                    com.fnfmodmaker.mod.validateVSliceEvents(entry.asString)
+                }
+            }
+        }
         val library = value.getAsJsonArray("characterLibrary")
         require(library.size() in 1..64) { "Biblioteca de personajes inválida." }
         val ids = mutableSetOf<String>()

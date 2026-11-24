@@ -232,7 +232,34 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         text = { Text("Se eliminarán el chart y la dificultad de la canción. Las demás dificultades no cambian; el original del proyecto se conserva.") },
         confirmButton = { TextButton(onClick = { vm.deleteLiveCustomChart(); confirmDelete = false }) { Text("Borrar") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } })
+    if (vm.config.engine.includesVSlice) VSliceEventsEditor(vm)
     if (chart != null && chart.notes.isNotEmpty()) RecentNotes(vm, chart.notes)
+}
+
+@Composable
+private fun VSliceEventsEditor(vm: WizardViewModel) {
+    var open by remember { mutableStateOf(false) }
+    var value by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val enabled = !vm.livePlaying && !vm.liveLoading && !vm.busy && vm.liveSong != null
+    TextButton(onClick = {
+        runCatching { vm.liveVSliceEvents() }.onSuccess { value = it; error = null; open = true }
+            .onFailure { error = it.message ?: "No se pudieron leer los eventos." }
+    }, enabled = enabled) { Text("Eventos V-Slice (JSON)") }
+    TextButton(onClick = {
+        runCatching { vm.undoLiveVSliceEvents() }.onSuccess { error = null }.onFailure { error = it.message }
+    }, enabled = enabled && (vm.liveSong?.vSliceEventsUndo?.isNotEmpty() == true)) { Text("Deshacer eventos") }
+    if (!open) error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text("Eventos V-Slice") },
+        text = { Column {
+            Text("Lista compartida por todas las dificultades. Usa objetos con t (milisegundos), e (tipo) y v (valor). Ejemplo: [{\"t\":1000,\"e\":\"FocusCamera\",\"v\":1}]. Los tipos y valores dependen del motor y del mod.")
+            OutlinedTextField(value = value, onValueChange = { value = it; error = null }, label = { Text("Lista JSON") }, modifier = Modifier.fillMaxWidth().height(220.dp))
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        } },
+        confirmButton = { TextButton(onClick = {
+            runCatching { vm.saveLiveVSliceEvents(value) }.onSuccess { open = false }.onFailure { error = it.message ?: "Eventos inválidos." }
+        }) { Text("Guardar") } },
+        dismissButton = { TextButton(onClick = { open = false }) { Text("Cancelar") } })
 }
 
 @Composable

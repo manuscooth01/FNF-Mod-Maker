@@ -430,6 +430,40 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
     val liveCanPlay: Boolean get() = liveChartAvailable && liveSong?.instrumental?.let { File(it.path).isFile } == true
 
+    /** V-Slice events belong to the song chart, not an individual difficulty. */
+    internal fun liveVSliceEvents(): String {
+        val song = liveSong ?: error("Selecciona una canción.")
+        song.vSliceEventsJson?.let { return com.fnfmodmaker.mod.validateVSliceEvents(it) }
+        val origin = song.vSliceOrigin ?: return "[]"
+        val source = com.fnfmodmaker.mod.originalVSliceText(config, origin.chartPath, File(getApplication<Application>().applicationInfo.dataDir), true)
+        com.fnfmodmaker.modimport.readVSliceJson(source, "chart original")
+        com.fnfmodmaker.mod.rejectDuplicateJsonKeys(source)
+        val tree = com.google.gson.JsonParser.parseString(source).asJsonObject
+        val events = tree.get("events") ?: return "[]"
+        return com.fnfmodmaker.mod.validateVSliceEvents(events.toString())
+    }
+    internal fun saveLiveVSliceEvents(text: String) {
+        check(config.engine.includesVSlice && !livePlaying && !liveLoading && !busy) { "Pausa el editor antes de guardar." }
+        val song = liveSong ?: error("Selecciona una canción.")
+        val edited = com.fnfmodmaker.mod.validateVSliceEvents(text)
+        val before = liveVSliceEvents()
+        if (edited == before) return
+        val songs = config.songs.toMutableList()
+        songs[liveSongIndex] = song.copy(vSliceEventsJson = edited, vSliceEventsUndo = (song.vSliceEventsUndo + before).takeLast(10))
+        config = config.copy(songs = songs)
+        scheduleAutoSave(); forceAutoSave()
+    }
+    internal fun undoLiveVSliceEvents() {
+        check(config.engine.includesVSlice && !livePlaying && !liveLoading && !busy) { "Pausa el editor antes de deshacer." }
+        val song = liveSong ?: error("Selecciona una canción.")
+        val previous = song.vSliceEventsUndo.lastOrNull() ?: error("No hay cambios de eventos para deshacer.")
+        com.fnfmodmaker.mod.validateVSliceEvents(previous)
+        val songs = config.songs.toMutableList()
+        songs[liveSongIndex] = song.copy(vSliceEventsJson = previous, vSliceEventsUndo = song.vSliceEventsUndo.dropLast(1))
+        config = config.copy(songs = songs)
+        scheduleAutoSave(); forceAutoSave()
+    }
+
     internal fun openLiveChart() {
         closeLiveChart()
         liveSongIndex = activeSongIndex.coerceIn(0, (config.songs.size - 1).coerceAtLeast(0))

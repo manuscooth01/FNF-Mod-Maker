@@ -155,6 +155,8 @@ class ModZipConfirmationTest {
         val previous = vm.currentProjectId!!
         vm.inspectModZip(zip()); await { !vm.busy }; vm.confirmModZipImport(); await { !vm.busy }
         val imported = vm.currentProjectId!!
+        assertTrue(vm.duplicateActiveDifficulty("normal", "insane"))
+        assertFalse(vm.duplicateActiveDifficulty("normal", "insane"))
         vm.openLiveChart()
         assertEquals("[]", vm.liveVSliceEvents())
         var visual = com.fnfmodmaker.mod.changeVSliceEvent(vm.liveVSliceEvents(), null, "100", "FocusCamera", "1")
@@ -164,6 +166,7 @@ class ModZipConfirmationTest {
         visual = com.fnfmodmaker.mod.changeVSliceEvent(visual, 0, "200", "FocusCamera", "0")
         vm.saveLiveVSliceEvents(visual)
         vm.closeLiveChart(); vm.goHome(); vm.switchProject(previous); await { !vm.busy }; vm.switchProject(imported); await { !vm.busy }
+        assertEquals(200L, vm.config.getChart("tarde", "insane")!!.notes.single().timeMs)
         vm.openLiveChart(); vm.undoLiveVSliceEvents()
         assertEquals("""[{"t":100,"e":"FocusCamera","v":1}]""", vm.liveVSliceEvents())
         vm.redoLiveVSliceEvents()
@@ -176,6 +179,7 @@ class ModZipConfirmationTest {
         java.util.zip.ZipInputStream(output.inputStream()).use { z -> while (true) { val e = z.nextEntry ?: break; files[e.name] = z.readBytes() } }
         val chart = org.json.JSONObject(files.getValue(vm.config.modFolder + "/data/songs/tarde/tarde-chart.json").toString(Charsets.UTF_8))
         assertEquals(100, chart.getJSONArray("events").getJSONObject(0).getInt("t"))
+        assertEquals(200, chart.getJSONObject("notes").getJSONArray("insane").getJSONObject(0).getInt("t"))
     }
     @Test fun androidViewModelReopensAndExportsImportedCharacterWithoutChangingMetadata() {
         val previous = vm.currentProjectId!!

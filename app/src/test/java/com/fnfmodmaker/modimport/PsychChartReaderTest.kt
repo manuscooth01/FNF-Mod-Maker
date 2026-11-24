@@ -29,6 +29,23 @@ class PsychChartReaderTest {
         assertEquals(1, note.getInt(1)); assertEquals(200, note.getInt(2))
         assertEquals(draft.notes, readPsychChart(encoded.toString(), "test", "normal").notes)
     }
+    @Test fun psych073ExportUsesSectionRelativeLanesAndWrappedSong() {
+        val song = com.fnfmodmaker.model.SongConfig(songName = "test", bpm = "150", difficulties = setOf("normal"), practiceNotes = false)
+        val draft = com.fnfmodmaker.model.ChartDraft(songFolder = "test", difficulty = "normal", bpm = 150,
+            notes = listOf(ChartNote(0, 0), ChartNote(2000, 0), ChartNote(2100, 4)))
+        val config = com.fnfmodmaker.model.ModConfig(engine = com.fnfmodmaker.model.TargetEngine.PSYCH,
+            psychChartFormat = com.fnfmodmaker.model.PsychChartFormat.PSYCH_073, songs = listOf(song)).withChart("test", "normal", draft)
+        val encoded = JSONObject(com.fnfmodmaker.mod.JsonBuilders.psychChart(config, song, 4000, "normal"))
+        val body = encoded.getJSONObject("song")
+        val first = body.getJSONArray("notes").getJSONObject(0)
+        val second = body.getJSONArray("notes").getJSONObject(1)
+        assertTrue(first.getBoolean("mustHitSection")); assertFalse(second.getBoolean("mustHitSection"))
+        assertEquals(0, first.getJSONArray("sectionNotes").getJSONArray(0).getInt(1))
+        assertEquals(4, second.getJSONArray("sectionNotes").getJSONArray(0).getInt(1))
+        assertEquals(0, second.getJSONArray("sectionNotes").getJSONArray(1).getInt(1))
+        assertEquals(draft.notes, readPsychChart(encoded.toString(), "test", "normal").notes)
+    }
+
     @Test fun unsupportedGameplayFailsExplicitly() {
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(chart("", true, ",[300,1,0,\"Hurt Note\"]"), "test", "normal") }
         val events = chart("", true).replace("\"events\":[]", "\"events\":[[100,[]]]")

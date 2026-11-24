@@ -23,6 +23,12 @@ enum class TargetEngine(val label: String, val description: String) {
     val includesPsych: Boolean get() = this == PSYCH || this == BOTH
 }
 
+/** Chart wire formats differ in note-lane semantics and root JSON shape. */
+enum class PsychChartFormat(val label: String) {
+    PSYCH_V1("Psych 1.0 · psych_v1"),
+    PSYCH_073("Psych 0.7.3 · clásico")
+}
+
 val ALL_DIFFICULTIES: List<String> = listOf("easy", "normal", "hard")
 fun isValidDifficulty(id: String): Boolean = id.matches(Regex("[a-z0-9][a-z0-9_-]{0,31}"))
 
@@ -115,6 +121,7 @@ enum class CharacterRole(val label: String) { PLAYER("BF"), OPPONENT("DAD"), GIR
  */
 data class ModConfig(
     val engine: TargetEngine = TargetEngine.VSLICE,
+    val psychChartFormat: PsychChartFormat = PsychChartFormat.PSYCH_V1,
 
     // Datos del mod
     val modTitle: String = "",

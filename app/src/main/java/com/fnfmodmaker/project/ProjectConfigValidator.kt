@@ -32,6 +32,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
         require(value.get("songs")?.isJsonArray == true && value.get("characterLibrary")?.isJsonArray == true && value.get("stageDraft")?.isJsonObject == true && value.get("charts")?.isJsonObject == true) { "Faltan datos del proyecto." }
         compare(value, configJson(ModConfig()))
         value.get("engine")?.let { require(it.asString in TargetEngine.entries.map { engine -> engine.name }) { "Motor desconocido." } }
+        value.get("psychChartFormat")?.let { require(it.asString in PsychChartFormat.entries.map { format -> format.name }) { "Formato Psych desconocido." } }
         fun objectArray(parent: com.google.gson.JsonObject, key: String, template: com.google.gson.JsonObject, extra: (com.google.gson.JsonObject) -> Unit = {}) {
             parent.get(key)?.let { array ->
                 require(array.isJsonArray) { "$key debe ser una lista." }

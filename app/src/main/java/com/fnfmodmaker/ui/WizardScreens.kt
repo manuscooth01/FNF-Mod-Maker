@@ -197,6 +197,13 @@ private fun WizardModStep(vm: WizardViewModel, config: com.fnfmodmaker.model.Mod
             EngineCard(engine, config.engine == engine, { vm.setEngine(engine) })
         }
     }
+    if (config.engine.includesPsych) {
+        SectionTitle("Formato de chart Psych")
+        com.fnfmodmaker.model.PsychChartFormat.entries.forEach { format ->
+            FilterChip(selected = config.psychChartFormat == format, onClick = { vm.setPsychChartFormat(format) }, enabled = !vm.busy, label = { Text(format.label) })
+        }
+        Text("0.7.3 usa carriles relativos por sección; psych_v1 usa carriles absolutos. Los forks pueden diferir.", style = MaterialTheme.typography.labelSmall)
+    }
     SectionTitle("Detalles opcionales")
     Field("Autor", config.author, vm::setAuthor, enabled = !vm.busy)
     Spacer(Modifier.height(10.dp))

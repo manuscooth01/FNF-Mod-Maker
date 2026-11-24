@@ -1938,6 +1938,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         scheduleAutoSave()
     }
 
+    internal fun setPsychChartFormat(value: com.fnfmodmaker.model.PsychChartFormat) {
+        if (busy) return
+        config = config.copy(psychChartFormat = value); scheduleAutoSave()
+    }
+
     internal fun setModTitle(value: String) {
         config = if (modIdEdited) {
             config.copy(modTitle = value)

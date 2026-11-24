@@ -199,6 +199,8 @@ object ModBuilder {
 
         // ---------------- Psych Engine ----------------
         if (config.engine.includesPsych) {
+            if (config.psychChartFormat == com.fnfmodmaker.model.PsychChartFormat.PSYCH_073 && config.songs.any { it.offsetValue != 0 })
+                warnings.add("Psych 0.7.3 no aplica el offset de chart generado; ajusta el desfase en el juego.")
             onProgress("Escribiendo archivos de Psych Engine…")
             writeText(root, "pack.json", JsonBuilders.psychPack(config))
             for ((name, code) in config.psychScripts) {

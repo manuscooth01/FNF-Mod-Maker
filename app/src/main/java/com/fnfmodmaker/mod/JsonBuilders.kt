@@ -174,11 +174,32 @@ object JsonBuilders {
         difficulty: String = song.orderedDifficulties.firstOrNull() ?: "normal"): String {
         val customChart = config.getChart(song.songFolder, difficulty)
         if (customChart != null) {
-            return customChart.copy(songFolder = song.songName.trim(), bpm = song.bpmValue, scrollSpeed = song.speedValue,
+            val json = customChart.copy(songFolder = song.songName.trim(), bpm = song.bpmValue, scrollSpeed = song.speedValue,
                 offsetMs = song.offsetValue, needsVoices = song.hasVocals, player1 = song.player,
                 player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych).toPsychJson()
+            return if (config.psychChartFormat == com.fnfmodmaker.model.PsychChartFormat.PSYCH_073) psych073Chart(json) else json
         }
-        return psychChartGenerated(song, durationMs)
+        val json = psychChartGenerated(song, durationMs)
+        return if (config.psychChartFormat == com.fnfmodmaker.model.PsychChartFormat.PSYCH_073) psych073Chart(json) else json
+    }
+
+    /** Psych 0.7.3 reads Json.parse(raw).song and treats lanes as relative to mustHitSection. */
+    internal fun psych073Chart(v1: String): String {
+        val song = JSONObject(v1)
+        val sections = song.getJSONArray("notes")
+        for (i in 0 until sections.length()) {
+            val section = sections.getJSONObject(i)
+            val mustHit = section.optBoolean("mustHitSection", false)
+            val rows = section.getJSONArray("sectionNotes")
+            for (j in 0 until rows.length()) {
+                val row = rows.getJSONArray(j)
+                val lane = row.getInt(1)
+                require(lane in 0..7) { "Carril Psych inválido." }
+                if (!mustHit) row.put(1, (lane + 4) % 8)
+            }
+        }
+        song.remove("format")
+        return JSONObject().put("song", song).toString(2)
     }
 
     /** Versión legacy sin ModConfig (para compatibilidad). */

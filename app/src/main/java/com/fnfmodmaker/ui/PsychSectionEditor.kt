@@ -9,7 +9,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.fnfmodmaker.model.*
-import kotlin.math.roundToLong
 
 /** Edits the section structure belonging to one chart/difficulty, never its V-Slice tempo. */
 @Composable
@@ -74,15 +73,7 @@ internal fun PsychSectionEditor(vm: WizardViewModel) {
                     }, enabled = enabled && layout.size < 1000) { Text("Añadir al final") }
                     TextButton(onClick = {
                         runCatching {
-                            val next = layout + section
-                            var combined = chart.notes
-                            val shift = spans.last().endMs - span.startMs
-                            for (note in notes) {
-                                val copy = note.copy(timeMs = (note.timeMs + shift).roundToLong())
-                                combined = appendRecordedNote(combined, copy) ?: error("La copia de notas colisiona con otra nota.")
-                            }
-                            require(combined.size <= 100_000) { "Demasiadas notas." }
-                            vm.saveLivePsychSections(next, combined); selected = next.lastIndex; error = null
+                            vm.duplicateLivePsychSection(selected); selected = layout.size; error = null
                         }.onFailure { error = it.message ?: "No se pudo duplicar." }
                     }, enabled = enabled && layout.size < 1000) { Text("Duplicar al final") }
                     TextButton(onClick = { remove = true }, enabled = enabled && layout.size > 1) { Text("Eliminar") }

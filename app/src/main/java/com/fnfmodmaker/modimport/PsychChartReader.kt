@@ -17,6 +17,13 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
     require(depth == 0 && !quoted) { "JSON incompleto." }
     val outer = JSONObject(text)
     val song = outer.optJSONObject("song") ?: outer
+    listOf("bpm", "speed", "offset").forEach { key ->
+        require(!song.has(key) || song.isNull(key) || song.opt(key) is Number) { "$key debe ser numérico." }
+    }
+    listOf("player1", "player2", "gfVersion", "player3", "stage", "format").forEach { key ->
+        require(!song.has(key) || song.isNull(key) || song.opt(key) is String) { "$key debe ser texto." }
+    }
+    require(!song.has("needsVoices") || song.isNull("needsVoices") || song.opt("needsVoices") is Boolean) { "needsVoices debe ser booleano." }
     val format = song.optString("format", "")
     val absoluteLanes = format == "psych_v1"
     require(format.isEmpty() || absoluteLanes) { "Formato de chart no reconocido: $format" }
@@ -37,6 +44,8 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
             "La velocidad Psych tiene una precisión que no se puede conservar sin pérdida."
         }
     }
+    val originalName = body.get("song")
+    require(originalName?.isJsonPrimitive == true && originalName.asJsonPrimitive.isString) { "El nombre de canción Psych no es texto." }
     val events = body.get("events")?.takeUnless { it.isJsonNull }?.toString() ?: "[]"
     val eventJson = com.fnfmodmaker.mod.validatePsychEvents(events)
     val sections = song.optJSONArray("notes") ?: error("Faltan secciones del chart.")
@@ -89,7 +98,7 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
         "La nota en ${note.timeMs} ms pertenece a otra sección en el archivo; no se puede reagrupar sin pérdida."
     } }
     val extras = body.deepCopy()
-    listOf("song", "notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format").forEach { extras.remove(it) }
+    listOf("notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format").forEach { extras.remove(it) }
     com.fnfmodmaker.model.psychObject(extras.toString(), "propiedades Psych")
     return ChartDraft(songFolder = folder, difficulty = difficulty, notes = notes, scrollSpeed = speed.toFloat(), bpm = bpmDouble.toInt(),
         offsetMs = offset.toInt(), needsVoices = song.optBoolean("needsVoices", true), player1 = song.optString("player1", "bf"),

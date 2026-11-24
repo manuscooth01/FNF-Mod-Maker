@@ -533,6 +533,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         draft.toPsychJson()
         storeLiveChartTransition(null, draft); scheduleAutoSave(); forceAutoSave()
     }
+    internal fun duplicateLivePsychSection(index: Int) {
+        val chart = liveChart ?: error("Selecciona un chart Psych.")
+        val song = liveSong ?: error("Selecciona una canción.")
+        val copy = com.fnfmodmaker.model.duplicatePsychSection(chart, index, song.bpmValue)
+        saveLivePsychSections(copy.psychLayout, copy.notes)
+    }
     internal fun saveLivePsychSections(layout: List<com.fnfmodmaker.model.PsychSectionData>, notes: List<ChartNote>? = null) {
         check(config.engine.includesPsych && !busy && !livePlaying && !liveLoading && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
         val song = liveSong ?: error("Selecciona una canción.")

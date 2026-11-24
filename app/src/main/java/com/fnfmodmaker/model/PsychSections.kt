@@ -4,6 +4,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlin.math.floor
+import kotlin.math.roundToLong
 
 /** Section start and length are derived from the preceding sections and the initial BPM. */
 data class PsychSectionData(
@@ -82,9 +83,10 @@ internal fun psychSectionsToJson(chart: ChartDraft): String {
         sections.add(obj)
     }
     val song = if (chart.psychSongExtras.isBlank()) JsonObject() else psychObject(chart.psychSongExtras, "propiedades de canción Psych")
-    val reserved = setOf("song", "notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format")
+    val reserved = setOf("notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format")
     require(song.keySet().none { it in reserved }) { "Propiedades Psych ambiguas." }
-    song.addProperty("song", chart.songFolder); song.add("notes", sections)
+    song.get("song")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) { "Nombre original Psych inválido." } }
+    song.addProperty("song", song.get("song")?.asString ?: chart.songFolder); song.add("notes", sections)
     song.add("events", JsonParser.parseString(if (chart.psychEventsJson.isBlank()) "[]" else com.fnfmodmaker.mod.validatePsychEvents(chart.psychEventsJson)))
     song.addProperty("bpm", chart.bpm); song.addProperty("needsVoices", chart.needsVoices); song.addProperty("speed", chart.scrollSpeed)
     song.addProperty("offset", chart.offsetMs); song.addProperty("player1", chart.player1); song.addProperty("player2", chart.player2)
@@ -106,4 +108,22 @@ internal fun materializePsychLayout(chart: ChartDraft, initialBpm: Int): List<Ps
     val count = (last / (240_000.0 / initialBpm)).toInt() + 1
     require(count in 1..1000) { "Demasiadas secciones Psych." }
     return List(count) { PsychSectionData(mustHit = it % 2 == 0, bpm = initialBpm.toDouble()) }
+}
+
+/** Append a copy of the section and its notes; existing timestamps never move. */
+internal fun duplicatePsychSection(chart: ChartDraft, index: Int, bpm: Int): ChartDraft {
+    val layout = materializePsychLayout(chart, bpm)
+    require(index in layout.indices && layout.size < 1000) { "Sección no disponible o límite alcanzado." }
+    val spans = psychSectionSpans(layout, bpm)
+    val next = layout + layout[index]
+    val nextSpans = psychSectionSpans(next, bpm)
+    val shift = spans.last().endMs - spans[index].startMs
+    val copies = chart.notes.filter { psychSectionIndex(spans, it.timeMs) == index }.map { note ->
+        note.copy(timeMs = (note.timeMs + shift).roundToLong()).also {
+            require(psychSectionIndex(nextSpans, it.timeMs) == next.lastIndex) { "Una nota copiada cae fuera de la nueva sección al redondear; no se duplicó." }
+        }
+    }
+    val combined = replaceGridNotes(chart.notes, emptyList(), copies, 86_400_001L)
+        ?: error("No se puede duplicar: límite de notas, colisión o sostenido fuera de rango.")
+    return chart.copy(psychLayout = next, notes = combined)
 }

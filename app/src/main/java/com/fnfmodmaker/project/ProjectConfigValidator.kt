@@ -128,7 +128,8 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 if (extras.asString.isNotBlank()) {
                     require((chart.get("psychLayout")?.takeIf { it.isJsonArray }?.asJsonArray?.size() ?: 0) > 0) { "Propiedades Psych sin secciones." }
                     val obj = com.fnfmodmaker.model.psychObject(extras.asString, "propiedades Psych")
-                    require(obj.keySet().none { it in setOf("song", "notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format") }) { "Propiedades Psych ambiguas." }
+                    require(obj.keySet().none { it in setOf("notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format") }) { "Propiedades Psych ambiguas." }
+                    obj.get("song")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) { "Nombre original Psych inválido." } }
                 }
             }
         }

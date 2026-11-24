@@ -89,7 +89,7 @@ data class ChartDraft(
         if (psychLayout.isNotEmpty() && runCatching { psychSectionSpans(psychLayout, bpm) }.isFailure) add("secciones Psych inválidas")
         if (psychSongExtras.isNotBlank() && (psychLayout.isEmpty() || runCatching {
             val obj = psychObject(psychSongExtras, "propiedades Psych")
-            require(obj.keySet().none { it in setOf("song", "notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format") })
+            require(obj.keySet().none { it in setOf("notes", "events", "bpm", "needsVoices", "speed", "offset", "player1", "player2", "gfVersion", "stage", "format") })
         }.isFailure)) add("propiedades Psych inválidas")
         if (psychEventsJson.isNotBlank() && runCatching { com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson) }.isFailure) add("eventos Psych inválidos")
         if (sections.isNotEmpty()) add("secciones personalizadas")

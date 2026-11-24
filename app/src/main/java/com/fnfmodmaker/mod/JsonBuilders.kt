@@ -191,7 +191,12 @@ object JsonBuilders {
             val speed = if (base != null && song.speedValue == base.scrollSpeed) customChart.scrollSpeed else song.speedValue
             val offset = if (base != null && song.offsetValue == base.offsetMs) customChart.offsetMs else song.offsetValue
             val voices = if (imported && song.hasVocals == originalVoice) customChart.needsVoices else song.hasVocals
-            val json = customChart.copy(songFolder = song.songName.trim(), bpm = song.bpmValue, scrollSpeed = speed,
+            val originalName = if (imported && song.songName.trim() == song.importedPsychFolder && customChart.psychSongExtras.isNotBlank()) {
+                com.fnfmodmaker.model.psychObject(customChart.psychSongExtras, "propiedades Psych").get("song")?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+            } else null
+            val selectedName = originalName ?: song.songName.trim()
+            val extras = if (customChart.psychSongExtras.isNotBlank()) com.fnfmodmaker.model.psychObject(customChart.psychSongExtras, "propiedades Psych").apply { addProperty("song", selectedName) }.toString() else ""
+            val json = customChart.copy(songFolder = selectedName, psychSongExtras = extras, bpm = song.bpmValue, scrollSpeed = speed,
                 offsetMs = offset, needsVoices = voices, player1 = song.player,
                 player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych).toPsychJson()
             return if (config.psychChartFormat == com.fnfmodmaker.model.PsychChartFormat.PSYCH_073) psych073Chart(json) else json

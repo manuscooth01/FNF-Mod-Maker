@@ -31,11 +31,13 @@ class PsychSectionsTest {
         }
     }
     @Test fun importedDifficultyMetadataIsNotSilentlyReplacedBySharedSongDefaults() {
-        val normal = readPsychChart(chart, "test", "normal").copy(scrollSpeed = 1.0f, offsetMs = 0, needsVoices = true)
+        val normal = readPsychChart(chart.replace("\"song\":\"test\"", "\"song\":\"Original Song\""), "test", "normal").copy(scrollSpeed = 1.0f, offsetMs = 0, needsVoices = true)
+        assertEquals("Original Song", JsonParser.parseString(normal.toPsychJson()).asJsonObject.get("song").asString)
         val hard = normal.copy(difficulty = "hard", scrollSpeed = 1.5f, offsetMs = 12, needsVoices = false)
         val song = SongConfig(songName = "test", bpm = "120", speed = "1.0", offsetMs = "0", importedPsychFolder = "test", difficulties = setOf("normal", "hard"))
         val config = ModConfig(engine = TargetEngine.PSYCH, songs = listOf(song)).withChart("test", "normal", normal).withChart("test", "hard", hard)
         val out = JsonParser.parseString(JsonBuilders.psychChart(config, song, 6000, "hard")).asJsonObject
+        assertEquals("Original Song", out.get("song").asString)
         assertEquals(1.5, out.get("speed").asDouble, 0.0)
         assertEquals(12, out.get("offset").asInt)
         assertFalse(out.get("needsVoices").asBoolean)

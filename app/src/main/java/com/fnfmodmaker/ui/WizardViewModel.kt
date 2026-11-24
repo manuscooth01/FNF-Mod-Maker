@@ -398,6 +398,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private data class LiveHold(val id: Long, val direction: Int, val note: ChartNote, val pressedAt: Long)
     private val liveHolds = mutableMapOf<Int, LiveHold>()
     private var nextLiveHoldId = 0L
+    // Snapshot once per recording session: tempo cannot be edited during playback.
+    private var liveRecordingGrid: com.fnfmodmaker.model.TouchGrid? = null
+    internal fun recordingTempoGrid(): com.fnfmodmaker.model.TouchGrid? {
+        if (config.engine != TargetEngine.VSLICE || liveSnap == com.fnfmodmaker.model.RecordingSnap.FREE) return null
+        val song = liveSong ?: error("Selecciona una canción.")
+        return com.fnfmodmaker.model.TouchGrid(song.bpmValue, liveSnap.divisionsPerBeat,
+            liveDurationMs.coerceAtLeast(1L), com.fnfmodmaker.mod.vSliceGridTempos(liveVSliceTempo()))
+    }
     val livePreviewNotes: List<ChartNote> get() {
         val chart = liveChart ?: return emptyList()
         val song = liveSong ?: return chart.notes
@@ -405,7 +413,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         return chart.notes.map { note ->
             val hold = liveHolds.values.firstOrNull { it.note == note } ?: return@map note
             note.copy(lengthMs = com.fnfmodmaker.model.recordedHoldLength(note, hold.pressedAt, livePositionMs,
-                liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, chart.notes))
+                liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, chart.notes, liveRecordingGrid))
         }
     }
 
@@ -668,6 +676,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (record && liveSnap != com.fnfmodmaker.model.RecordingSnap.FREE && (liveSong?.bpmValue ?: 0) !in 1..400) {
             liveError = "Indica un BPM válido para usar el ajuste a la cuadrícula."; return
         }
+        liveRecordingGrid = if (record) try { recordingTempoGrid() } catch (e: Exception) {
+            liveError = "No se puede ajustar la grabación al mapa de tempo: ${e.message ?: "datos inválidos"}."; return
+        } else null
         liveError = null; liveNotice = null
         if (!acquireLiveFocus()) { liveError = "No se pudo obtener el audio; cierra otras aplicaciones de música e inténtalo de nuevo."; return }
         val existing = livePlayer
@@ -765,7 +776,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (!liveRecording || !livePlaying || direction !in 0..3 || !liveChartAvailable || direction in liveHolds) return null
         val song = liveSong ?: return null
         val position = runCatching { livePlayer?.currentPosition?.toLong() }.getOrNull() ?: return null
-        val time = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs)
+        val time = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, liveRecordingGrid)
         val note = ChartNote(timeMs = time, lane = direction + if (liveOpponent) 4 else 0)
         val existing = config.getChart(song.songFolder, liveDifficulty)
         val draft = existing ?: ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
@@ -797,14 +808,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val index = chart.notes.indexOf(hold.note)
         if (index < 0) return
         val length = com.fnfmodmaker.model.recordedHoldLength(hold.note, hold.pressedAt, position,
-            liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, chart.notes)
+            liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, chart.notes, liveRecordingGrid)
         if (length == 0L) return
         val updated = hold.note.copy(lengthMs = length)
         val notes = chart.notes.toMutableList().apply { this[index] = updated }
         storeLiveChartTransition(chart, chart.copy(notes = notes))
         val undoIndex = liveUndo.indexOfLast { it.note == hold.note }
         if (undoIndex >= 0) liveUndo[undoIndex] = liveUndo[undoIndex].copy(note = updated)
-        val desired = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs) - hold.note.timeMs
+        val desired = com.fnfmodmaker.model.recordedNoteTime(position, liveCorrectionMs, song.bpmValue, liveSnap, liveDurationMs, liveRecordingGrid) - hold.note.timeMs
         if (length < desired) liveNotice = "Sostenido limitado para no cubrir otra nota del mismo carril."
         scheduleAutoSave()
     }

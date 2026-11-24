@@ -7,10 +7,15 @@ enum class RecordingSnap(val label: String, val divisionsPerBeat: Int) {
 }
 
 /** Timestamp from the audio player's clock, corrected and optionally quantized. */
-fun recordedNoteTime(positionMs: Long, correctionMs: Int, bpm: Int, snap: RecordingSnap, durationMs: Long): Long {
+fun recordedNoteTime(positionMs: Long, correctionMs: Int, bpm: Int, snap: RecordingSnap, durationMs: Long, tempoGrid: TouchGrid? = null): Long {
     val maximum = if (durationMs > 0) durationMs - 1 else Long.MAX_VALUE
     val time = (positionMs.coerceAtLeast(0L) + correctionMs.toLong()).coerceIn(0L, maximum)
     if (snap == RecordingSnap.FREE || bpm !in 1..400) return time
+    if (tempoGrid != null) {
+        val beat = tempoGrid.beatAt(time.toDouble())
+        val snappedBeat = (beat * snap.divisionsPerBeat).roundToLong().toDouble() / snap.divisionsPerBeat
+        return tempoGrid.timeAtBeat(snappedBeat).roundToLong().coerceIn(0L, maximum)
+    }
     val interval = 60_000.0 / bpm / snap.divisionsPerBeat
     return ((time / interval).roundToLong() * interval).roundToLong().coerceIn(0L, maximum)
 }
@@ -33,9 +38,9 @@ fun removeRecordedNote(notes: List<ChartNote>, note: ChartNote): List<ChartNote>
 
 /** Audio-clock press/release; brief touches remain taps even when quantized. */
 fun recordedHoldLength(note: ChartNote, pressMs: Long, releaseMs: Long, correctionMs: Int,
-    bpm: Int, snap: RecordingSnap, durationMs: Long, notes: List<ChartNote>): Long {
+    bpm: Int, snap: RecordingSnap, durationMs: Long, notes: List<ChartNote>, tempoGrid: TouchGrid? = null): Long {
     if (releaseMs - pressMs < 120L) return 0L
-    val end = recordedNoteTime(releaseMs, correctionMs, bpm, snap, durationMs)
+    val end = recordedNoteTime(releaseMs, correctionMs, bpm, snap, durationMs, tempoGrid)
     return safeHoldLength(note, (end - note.timeMs).coerceAtLeast(0L), durationMs, notes)
 }
 

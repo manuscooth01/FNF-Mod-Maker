@@ -163,6 +163,12 @@ class ModZipConfirmationTest {
         vm.openLiveChart(); assertEquals(edited, vm.liveVSliceTempo())
         val grid = com.fnfmodmaker.model.TouchGrid(vm.liveSong!!.bpmValue, 4, 10_000, com.fnfmodmaker.mod.vSliceGridTempos(vm.liveVSliceTempo()))
         assertEquals(1167L, grid.timeAt(0, 12))
+        vm.selectLiveSnap(com.fnfmodmaker.model.RecordingSnap.HALF_BEAT)
+        val recordingGrid = vm.recordingTempoGrid()!!
+        assertEquals(1167L, com.fnfmodmaker.model.recordedNoteTime(1150, 0, vm.liveSong!!.bpmValue,
+            com.fnfmodmaker.model.RecordingSnap.HALF_BEAT, 10_000, recordingGrid))
+        vm.selectLiveSnap(com.fnfmodmaker.model.RecordingSnap.FREE)
+        assertNull(vm.recordingTempoGrid())
         vm.restoreLiveVSliceTempo(false); assertEquals(first, vm.liveVSliceTempo())
         vm.restoreLiveVSliceTempo(true); assertEquals(edited, vm.liveVSliceTempo())
         vm.closeLiveChart()

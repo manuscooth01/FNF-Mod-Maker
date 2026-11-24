@@ -50,6 +50,18 @@ class LiveRecordingTest {
         val normalPsych = org.json.JSONObject(com.fnfmodmaker.mod.JsonBuilders.psychChart(restored, song, 5000, "normal"))
         assertEquals(0, normalPsych.getJSONArray("notes").getJSONObject(0).getJSONArray("sectionNotes").length())
     }
+    @Test fun recordingSnapUsesVariableTempoAndTimeSignatureForNotesAndHolds() {
+        val grid = TouchGrid(120, 2, 5000, listOf(GridTempo(0.0, 120.0), GridTempo(1000.0, 180.0, 8)))
+        assertEquals(750L, recordedNoteTime(770, 0, 120, RecordingSnap.HALF_BEAT, 5000, grid))
+        assertEquals(1167L, recordedNoteTime(1150, 0, 120, RecordingSnap.HALF_BEAT, 5000, grid))
+        assertEquals(1167L, recordedNoteTime(1140, 10, 120, RecordingSnap.HALF_BEAT, 5000, grid))
+        assertEquals(1150L, recordedNoteTime(1150, 0, 120, RecordingSnap.FREE, 5000, grid))
+        val note = ChartNote(750, 0)
+        assertEquals(583L, recordedHoldLength(note, 770, 1325, 0, 120, RecordingSnap.HALF_BEAT, 5000, listOf(note), grid))
+        assertEquals(450L, recordedHoldLength(note, 770, 1325, 0, 120, RecordingSnap.HALF_BEAT, 5000, listOf(note, ChartNote(1200, 0)), grid))
+        assertEquals(0L, recordedHoldLength(note, 770, 880, 0, 120, RecordingSnap.HALF_BEAT, 5000, listOf(note), grid))
+    }
+
     @Test fun holdsMeasureAudioClockAndKeepShortTapsShort() {
         val note = ChartNote(1000, 0)
         assertEquals(0L, recordedHoldLength(note, 1000, 1119, 0, 120, RecordingSnap.FREE, 5000, listOf(note)))

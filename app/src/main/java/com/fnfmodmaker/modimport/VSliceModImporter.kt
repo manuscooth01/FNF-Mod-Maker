@@ -63,8 +63,16 @@ internal class VSliceModImporter(
                 require(metadata.optString("timeFormat", "ms") == "ms") { "$metadataPath: formato de tiempo distinto de ms no editable." }
                 val times = metadata.optJSONArray("timeChanges") ?: error("$metadataPath: falta timeChanges.")
                 require(times.length() > 0) { "$metadataPath: falta BPM inicial." }
-                val bpm = times.optJSONObject(0)?.optDouble("bpm", Double.NaN) ?: Double.NaN
-                require(bpm.isFinite() && bpm in 1.0..400.0 && bpm % 1 == 0.0) { "$metadataPath: el editor requiere BPM inicial entero entre 1 y 400." }
+                val metadataText = index.getValue(metadataPath).readText()
+                com.fnfmodmaker.mod.rejectDuplicateJsonKeys(metadataText)
+                val tempoJson = com.google.gson.JsonParser.parseString(metadataText).asJsonObject.getAsJsonArray("timeChanges")
+                val firstBpm = tempoJson?.firstOrNull()?.takeIf { it.isJsonObject }?.asJsonObject?.get("bpm")
+                require(firstBpm?.isJsonPrimitive == true && firstBpm.asJsonPrimitive.isNumber) { "$metadataPath: falta un BPM inicial numérico." }
+                val bpm = firstBpm.asDouble
+                require(bpm.isFinite() && bpm in 1.0..400.0 && firstBpm.asBigDecimal.compareTo(java.math.BigDecimal.valueOf(bpm)) == 0) {
+                    "$metadataPath: BPM inicial fuera de rango o con precisión que el editor no puede conservar; se mantiene el original sin convertir."
+                }
+                val originalBpm = firstBpm.asString
                 val play = metadata.optJSONObject("playData") ?: error("$metadataPath: falta playData.")
                 val chars = play.optJSONObject("characters") ?: JSONObject()
                 val player = chars.optString("player", ""); val opponent = chars.optString("opponent", "")
@@ -93,7 +101,7 @@ internal class VSliceModImporter(
                 val other = uneditable - retained
                 if (other.isNotEmpty()) warnings.add("$chartPath: dificultades no compatibles o sin chart: ${other.sorted().joinToString()}; el original se conserva en el proyecto.")
                 if ((chart.optJSONArray("events")?.length() ?: 0) > 0) warnings.add("$chartPath: eventos conservados sin edición; se mantendrán al modificar notas.")
-                if (times.length() > 1) warnings.add("$metadataPath: cambios de BPM conservados; la cuadrícula usa solo el BPM inicial.")
+                if (times.length() > 1) warnings.add("$metadataPath: cambios de BPM conservados en la metadata; la cuadrícula utiliza el mapa si es compatible.")
                 if ((play.optJSONArray("songVariations")?.length() ?: 0) > 0 || files.any { it.startsWith("data/songs/$folder/$folder-chart-") || it.startsWith("data/songs/$folder/$folder-metadata-") })
                     warnings.add("$metadataPath: variaciones conservadas sin edición; solo se edita el chart base.")
                 val initialSpeed = speedFor(if ("normal" in perSong) "normal" else perSong.keys.firstOrNull() ?: retained.firstOrNull() ?: "normal").toString()
@@ -120,9 +128,9 @@ internal class VSliceModImporter(
                 val playerVoice = playerFile?.let(::audio); val opponentVoice = opponentFile?.let(::audio)
                 if (files.count { it.startsWith("songs/$folder/Voices") && it.endsWith(".ogg", true) } > listOfNotNull(playerFile, opponentFile).size)
                     warnings.add("songs/$folder/: voces adicionales conservadas sin edición.")
-                val origin = VSliceSongOrigin(folder, metadataPath, chartPath, perSong.keys, songName, artist, bpm.toInt().toString(), initialSpeed,
+                val origin = VSliceSongOrigin(folder, metadataPath, chartPath, perSong.keys, songName, artist, originalBpm, initialSpeed,
                     offset.toString(), player, opponent, gf, stageId, instName, playerFile.orEmpty(), opponentFile.orEmpty(), retained)
-                val song = SongConfig(songName = songName, artist = artist, bpm = bpm.toInt().toString(), speed = initialSpeed, offsetMs = offset.toString(),
+                val song = SongConfig(songName = songName, artist = artist, bpm = originalBpm, speed = initialSpeed, offsetMs = offset.toString(),
                     player = player, opponent = opponent, girlfriend = gf, stageVSlice = stageId, difficulties = perSong.keys + retained,
                     practiceNotes = false, instrumental = inst, vocalsPlayer = playerVoice, vocalsOpponent = opponentVoice, vSliceOrigin = origin)
                 songs.add(song); charts[folder] = perSong; converted.add(chartPath)

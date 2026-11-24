@@ -553,4 +553,45 @@ class VSliceImportCycleTest {
         assertThrows(IllegalArgumentException::class.java) { prepare(zip(extra = mapOf("pack.json" to "{}", "data/test/test.json" to "{}")), store) }
         assertTrue(store.list().isEmpty())
     }
+    @Test fun decimalTempoImportEditPortableZipAndReimport() {
+        for ((i, bpm) in listOf("120.1", "123.4567", "140.25").withIndex()) {
+            val store = ProjectStore(File(temp.root, "decimal-vs-$i"), temp.root)
+            val initialMap = """[{"t":0,"bpm":$bpm,"custom":"kept"},{"t":2311.1,"bpm":140.25,"n":3,"d":8}]"""
+            val source = metadata.replace("""[{"t":0,"bpm":120},{"t":4000,"bpm":180}]""", initialMap)
+            val prepared = prepare(zip(meta = source), store)
+            val song = prepared.config.firstSong
+            assertEquals(bpm, song.bpm)
+            assertEquals(bpm, song.vSliceOrigin!!.originalBpm)
+            assertEquals(bpm.toDouble(), prepared.config.getChart("test", "normal")!!.bpm, 0.0)
+            val revisedMap = changeVSliceTempo(initialMap, null, "5000.1", "123.4567", "4", "4")
+            val edited = prepared.config.copy(songs = listOf(song.copy(vSliceTempoJson = revisedMap, vSliceTempoUndo = listOf(initialMap))))
+            val chart = edited.getChart("test", "normal")!!
+            val withNotes = edited.withChart("test", "normal", chart.copy(notes = chart.notes + ChartNote(1200, 1, 250)))
+            val id = store.publishModImport(prepared.stage, gson.toJsonTree(withNotes).asJsonObject) { }
+            val portable = PortableProject(temp.root); val file = File(temp.root, "decimal-$i.fnfproject")
+            portable.export(store.load(id).config, store.assets(id), file)
+            val restored = store.publishImport(portable.prepare(file, store.newImportStage()), portable) { }
+            val reopened = gson.fromJson(store.load(restored).config, ModConfig::class.java)
+            assertEquals(bpm, reopened.firstSong.bpm)
+            assertEquals(revisedMap, reopened.firstSong.vSliceTempoJson)
+            assertEquals(initialMap, reopened.firstSong.vSliceTempoUndo.single())
+            val built = ModBuilder.buildInternal(reopened, File(temp.root, "decimal-vs-out-$i"), temp.root, {}, services())
+            val output = ByteArrayOutputStream(); ModBuilder.zip(built.rootDir, output, false)
+            val files = mutableMapOf<String, ByteArray>()
+            java.util.zip.ZipInputStream(output.toByteArray().inputStream()).use { z -> while (true) { val entry = z.nextEntry ?: break; files[entry.name] = z.readBytes() } }
+            val outMeta = com.google.gson.JsonParser.parseString(files.getValue("data/songs/test/test-metadata.json").toString(Charsets.UTF_8)).asJsonObject
+            assertEquals(com.google.gson.JsonParser.parseString(revisedMap), outMeta.get("timeChanges"))
+            val imported = prepare(output.toByteArray(), store)
+            assertEquals(bpm, imported.config.firstSong.bpm)
+            assertEquals(bpm, imported.config.firstSong.vSliceOrigin!!.originalBpm)
+            assertEquals(1200L, imported.config.getChart("test", "normal")!!.notes.last().timeMs)
+        }
+    }
+    @Test fun unsafeDecimalTempoDoesNotGetTruncated() {
+        val store = ProjectStore(File(temp.root, "unsafe-decimal"), temp.root)
+        val tooPrecise = metadata.replace("\"bpm\":120}", "\"bpm\":120.123456789012345678901}")
+        assertThrows(IllegalArgumentException::class.java) { prepare(zip(meta = tooPrecise), store) }
+        assertThrows(IllegalArgumentException::class.java) { validateVSliceTempo("""[{"t":0,"bpm":120.1},{"t":1000,"bpm":140.1234567890123456789}]""") }
+    }
+
 }

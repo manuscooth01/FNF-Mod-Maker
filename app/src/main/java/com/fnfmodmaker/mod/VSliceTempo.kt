@@ -20,7 +20,9 @@ internal fun validateVSliceTempo(text: String): String {
         fun number(key: String): Double? {
             val item = row.get(key) ?: return null
             require(item.isJsonPrimitive && item.asJsonPrimitive.isNumber) { "$key debe ser numérico." }
-            return item.asDouble.also { require(it.isFinite()) { "$key inválido." } }
+            return item.asDouble.also { v ->
+                require(v.isFinite() && item.asBigDecimal.compareTo(java.math.BigDecimal.valueOf(v)) == 0) { "$key tiene precisión que no se puede representar sin pérdida." }
+            }
         }
         val time = number("t") ?: error("Falta el tiempo del cambio.")
         require(time in 0.0..86_400_000.0 && time > previous && (index != 0 || time == 0.0)) { "Los tiempos deben comenzar en cero y estar ordenados sin duplicados." }
@@ -42,7 +44,8 @@ internal fun validateVSliceTempo(text: String): String {
 internal fun tempoWithInitialBpm(source: String, bpm: Double): String {
     require(bpm in 1.0..400.0) { "BPM inicial inválido." }
     val array = JsonParser.parseString(validateVSliceTempo(source)).asJsonArray
-    array[0].asJsonObject.addProperty("bpm", bpm)
+    val first = array[0].asJsonObject
+    if (first.get("bpm").asBigDecimal.compareTo(java.math.BigDecimal.valueOf(bpm)) != 0) first.addProperty("bpm", bpm)
     return validateVSliceTempo(array.toString())
 }
 internal fun changeVSliceTempo(source: String, index: Int?, time: String, bpm: String, numerator: String, denominator: String, adaptTuplets: Boolean = false): String {

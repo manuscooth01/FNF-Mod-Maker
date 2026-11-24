@@ -64,8 +64,7 @@ internal class PsychModImporter(
                     perSong[difficulty] = chart; converted.add(path)
                 }
                 if (perSong.isEmpty()) continue
-                require("normal" in perSong) { "$folder necesita un chart normal sin sufijo para esta primera versión." }
-                val base = perSong.getValue("normal")
+                val base = perSong["normal"] ?: perSong.values.first()
                 require(perSong.values.all { it.bpm == base.bpm && it.player1 == base.player1 && it.player2 == base.player2 && it.gfVersion == base.gfVersion && it.stage == base.stage }) { "Las dificultades de $folder tienen metadatos incompatibles entre sí." }
                 fun audio(path: String): PickedAudio? = index[path]?.let { f ->
                     require(f.length() > 0) { "Audio vacío: $path" }

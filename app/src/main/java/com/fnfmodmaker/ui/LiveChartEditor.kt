@@ -219,7 +219,7 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
     if (vm.liveCanPlay && vm.liveDurationMs <= 0) Text("Escucha y pausa la instrumental para detectar su duración antes de abrir la cuadrícula.", style = MaterialTheme.typography.labelSmall)
     if (vm.liveCanPlay && (vm.liveSong?.bpmValue ?: 0) !in 1..400) Text("Para la cuadrícula, indica un BPM entre 1 y 400 en Canciones.", style = MaterialTheme.typography.labelSmall)
     val chart = vm.liveChart
-    Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: en mods importados esta dificultad no se exportará hasta crear un chart.", style = MaterialTheme.typography.bodySmall)
+    Text(if (chart != null) "Chart personalizado: ${chart.notes.size} notas" else if (vm.config.importedModResources.isNotEmpty()) "Sin chart personalizado: esta dificultad no se exportará hasta crear un chart." else if (vm.liveSong?.practiceNotes == true) "Sin chart personalizado: se generarán notas de práctica." else "Sin chart personalizado: se exportará vacío.", style = MaterialTheme.typography.bodySmall)
     LiveTimeline(vm.livePreviewNotes, vm.livePositionMs)
     Text("La línea indica el momento actual; arriba: jugador, abajo: rival. Las notas de práctica automáticas no se muestran.", style = MaterialTheme.typography.labelSmall)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

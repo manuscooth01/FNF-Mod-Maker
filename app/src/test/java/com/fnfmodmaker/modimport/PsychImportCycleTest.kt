@@ -31,7 +31,7 @@ class PsychImportCycleTest {
     }).create()
     private fun image(f: File, name: String): PickedImage = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null}""", PickedImage::class.java)
     private fun audio(f: File, name: String, ms: Long): PickedAudio = gson.fromJson("""{"displayName":${gson.toJson(name)},"path":${gson.toJson(f.absolutePath)},"uri":null,"durationMs":$ms}""", PickedAudio::class.java)
-    private fun fixture(allDifficulties: Boolean = false): ByteArray {
+    private fun fixture(allDifficulties: Boolean = false, withoutNormal: Boolean = false): ByteArray {
         val files = linkedMapOf(
             "pack.json" to """{"name":"Psych Fixture","description":"example"}""",
             "data/test/test.json" to """{"song":{"song":"test","format":"psych_v1","bpm":120,"speed":2,"player1":"bf","player2":"dad","stage":"stage","events":[],"notes":[{"mustHitSection":false,"sectionNotes":[[100,0,0],[500,6,200]]}]}}""",
@@ -43,6 +43,7 @@ class PsychImportCycleTest {
             files["data/test/test-easy.json"] = files.getValue("data/test/test.json")
             files["data/test/test-hard.json"] = files.getValue("data/test/test.json")
         }
+        if (withoutNormal) files.remove("data/test/test.json")
         val realFiles = mapOf(
             "songs/test/Inst.ogg" to "/psych-fixture/Inst.ogg",
             "songs/test/Voices.ogg" to "/psych-fixture/Voices.ogg",
@@ -107,6 +108,15 @@ class PsychImportCycleTest {
         assertEquals("new-enemy", json.getString("player2"))
         assertEquals("fnfmm-test-stage", json.getString("stage"))
     }
+    @Test fun psychWithoutNormalChartImportsRemainingDifficulties() {
+        val store = ProjectStore(File(temp.root, "psych-no-normal"), temp.root)
+        val prepared = ModZipInspector(File(temp.root, "cache-no-normal")).withExtracted(fixture(true, true).inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, store.newImportStage())
+        }
+        assertEquals(setOf("easy", "hard"), prepared.config.firstSong.difficulties)
+        assertNull(prepared.config.getChart("test", "normal"))
+    }
+
     @Test fun deletedPsychDifficultyDoesNotReappearInZip() {
         val store = ProjectStore(File(temp.root, "psych-free"), temp.root)
         val prepared = ModZipInspector(File(temp.root, "cache-free")).withExtracted(fixture(true).inputStream()) { dir, names ->

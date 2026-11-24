@@ -84,10 +84,10 @@ internal class VSliceModImporter(
                 val perSong = linkedMapOf<String, ChartDraft>()
                 for (difficulty in ALL_DIFFICULTIES.filter { it in declared && sourceNotes.has(it) }) {
                     try { perSong[difficulty] = readVSliceDifficulty(chart, folder, difficulty, bpm.toInt(), speedFor(difficulty)) }
-                    catch (e: Exception) { warnings.add("$chartPath · $difficulty: no editable (${e.message}); notas originales conservadas sin modificar.") }
+                    catch (e: Exception) { warnings.add("$chartPath · $difficulty: no editable (${e.message}); se omitirá del ZIP. El original se conserva en el proyecto.") }
                 }
                 val uneditable = (declared + sourceNotes.keys().asSequence().toSet()) - perSong.keys
-                if (uneditable.isNotEmpty()) warnings.add("$chartPath: dificultades conservadas sin edición: ${uneditable.sorted().joinToString()}.")
+                if (uneditable.isNotEmpty()) warnings.add("$chartPath: dificultades sin chart editable que se omitirán del ZIP: ${uneditable.sorted().joinToString()}. Los originales se conservan en el proyecto.")
                 require(perSong.isNotEmpty()) { "$chartPath: ninguna dificultad compatible; aún no se puede crear un proyecto editable para esta canción." }
                 if ((chart.optJSONArray("events")?.length() ?: 0) > 0) warnings.add("$chartPath: eventos conservados sin edición; se mantendrán al modificar notas.")
                 if (times.length() > 1) warnings.add("$metadataPath: cambios de BPM conservados; la cuadrícula usa solo el BPM inicial.")

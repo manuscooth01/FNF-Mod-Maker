@@ -4,6 +4,7 @@
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -40,6 +41,17 @@ def report(log_path):
         count += 1
         if count == 40:
             break
+
+    # Include JUnit failures in annotations even when CI log downloads are unavailable.
+    for report_path in workspace.glob("app/build/test-results/testDebugUnitTest/TEST-*.xml"):
+        try:
+            root = ET.parse(report_path).getroot()
+            for case in root.findall("testcase"):
+                for failure in case.findall("failure"):
+                    message = f"{case.get('classname')}.{case.get('name')}: {failure.get('message', '')}"
+                    print(f"::error::{escape(message[:3000])}")
+        except (OSError, ET.ParseError):
+            pass
 
     # Dependency resolution and Gradle configuration errors may not have source locations.
     for index, line in enumerate(lines):

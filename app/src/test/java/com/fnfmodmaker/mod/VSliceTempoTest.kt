@@ -16,6 +16,9 @@ class VSliceTempoTest {
         assertThrows(Exception::class.java) { removeVSliceTempo(original, 0) }
         assertThrows(Exception::class.java) { changeVSliceTempo(original, null, "2000", "100", "4", "4") }
         assertThrows(Exception::class.java) { changeVSliceTempo(original, 1, "2000", "-5", "4", "3") }
-        assertThrows(Exception::class.java) { changeVSliceTempo("""[{"t":0,"bpm":120,"n":4,"bt":[4,4,4,4]}]""", 0, "0", "120", "3", "4") }
+        val withTuplets = """[{"t":0,"bpm":120,"n":4,"bt":[4,3,2,5]}]"""
+        assertThrows(Exception::class.java) { changeVSliceTempo(withTuplets, 0, "0", "120", "3", "4") }
+        val adapted = changeVSliceTempo(withTuplets, 0, "0", "120", "3", "4", true)
+        assertEquals("[4,3,2]", com.google.gson.JsonParser.parseString(adapted).asJsonArray[0].asJsonObject.get("bt").toString())
     }
 }

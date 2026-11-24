@@ -45,7 +45,7 @@ internal fun tempoWithInitialBpm(source: String, bpm: Int): String {
     array[0].asJsonObject.addProperty("bpm", bpm)
     return validateVSliceTempo(array.toString())
 }
-internal fun changeVSliceTempo(source: String, index: Int?, time: String, bpm: String, numerator: String, denominator: String): String {
+internal fun changeVSliceTempo(source: String, index: Int?, time: String, bpm: String, numerator: String, denominator: String, adaptTuplets: Boolean = false): String {
     val array = JsonParser.parseString(validateVSliceTempo(source)).asJsonArray
     require(index == null || index in 0 until array.size()) { "Selección obsoleta." }
     fun parseNumber(value: String): com.google.gson.JsonElement {
@@ -59,6 +59,16 @@ internal fun changeVSliceTempo(source: String, index: Int?, time: String, bpm: S
     val item = index?.let { array[it].asJsonObject.deepCopy() } ?: com.google.gson.JsonObject()
     item.add("t", parseNumber(time)); if (bpm.isBlank()) item.remove("bpm") else item.add("bpm", parseNumber(bpm))
     item.add("n", parseNumber(numerator)); item.add("d", parseNumber(denominator))
+    if (adaptTuplets) {
+        val n = item.get("n").asDouble
+        require(n % 1.0 == 0.0 && n in 1.0..64.0) { "Numerador inválido." }
+        val tuplets = item.get("bt")?.takeIf { it.isJsonArray }?.asJsonArray
+        if (tuplets != null && tuplets.size() > 1 && tuplets.size() != n.toInt()) {
+            val updated = JsonArray()
+            repeat(n.toInt()) { i -> updated.add(tuplets[i.coerceAtMost(tuplets.size() - 1)].deepCopy()) }
+            item.add("bt", updated)
+        }
+    }
     if (index == null) array.add(item) else array.set(index, item)
     val sorted = array.toList().sortedBy { it.asJsonObject.get("t").asBigDecimal }
     val out = JsonArray().apply { sorted.forEach { add(it) } }

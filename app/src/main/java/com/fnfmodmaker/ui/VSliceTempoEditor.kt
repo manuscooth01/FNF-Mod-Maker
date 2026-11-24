@@ -24,13 +24,14 @@ internal fun VSliceTempoEditor(vm: WizardViewModel) {
     var d by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf(false) }
+    var adaptTuplets by remember { mutableStateOf(false) }
     val enabled = !vm.livePlaying && !vm.liveLoading && !vm.busy && vm.liveSong != null
     fun edit(index: Int?, action: String) {
         val row = index?.let { JsonParser.parseString(draft).asJsonArray[it].asJsonObject }
         selected = index; mode = action
         time = if (action == "duplicar") "" else row?.get("t")?.asString ?: ""
         bpm = row?.get("bpm")?.asString ?: ""; n = row?.get("n")?.asString ?: "4"; d = row?.get("d")?.asString ?: "4"
-        error = null
+        adaptTuplets = false; error = null
     }
     TextButton(onClick = {
         runCatching { vm.liveVSliceTempo() }.onSuccess { original = it; draft = it; error = null; open = true }.onFailure { error = it.message }
@@ -65,10 +66,11 @@ internal fun VSliceTempoEditor(vm: WizardViewModel) {
             OutlinedTextField(bpm, { bpm = it; error = null }, label = { Text("BPM") }, singleLine = true)
             OutlinedTextField(n, { n = it; error = null }, label = { Text("Numerador") }, singleLine = true)
             OutlinedTextField(d, { d = it; error = null }, label = { Text("Denominador") }, singleLine = true)
+            Row { Checkbox(checked = adaptTuplets, onCheckedChange = { adaptTuplets = it }); Text("Adaptar subdivisiones bt al numerador: se recortan o se repite la última.") }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     } }, confirmButton = { TextButton(onClick = {
-        runCatching { if (mode == "duplicar") duplicateVSliceTempo(draft, selected!!, time) else changeVSliceTempo(draft, selected, time, bpm, n, d) }
+        runCatching { if (mode == "duplicar") duplicateVSliceTempo(draft, selected!!, time) else changeVSliceTempo(draft, selected, time, bpm, n, d, adaptTuplets) }
             .onSuccess { draft = it; mode = ""; error = null }.onFailure { error = it.message ?: "Cambio inválido." }
     }) { Text("Aplicar") } }, dismissButton = { TextButton(onClick = { mode = ""; error = null }) { Text("Cancelar") } })
     if (open && deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("¿Eliminar cambio de tempo?") },

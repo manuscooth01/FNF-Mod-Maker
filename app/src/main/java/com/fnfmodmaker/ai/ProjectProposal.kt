@@ -132,11 +132,13 @@ object ProjectProposalPlanner {
                     val selected = current.characterLibrary.singleOrNull { it.id == id } ?: fail("el personaje asignado no existe")
                     if (!selected.draft.enabled) fail("el personaje asignado está desactivado")
                     val a = current.resolvedAssignments()
-                    val oldId = when (role) { "player" -> a.player; "opponent" -> a.opponent; else -> a.girlfriend }
-                    val oldName = current.characterLibrary.firstOrNull { it.id == oldId }?.draft?.charFolder ?: "ID original de cada canción"
+                    val projectedBefore = current.effectiveExportConfig().songs.map { song ->
+                        val value = when (role) { "player" -> song.player; "opponent" -> song.opponent; else -> song.girlfriend }
+                        "${song.songName.ifBlank { "Canción" }}: $value → ${selected.draft.charFolder}"
+                    }.joinToString("\n")
                     val next = when (role) { "player" -> a.copy(player = id); "opponent" -> a.copy(opponent = id); else -> a.copy(girlfriend = id) }
                     current = current.copy(characterAssignments = next)
-                    items.add(ProposalItem("Asignación $role · todas las canciones", "Antes: $oldName. Después: ${selected.draft.charFolder} (${selected.draft.displayName}). Afecta a todas las canciones; las demás referencias se conservan."))
+                    items.add(ProposalItem("Asignación $role · todas las canciones", "$projectedBefore\nPersonaje: ${selected.draft.displayName} (${selected.draft.charFolder}). Afecta a todas las canciones; las demás referencias se conservan."))
                 }
                 "stage_actor" -> {
                     val meta = setOf("type", "engine", "role")
@@ -166,7 +168,7 @@ object ProjectProposalPlanner {
                 }
                 "song" -> {
                     val metadata = setOf("type", "songIndex")
-                    keys(change, metadata + setOf("artist", "bpm", "speed", "offsetMs", "practiceNotes", "player", "opponent", "girlfriend", "stagePsych", "stageVSlice"))
+                    keys(change, metadata + setOf("artist", "bpm", "speed", "offsetMs", "practiceNotes", "stagePsych", "stageVSlice"))
                     nonEmpty(change, metadata)
                     val (index, old) = song(current, change)
                     val updated = old.copy(artist = string(change, "artist") ?: old.artist,
@@ -174,8 +176,6 @@ object ProjectProposalPlanner {
                         speed = number(change, "speed", 0.1f, 10f)?.toString() ?: old.speed,
                         offsetMs = int(change, "offsetMs", -999999, 999999)?.toString() ?: old.offsetMs,
                         practiceNotes = bool(change, "practiceNotes") ?: old.practiceNotes,
-                        player = string(change, "player", 64) ?: old.player, opponent = string(change, "opponent", 64) ?: old.opponent,
-                        girlfriend = string(change, "girlfriend", 64) ?: old.girlfriend,
                         stagePsych = string(change, "stagePsych", 64) ?: old.stagePsych, stageVSlice = string(change, "stageVSlice", 64) ?: old.stageVSlice)
                     val songs = current.songs.toMutableList().also { it[index] = updated }
                     current = current.copy(songs = songs)
@@ -234,9 +234,11 @@ object ProjectProposalPlanner {
                 else -> fail("tipo de cambio no reconocido: $type")
             }
         }
-        if (changes.any { it.asJsonObject.get("type")?.asString == "assignment" }) {
+        if (changes.any { it.asJsonObject.get("type")?.asString in setOf("assignment", "character", "animation") }) {
+            val before = characterLibraryProblems(base).toSet()
             val problems = characterLibraryProblems(current)
-            if (problems.isNotEmpty()) fail(problems.joinToString(" "))
+            val newlyInvalid = if (changes.any { it.asJsonObject.get("type")?.asString == "assignment" }) problems else problems.filterNot { it in before }
+            if (newlyInvalid.isNotEmpty()) fail(newlyInvalid.joinToString(" "))
         }
         val effective = current.effectiveExportConfig()
         val protected = current.songs.zip(effective.songs).flatMap { (raw, projected) -> com.fnfmodmaker.mod.vSliceExportProblems(raw, projected, current) }

@@ -51,6 +51,7 @@ internal fun patchImportedVSliceMetadata(original: String, raw: SongConfig, effe
     val play = json.optJSONObject("playData") ?: error("Falta playData en la metadata original.")
     val chars = play.optJSONObject("characters") ?: if (!play.has("characters")) JSONObject().also { play.put("characters", it) } else error("characters no es un objeto.")
     changes.forEach { (role, before, after) ->
+        require(!chars.has(role) || chars.isNull(role) || chars.opt(role) is String) { "La referencia original $role no es texto; se conserva sin editar." }
         require(chars.optString(role, "") == before) { "La metadata original de $role no coincide con el proyecto; no se exportó." }
         require(after.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "ID de personaje inseguro: $after" }
         chars.put(role, after)

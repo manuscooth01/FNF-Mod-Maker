@@ -270,6 +270,11 @@ class VSliceImportCycleTest {
         val bad = p.config.copy(characterLibrary = listOf(CharacterEntry("metza", draft)), selectedCharacterId = "metza", characterAssignments = CharacterAssignments(opponent = "metza"))
         assertTrue(validateWizard(bad).any { it.step == 2 })
         assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(bad, File(temp.root, "bad-assets"), temp.root, {}, services()) }
+        val valid = p.config.character.copy(charId = "metza", importedVSliceCharacterId = "", importedSourceFormat = "", importedSourceJson = "")
+        val assigned = p.config.copy(characterLibrary = listOf(CharacterEntry("metza", valid)), selectedCharacterId = "metza", characterAssignments = CharacterAssignments(opponent = "metza"))
+        val noFiles = services().copy(character = { _, _, _, _ -> })
+        val error = assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(assigned, File(temp.root, "missing-output"), temp.root, {}, noFiles) }
+        assertTrue(error.message!!.contains("Falta el archivo generado"))
     }
 
     @Test fun eachChangedMetadataFieldIsReportedAndBlockedByWizardAndBuilder() {

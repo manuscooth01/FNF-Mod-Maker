@@ -188,7 +188,7 @@ class ModZipConfirmationTest {
         val exported = org.json.JSONObject(files.getValue(prefix + "data/songs/tarde/tarde-metadata.json").toString(Charsets.UTF_8))
         val chars = exported.getJSONObject("playData").getJSONObject("characters")
         assertEquals("metza", chars.getString("opponent")); chars.put("opponent", "dad")
-        assertTrue(org.json.JSONObject(original).similar(exported)); assertEquals(original, File(originalPath).readText())
+        assertEquals(com.google.gson.JsonParser.parseString(original), com.google.gson.JsonParser.parseString(exported.toString())); assertEquals(original, File(originalPath).readText())
         listOf("data/characters/metza.json", "images/characters/metza.png", "images/characters/metza.xml").forEach { assertTrue(it, files.containsKey(prefix + it)) }
     }
 

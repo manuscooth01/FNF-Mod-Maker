@@ -60,7 +60,7 @@ object AiProtocol {
                 "zoom":{"type":"number","description":"Zoom inicial del escenario sencillo, entre 0.4 y 2."},"scale":{"type":"number"},"flipX":{"type":"boolean"},"side":{"type":"string","enum":["player","opponent"]},
                 "fps":{"type":"integer"},"loop":{"type":"boolean"},"offsetX":{"type":"integer"},"offsetY":{"type":"integer"},"prefix":{"type":"string"},
                 "artist":{"type":"string"},"bpm":{"type":"integer"},"speed":{"type":"number"},"offsetMs":{"type":"integer"},"practiceNotes":{"type":"boolean"},
-                "player":{"type":"string"},"opponent":{"type":"string"},"girlfriend":{"type":"string"},"stagePsych":{"type":"string"},"stageVSlice":{"type":"string"},
+                "stagePsych":{"type":"string"},"stageVSlice":{"type":"string"},
                 "difficulty":{"type":"string","enum":["easy","normal","hard"]},
                 "notes":{"type":"array","maxItems":1000,"items":{"type":"object","additionalProperties":false,"required":["timeMs","lane"],"properties":{"timeMs":{"type":"integer"},"lane":{"type":"integer"},"lengthMs":{"type":"integer"}}}}
               }

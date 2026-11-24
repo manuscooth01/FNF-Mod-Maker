@@ -97,7 +97,9 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
         }
         if (song.difficulties.size > 64 || song.difficulties.any { !isValidDifficulty(it) }) add(WizardIssue(1, "$label: hay IDs de dificultad inválidos o demasiadas dificultades.", index))
         song.orderedDifficulties.forEach { difficulty ->
-            val problems = config.getChart(song.songFolder, difficulty)?.exportProblems().orEmpty()
+            val chart = config.getChart(song.songFolder, difficulty)
+            val problems = chart?.exportProblems().orEmpty().toMutableList()
+            if (config.engine.includesVSlice && chart != null && chart.psychEventsJson.isNotBlank() && chart.psychEventsJson != "[]") problems.add("eventos Psych sin traducción a V-Slice")
             if (problems.isNotEmpty()) add(WizardIssue(1, "$label ($difficulty): no se puede exportar sin perder ${problems.joinToString()}. Conserva el proyecto editable.", index))
         }
         if (song.instrumental == null) {

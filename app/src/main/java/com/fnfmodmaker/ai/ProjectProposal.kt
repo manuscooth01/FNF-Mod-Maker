@@ -242,7 +242,8 @@ object ProjectProposalPlanner {
                     if (previous != null && (previous.events.isNotEmpty() || previous.sections.isNotEmpty())) fail("el chart contiene eventos o secciones que no se pueden preservar")
                     val chart = ChartDraft(songFolder = song.songFolder, difficulty = diff, notes = notes, bpm = song.bpmValue,
                         scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
-                        player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych)
+                        player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych,
+                        psychEventsJson = previous?.psychEventsJson.orEmpty())
                     val history = current.chartHistories[song.songFolder]?.get(diff) ?: ChartPersistentHistory()
                     val recorded = recordChartHistory(history, previous, chart)
                     current = current.withChart(song.songFolder, diff, chart).copy(chartHistories = current.chartHistories +
@@ -251,6 +252,22 @@ object ProjectProposalPlanner {
                     fun describeNotes(list: List<ChartNote>) = list.joinToString("\n") { "${it.timeMs} ms · carril ${it.lane} · duración ${it.lengthMs} ms" }.ifEmpty { "(sin notas)" }
                     val oldNotes = previous?.let { "\nNOTAS ANTERIORES:\n${describeNotes(it.notes)}" } ?: ""
                     items.add(ProposalItem("Reemplazar chart ${song.songName} · $diff", "Canción ${index + 1}. Antes: $previousText. Después: ${notes.size} notas. Carriles 0–3 jugador, 4–7 rival.$oldNotes\nNOTAS PROPUESTAS:\n${describeNotes(notes)}"))
+                }
+                "psych_events" -> {
+                    keys(change, setOf("type", "songIndex", "difficulty", "eventsJson"))
+                    if (current.engine != TargetEngine.PSYCH) fail("los eventos Psych no se traducen automáticamente a V-Slice")
+                    val (index, song) = song(current, change)
+                    val diff = requiredString(change, "difficulty", 32).lowercase()
+                    val previous = current.getChart(song.songFolder, diff) ?: fail("crea primero el chart de esa dificultad")
+                    if (previous.psychEventsJson.length > 4096) fail("demasiados eventos existentes para revisar en una propuesta de IA")
+                    val events = requiredString(change, "eventsJson", 4096)
+                    val normalized = try { com.fnfmodmaker.mod.validatePsychEvents(events) } catch (e: Exception) { fail("eventos Psych inválidos: ${e.message}") }
+                    val updated = previous.copy(psychEventsJson = if (normalized == "[]") "" else normalized)
+                    val history = current.chartHistories[song.songFolder]?.get(diff) ?: ChartPersistentHistory()
+                    val recorded = recordChartHistory(history, previous, updated)
+                    current = current.withChart(song.songFolder, diff, updated).copy(chartHistories = current.chartHistories +
+                        (song.songFolder to (current.chartHistories[song.songFolder].orEmpty() + (diff to recorded))))
+                    items.add(ProposalItem("Eventos Psych · ${song.songName} · $diff", "Canción ${index + 1}. Antes: ${previous.psychEventsJson.ifBlank { "[]" }}. Después: $normalized"))
                 }
                 "scene" -> {
                     keys(change, setOf("type", "zoom"))
@@ -324,7 +341,8 @@ fun projectContext(config: ModConfig, characterOnly: Boolean): String {
                 "charts" to song.orderedDifficulties.map { difficulty ->
                     val chart = config.getChart(song.songFolder, difficulty)
                     mapOf("difficulty" to difficulty, "custom" to (chart != null), "originalRetainedWithoutEditing" to (chart == null && difficulty in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet())), "noteCount" to (chart?.notes?.size ?: 0),
-                        "events" to (chart?.events?.size ?: 0), "sampleNotes" to (chart?.notes?.take(30) ?: emptyList<ChartNote>()),
+                        "events" to (chart?.events?.size ?: 0),
+                        "psychEventsJson" to (chart?.psychEventsJson?.takeIf { it.length <= 4096 } ?: "no disponible para IA por tamaño"), "sampleNotes" to (chart?.notes?.take(30) ?: emptyList<ChartNote>()),
                         "sampleTruncated" to ((chart?.notes?.size ?: 0) > 30))
                 })
         }

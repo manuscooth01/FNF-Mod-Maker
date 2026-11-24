@@ -39,6 +39,22 @@ class ProjectProposalTest {
         assertEquals("Hurt Note", applied.getChart("first", "insane")!!.notes.single().kind)
     }
 
+    @Test fun psychEventProposalAndChartReplacementRetainDataAndUndo() {
+        val existing = ChartDraft(songFolder = "first", notes = listOf(ChartNote(10, 1)), psychEventsJson = """[[10,[["Old","a","b"]]]]""")
+        val original = base.withChart("first", "normal", existing)
+        val args = """{"summary":"Eventos y notas","changes":[{"type":"psych_events","songIndex":0,"difficulty":"normal","eventsJson":"[[100,[[\"Hey!\",\"0\",\"\"]]]]"},{"type":"chart","songIndex":0,"difficulty":"normal","notes":[{"timeMs":300,"lane":2}]}]}"""
+        val result = ProjectProposalPlanner.applyIfUnchanged(original, ProjectProposalPlanner.plan(original, args))
+        val changed = result.getChart("first", "normal")!!
+        assertEquals("""[[100,[["Hey!","0",""]]]]""", changed.psychEventsJson)
+        assertEquals(300L, changed.notes.single().timeMs)
+        val history = result.chartHistories.getValue("first").getValue("normal")
+        val afterUndoNotes = restoreChartHistory(history, changed, false)!!
+        assertEquals(existing.notes, afterUndoNotes.chart!!.notes)
+        val afterUndoEvents = restoreChartHistory(afterUndoNotes.history, afterUndoNotes.chart, false)!!
+        assertEquals(existing, afterUndoEvents.chart)
+        assertTrue(runCatching { ProjectProposalPlanner.plan(original.copy(engine = TargetEngine.BOTH), args) }.isFailure)
+    }
+
     @Test fun rejectsInvalidBatchWithoutPartialMutation() {
         val bad = listOf(
             """{"summary":"x","changes":[{"type":"character","positionX":2},{"type":"script","name":"../evil","content":"x"}]}""",

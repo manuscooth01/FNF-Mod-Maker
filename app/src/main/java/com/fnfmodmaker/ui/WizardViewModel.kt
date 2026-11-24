@@ -982,7 +982,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             player1 = song.player,
             player2 = song.opponent,
             gfVersion = song.girlfriend,
-            stage = song.stagePsych
+            stage = song.stagePsych,
+            events = activeChartDraft.events,
+            sections = activeChartDraft.sections,
+            psychEventsJson = activeChartDraft.psychEventsJson
         )
         pushHistoryAndSave(draft)
     }
@@ -1002,7 +1005,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             player1 = song.player,
             player2 = song.opponent,
             gfVersion = song.girlfriend,
-            stage = song.stagePsych
+            stage = song.stagePsych,
+            events = activeChartDraft.events,
+            sections = activeChartDraft.sections,
+            psychEventsJson = activeChartDraft.psychEventsJson
         )
         pushHistoryAndSave(draft)
     }

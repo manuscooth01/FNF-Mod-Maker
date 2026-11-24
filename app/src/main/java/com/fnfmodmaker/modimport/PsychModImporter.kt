@@ -88,7 +88,7 @@ internal class PsychModImporter(
             }
             require(songs.isNotEmpty() && songs.size <= 20) { "No se encontraron de 1 a 20 canciones Psych compatibles con chart e instrumental." }
             warnings.add("Los charts compatibles se regeneran: las secciones y campos adicionales pueden cambiar y los tiempos se redondean al milisegundo; los originales se conservan dentro del proyecto.")
-            warnings.add("Los eventos, tipos de notas especiales, secciones GF/alt y cambios de BPM todavía no se convierten; la importación se detiene para evitar pérdidas.")
+            warnings.add("Los eventos, tipos de nota numéricos distintos de cero, secciones GF/alt y cambios de BPM todavía no se convierten; la importación se detiene para evitar pérdidas. Los tipos de nota expresados como texto sí se importan.")
             warnings.add("Archivos no convertidos, incluidos scripts, se exportarán intactos si no colisionan con archivos generados. Los scripts se ejecutan en el juego, no en la app.")
             val characters = mutableListOf<CharacterEntry>()
             val candidates = files.filter { Regex("^characters/[^/]+\\.json$").matches(it) }

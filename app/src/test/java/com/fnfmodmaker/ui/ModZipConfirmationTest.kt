@@ -65,9 +65,10 @@ class ModZipConfirmationTest {
         }
         fail("Timeout: busy=${vm.busy}, message=${vm.portableMessage}, error=${vm.modZipImportError}")
     }
-    private fun zip(): Uri {
+    private fun zip(withCharacter: Boolean = false): Uri {
         val file = File(app.cacheDir, "tarde-test.zip")
-        val metadata = """{"version":"2.2.4","songName":"Tarde","artist":"Example","playData":{"difficulties":["easy","normal","hard"],"characters":{"player":"bf","opponent":"dad"},"stage":"mainStage"},"timeChanges":[{"t":0,"bpm":120}]}"""
+        val opponent = if (withCharacter) "Hero_Day" else "dad"
+        val metadata = """{"version":"2.2.4","songName":"Tarde","artist":"Example","playData":{"difficulties":["easy","normal","hard"],"characters":{"player":"bf","opponent":"$opponent"},"stage":"mainStage"},"timeChanges":[{"t":0,"bpm":120}]}"""
         val chart = """{"version":"2.0.0","scrollSpeed":{"default":1},"notes":{"easy":[{"t":100,"d":0}],"normal":[{"t":200,"d":1}],"hard":[{"t":300,"d":2}]},"events":[]}"""
         ZipOutputStream(file.outputStream()).use { out ->
             fun entry(name: String, bytes: ByteArray) { out.putNextEntry(ZipEntry(name)); out.write(bytes); out.closeEntry() }
@@ -75,6 +76,12 @@ class ModZipConfirmationTest {
             entry("data/songs/tarde/tarde-chart.json", chart.toByteArray())
             entry("songs/tarde/Inst.ogg", javaClass.getResourceAsStream("/psych-fixture/Inst.ogg")!!.use { it.readBytes() })
             entry("scripts/original.hx", "trace('original');".toByteArray())
+            if (withCharacter) {
+                entry("data/characters/Hero_Day.json", """{"version":"1.0.2","name":"Hero","assetPath":"characters/Hero_Day","renderType":"sparrow","scale":1,"unknown":"kept","animations":[{"name":"idle","prefix":"idle","frameRate":24,"looped":false,"offsets":[0,0]}]}""".toByteArray())
+                entry("images/characters/Hero_Day.xml", """<TextureAtlas imagePath="Hero_Day.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>""".toByteArray())
+                entry("images/characters/Hero_Day.png", javaClass.getResourceAsStream("/psych-fixture/dad.png")!!.use { it.readBytes() })
+                entry("data/levels/existing.json", "{}".toByteArray())
+            }
         }
         return Uri.fromFile(file)
     }
@@ -104,6 +111,35 @@ class ModZipConfirmationTest {
         assertEquals(200L, vm.config.getChart("tarde", "normal")!!.notes.single().timeMs)
         assertTrue(File(vm.config.firstSong.instrumental!!.path).isFile)
         assertEquals(vm.currentProjectId, File(app.filesDir, "projects/active.txt").readText())
+    }
+    @Test fun androidViewModelReopensAndExportsImportedCharacterWithoutChangingMetadata() {
+        val previous = vm.currentProjectId!!
+        vm.inspectModZip(zip(withCharacter = true))
+        await { !vm.busy }
+        assertNotNull(vm.portableMessage, vm.modZipReview)
+        assertEquals(1, vm.modZipReview!!.characters)
+        vm.confirmModZipImport(); await { !vm.busy }
+        val imported = vm.currentProjectId!!
+        assertEquals("Hero_Day", vm.config.character.charId)
+        assertEquals("Hero_Day", vm.config.firstSong.opponent)
+        vm.setCharName("Hero editado")
+        vm.goHome(); vm.switchProject(previous); await { !vm.busy }
+        vm.switchProject(imported); await { !vm.busy }
+        assertEquals("Hero editado", vm.config.character.displayName)
+        assertEquals("Hero_Day", vm.config.firstSong.opponent)
+        assertTrue(vm.validationIssues.joinToString { it.message }, vm.exportReady)
+        val output = File(app.cacheDir, "exported-tarde.zip")
+        vm.export(Uri.fromFile(output)); await { !vm.busy }
+        assertNull(vm.error)
+        val files = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(output.inputStream()).use { zip ->
+            while (true) { val entry = zip.nextEntry ?: break; files[entry.name] = zip.readBytes() }
+        }
+        val meta = org.json.JSONObject(files.getValue("data/songs/tarde/tarde-metadata.json").toString(Charsets.UTF_8))
+        assertEquals("Hero_Day", meta.getJSONObject("playData").getJSONObject("characters").getString("opponent"))
+        val character = org.json.JSONObject(files.getValue("data/characters/Hero_Day.json").toString(Charsets.UTF_8))
+        assertEquals("Hero editado", character.getString("name")); assertEquals("kept", character.getString("unknown"))
+        assertTrue("images/characters/Hero_Day.png" in files)
     }
     @Test fun publicationFailureShowsErrorRetainsReviewAndCanRetry() {
         val previous = vm.currentProjectId

@@ -97,4 +97,12 @@ class PsychChartReaderTest {
         assertThrows(IllegalArgumentException::class.java) { edited.copy(notes = listOf(edited.notes[0].copy(psychTypeJson = "1e"))).toPsychJson() }
     }
 
+    @Test fun opaqueNumericTokenSurvivesGeneratedSectionsWithoutParsingThroughDouble() {
+        val note = ChartNote(timeMs = 100, lane = 0, psychTypeJson = "123456789012345678901234567890")
+        val chart = com.fnfmodmaker.model.ChartDraft(songFolder = "test", notes = listOf(note), bpm = 120.1)
+        val encoded = chart.toPsychJson()
+        assertTrue(encoded.contains("123456789012345678901234567890"))
+        assertEquals(note, readPsychChart(encoded, "test", "normal").notes.single())
+    }
+
 }

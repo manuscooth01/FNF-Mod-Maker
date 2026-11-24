@@ -151,7 +151,7 @@ data class ChartDraft(
                         .put(data)
                         .put(sustain).apply {
                             val token = psychNoteTypeToken(note)
-                            if (token != null) put(if (token.isJsonNull) JSONObject.NULL else if (token.asJsonPrimitive.isString) "" else token.asBigDecimal)
+                            if (token != null) put(0) // Replaced with the exact Gson token below.
                             else if (note.kind.isNotEmpty()) put(note.kind)
                         }
                 )
@@ -184,6 +184,15 @@ data class ChartDraft(
             .put("format", "psych_v1")
         // Gson retains the original event number tokens instead of rounding them through org.json.
         val tree = com.google.gson.JsonParser.parseString(json.toString()).asJsonObject
+        // JSONObject numbers can normalize or round opaque type identifiers. Restore exact
+        // Gson tokens after constructing the ordinary generated section structure.
+        val generatedSections = tree.getAsJsonArray("notes")
+        for (sectionIndex in 0 until sectionCount) {
+            val start = sectionIndex * 4 * beatMs; val end = (sectionIndex + 1) * 4 * beatMs
+            val sectionNotes = notes.filter { it.timeMs >= start && it.timeMs < end }
+            val rows = generatedSections[sectionIndex].asJsonObject.getAsJsonArray("sectionNotes")
+            sectionNotes.forEachIndexed { i, note -> psychNoteTypeToken(note)?.let { rows[i].asJsonArray.set(3, it) } }
+        }
         val events = if (psychEventsJson.isBlank()) "[]" else com.fnfmodmaker.mod.validatePsychEvents(psychEventsJson)
         tree.add("events", com.google.gson.JsonParser.parseString(events))
         return tree.toString()

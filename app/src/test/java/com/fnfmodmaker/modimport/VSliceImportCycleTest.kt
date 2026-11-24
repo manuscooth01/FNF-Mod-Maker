@@ -266,6 +266,13 @@ class VSliceImportCycleTest {
         listOf("data/characters/metza.json", "images/characters/metza.png", "images/characters/metza.xml").forEach { assertTrue(it, it in files) }
     }
 
+    @Test fun ambiguousDuplicateMetadataKeysAreNotRewritten() {
+        val source = """{"playData":{"characters":{"opponent":"dad"}},"unknown":{"key":1,"key":2}}"""
+        val origin = VSliceSongOrigin(originalOpponent = "dad")
+        val raw = SongConfig(opponent = "dad", vSliceOrigin = origin)
+        assertThrows(Exception::class.java) { patchImportedVSliceMetadata(source, raw, raw.copy(opponent = "metza"), setOf("opponent")) }
+    }
+
     @Test fun missingAssignmentOrResourcesAreBlocked() {
         val store = ProjectStore(File(temp.root, "projects-invalid-roles"), temp.root)
         val p = prepare(zip(), store)

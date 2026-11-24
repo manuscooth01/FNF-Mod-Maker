@@ -41,6 +41,30 @@ internal fun assignedVSliceRoles(config: ModConfig): Set<String> {
 internal fun vSliceExportProblems(raw: SongConfig, effective: SongConfig, config: ModConfig): List<String> =
     (vSliceImportProblems(raw) + vSliceImportProblems(effective, assignedVSliceRoles(config))).distinct()
 
+/** Duplicate keys have ambiguous meaning and cannot safely survive reserialization. */
+private fun rejectDuplicateJsonKeys(text: String) {
+    val reader = com.google.gson.stream.JsonReader(java.io.StringReader(text))
+    fun value() {
+        when (reader.peek()) {
+            com.google.gson.stream.JsonToken.BEGIN_OBJECT -> {
+                reader.beginObject(); val names = mutableSetOf<String>()
+                while (reader.hasNext()) {
+                    val name = reader.nextName()
+                    require(names.add(name)) { "La metadata contiene claves duplicadas; no se puede modificar sin ambigüedad." }
+                    value()
+                }
+                reader.endObject()
+            }
+            com.google.gson.stream.JsonToken.BEGIN_ARRAY -> { reader.beginArray(); while (reader.hasNext()) value(); reader.endArray() }
+            com.google.gson.stream.JsonToken.STRING, com.google.gson.stream.JsonToken.NUMBER -> reader.nextString()
+            com.google.gson.stream.JsonToken.BOOLEAN -> reader.nextBoolean()
+            com.google.gson.stream.JsonToken.NULL -> reader.nextNull()
+            else -> error("Metadata JSON inválida.")
+        }
+    }
+    reader.use { value(); require(it.peek() == com.google.gson.stream.JsonToken.END_DOCUMENT) { "Metadata JSON inválida." } }
+}
+
 /** Only explicitly assigned roles are patched; all other JSON values remain from the original. */
 internal fun patchImportedVSliceMetadata(original: String, raw: SongConfig, effective: SongConfig, allowed: Set<String>): String {
     val origin = raw.vSliceOrigin ?: error("Falta el origen V-Slice.")
@@ -50,6 +74,7 @@ internal fun patchImportedVSliceMetadata(original: String, raw: SongConfig, effe
     // Validate bounds/depth first, then use Gson's lazy JSON numbers so unknown
     // large integers and high-precision decimals are not rounded by JSONObject.
     readVSliceJson(original, "metadata original")
+    rejectDuplicateJsonKeys(original)
     val json = com.google.gson.JsonParser.parseString(original).asJsonObject
     val play = json.get("playData")?.takeIf { it.isJsonObject }?.asJsonObject ?: error("Falta playData en la metadata original.")
     val chars = when {

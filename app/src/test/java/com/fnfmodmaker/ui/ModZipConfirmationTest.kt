@@ -135,11 +135,12 @@ class ModZipConfirmationTest {
         java.util.zip.ZipInputStream(output.inputStream()).use { zip ->
             while (true) { val entry = zip.nextEntry ?: break; files[entry.name] = zip.readBytes() }
         }
-        val meta = org.json.JSONObject(files.getValue("data/songs/tarde/tarde-metadata.json").toString(Charsets.UTF_8))
+        val prefix = "${vm.config.modFolder}/"
+        val meta = org.json.JSONObject(files.getValue(prefix + "data/songs/tarde/tarde-metadata.json").toString(Charsets.UTF_8))
         assertEquals("Hero_Day", meta.getJSONObject("playData").getJSONObject("characters").getString("opponent"))
-        val character = org.json.JSONObject(files.getValue("data/characters/Hero_Day.json").toString(Charsets.UTF_8))
+        val character = org.json.JSONObject(files.getValue(prefix + "data/characters/Hero_Day.json").toString(Charsets.UTF_8))
         assertEquals("Hero editado", character.getString("name")); assertEquals("kept", character.getString("unknown"))
-        assertTrue("images/characters/Hero_Day.png" in files)
+        assertTrue(prefix + "images/characters/Hero_Day.png" in files)
     }
     @Test fun publicationFailureShowsErrorRetainsReviewAndCanRetry() {
         val previous = vm.currentProjectId

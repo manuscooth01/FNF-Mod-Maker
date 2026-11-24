@@ -90,7 +90,10 @@ class VSliceImportCycleTest {
         }.nullSafe()).create())
 
     @Test fun confirmationPublishesActivatesAndOpensVSliceWithRealValidator() {
-        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val real = File(temp.root, "real").apply { mkdirs() }
+        val alias = File(temp.root, "android-data-user-alias")
+        java.nio.file.Files.createSymbolicLink(alias.toPath(), real.toPath())
+        val store = ProjectStore(File(alias, "projects"), temp.root)
         val old = productionJson(ModConfig(modTitle = "Anterior"))
         val active = store.newId(); store.save(active, old); store.setActive(active)
         val prepared = prepare(zip(), store)
@@ -101,6 +104,9 @@ class VSliceImportCycleTest {
         assertEquals("Test", opened.config.firstSong.songName)
         assertEquals(2, opened.config.getChart("test", "normal")!!.notes.size)
         assertTrue(File(opened.config.firstSong.instrumental!!.path).isFile)
+        assertTrue(File(opened.config.character.atlasSheet!!.path).isFile)
+        assertTrue(File(opened.config.character.atlasXml!!.path).isFile)
+        assertEquals(File(opened.config.firstSong.instrumental!!.path).canonicalPath, opened.config.firstSong.instrumental!!.path)
         assertTrue(opened.config.importedModResources.all { File(it.asset!!.path).isFile })
         assertEquals(old, store.load(active).config)
     }
@@ -131,7 +137,10 @@ class VSliceImportCycleTest {
     }
 
     @Test fun completeCyclePreservesEventsUnsupportedChartsTempoVariantsResourcesAndNotes() {
-        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val real = File(temp.root, "real").apply { mkdirs() }
+        val alias = File(temp.root, "android-data-user-alias")
+        java.nio.file.Files.createSymbolicLink(alias.toPath(), real.toPath())
+        val store = ProjectStore(File(alias, "projects"), temp.root)
         val active = store.newId(); store.save(active, gson.toJsonTree(ModConfig(modTitle = "Existing")).asJsonObject); store.setActive(active)
         val prepared = prepare(zip(), store)
         assertEquals(TargetEngine.VSLICE, prepared.config.engine); assertEquals(setOf("normal"), prepared.config.firstSong.difficulties)

@@ -107,6 +107,7 @@ class ModZipConfirmationTest {
         await { !vm.busy }
         assertNotNull(vm.modZipReview)
         assertNotNull(vm.modZipImportError)
+        assertTrue(vm.modZipImportError!!.contains("archivo ausente"))
         assertEquals(previous, vm.currentProjectId)
         assertEquals(previousConfig, vm.config)
         assertEquals(previous, File(app.filesDir, "projects/active.txt").readText())

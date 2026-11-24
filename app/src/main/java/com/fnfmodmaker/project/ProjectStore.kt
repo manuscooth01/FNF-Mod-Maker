@@ -107,18 +107,54 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         val id = newId(); val finalDir = dir(id)
         require(!finalDir.exists())
         val output = source.deepCopy()
-        val stagedAssets = File(stage, "assets").canonicalFile
+        val canonicalStage = stage.canonicalFile
+        // Stage and assets themselves must not be links to a different directory.
+        require(canonicalStage.parentFile == root.canonicalFile && canonicalStage.name == stage.name) { "Carpeta temporal insegura." }
+        val absoluteAssets = File(stage, "assets").absoluteFile
+        val stagedAssets = absoluteAssets.canonicalFile
+        require(stagedAssets.parentFile == canonicalStage && stagedAssets.name == "assets" && stagedAssets.isDirectory) { "Carpeta de recursos temporal insegura o ausente." }
+
+        // File parent traversal compares path components without requiring java.nio.file (Android API 26).
+        fun isDescendant(file: File, directory: File): Boolean {
+            var parent = file.parentFile
+            while (parent != null) {
+                if (parent == directory) return true
+                parent = parent.parentFile
+            }
+            return false
+        }
         fun visit(node: com.google.gson.JsonElement, depth: Int) {
             require(depth <= 64)
             if (node.isJsonArray) { node.asJsonArray.forEach { visit(it, depth + 1) }; return }
             if (!node.isJsonObject) return
             val obj = node.asJsonObject
             if (obj.has("path") && obj.has("displayName") && obj.has("uri")) {
-                val path = File(obj.get("path").asString)
-                val canonical = path.canonicalFile
-                require(canonical == path.absoluteFile && canonical.path.startsWith(stagedAssets.path + File.separator) && canonical.isFile) { "Recurso importado inseguro o ausente." }
-                val relative = canonical.relativeTo(stage.canonicalFile).invariantSeparatorsPath
-                obj.addProperty("path", File(finalDir, relative).absolutePath)
+                val nameValue = obj.get("displayName")
+                val name = if (nameValue?.isJsonPrimitive == true && nameValue.asJsonPrimitive.isString)
+                    nameValue.asString.filter { !it.isISOControl() }.take(120).ifBlank { "sin nombre" } else "sin nombre"
+                val pathValue = obj.get("path")
+                require(pathValue?.isJsonPrimitive == true && pathValue.asJsonPrimitive.isString) { "Recurso '$name': ruta insegura o inválida." }
+                val text = pathValue.asString
+                require(text.isNotEmpty() && '\u0000' !in text && '\\' !in text &&
+                    text.split('/').none { it == "." || it == ".." }) { "Recurso '$name': ruta insegura (traversal o componentes inválidos)." }
+                val path = File(text)
+                require(path.isAbsolute) { "Recurso '$name': ruta insegura (debe ser absoluta)." }
+                val absolute = path.absoluteFile
+                // Accept the stage's own spelling and its canonical spelling, but not arbitrary
+                // external aliases. Reject an external path even if a symlink leads inside.
+                require(isDescendant(absolute, absoluteAssets) || isDescendant(absolute, stagedAssets)) {
+                    "Recurso '$name': ruta externa a los recursos temporales."
+                }
+                val canonical = try { path.canonicalFile } catch (e: java.io.IOException) {
+                    throw IllegalArgumentException("Recurso '$name': no se pudo resolver la ruta segura.", e)
+                }
+                require(isDescendant(canonical, stagedAssets)) { "Recurso '$name': ruta insegura (un enlace sale de los recursos temporales)." }
+                require(canonical.isFile) { "Recurso '$name': archivo ausente o no es un archivo regular." }
+                // Relocate the resolved target, not an inner symlink that might break on rename.
+                val relative = canonical.relativeTo(canonicalStage).invariantSeparatorsPath
+                // Store a canonical spelling so downstream export checks do not mistake an
+                // Android data-directory alias for a symlink inside the project's assets.
+                obj.addProperty("path", File(finalDir, relative).canonicalPath)
                 obj.addProperty("uri", "")
                 return
             }

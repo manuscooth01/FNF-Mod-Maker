@@ -51,7 +51,10 @@ class PsychImportCycleTest {
         return bytes.toByteArray()
     }
     @Test fun confirmationAlsoOpensPsychProject() {
-        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val real = File(temp.root, "real").apply { mkdirs() }
+        val alias = File(temp.root, "android-data-user-alias")
+        java.nio.file.Files.createSymbolicLink(alias.toPath(), real.toPath())
+        val store = ProjectStore(File(alias, "projects"), temp.root)
         val old = gson.toJsonTree(ModConfig(modTitle = "Current")).asJsonObject
         val active = store.newId(); store.save(active, old); store.setActive(active)
         val stage = store.newImportStage()
@@ -59,15 +62,28 @@ class PsychImportCycleTest {
             PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, stage)
         }
         val session = ModImportSession(stage, gson.toJsonTree(prepared.config).asJsonObject)
+        val audio = File(prepared.config.firstSong.instrumental!!.path)
+        val bytes = audio.readBytes(); assertTrue(audio.delete())
+        assertThrows(IllegalArgumentException::class.java) {
+            session.publishAndOpen(store, active, old, {}) { gson.fromJson(it, ModConfig::class.java) }
+        }
+        assertEquals(active, store.activeId()); assertEquals("Current", store.load(active).config.get("modTitle").asString)
+        assertTrue(stage.isDirectory); audio.writeBytes(bytes)
         val opened = session.publishAndOpen(store, active, old, {}) { gson.fromJson(it, ModConfig::class.java) }
         assertEquals(opened.id, store.activeId())
         assertEquals(TargetEngine.PSYCH, opened.config.engine)
         assertEquals(2, opened.config.getChart("test", "normal")!!.notes.size)
         assertTrue(File(opened.config.firstSong.instrumental!!.path).isFile)
+        assertTrue(File(opened.config.character.atlasSheet!!.path).isFile)
+        assertTrue(File(opened.config.character.atlasXml!!.path).isFile)
+        assertEquals(File(opened.config.firstSong.instrumental!!.path).canonicalPath, opened.config.firstSong.instrumental!!.path)
         assertEquals("Current", store.load(active).config.get("modTitle").asString)
     }
     @Test fun extractedPsychProjectCanBeSavedReopenedPackagedAndOpaqueAssetsSurvive() {
-        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val real = File(temp.root, "real").apply { mkdirs() }
+        val alias = File(temp.root, "android-data-user-alias")
+        java.nio.file.Files.createSymbolicLink(alias.toPath(), real.toPath())
+        val store = ProjectStore(File(alias, "projects"), temp.root)
         val active = store.newId(); store.save(active, gson.toJsonTree(ModConfig(modTitle = "Current")).asJsonObject); store.setActive(active)
         val stage = store.newImportStage()
         val importer = PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image)

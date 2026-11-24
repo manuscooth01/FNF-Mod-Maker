@@ -214,7 +214,9 @@ internal class PortableProject(private val appRoot: File) {
         refs(output) { ref ->
             val path = ref.get("path").asString
             require(path in prepared.checksums && validName(path)) { "Referencia inválida." }
-            ref.addProperty("path", File(finalDirectory, path).absolutePath)
+            // Store the canonical destination so Android's data-directory aliases do not
+            // look like links inside the project when the restored mod is exported.
+            ref.addProperty("path", File(finalDirectory, path).canonicalPath)
             ref.addProperty("uri", "")
         }
         return output

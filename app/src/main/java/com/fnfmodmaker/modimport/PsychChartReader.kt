@@ -89,7 +89,7 @@ internal fun readPsychChart(text: String, folder: String, difficulty: String): C
             require(t % 1.0 == 0.0 && duration % 1.0 == 0.0) { "Sección $i: tiempos fraccionarios de nota no editables sin pérdida." }
             val kind = if (row.length() < 4 || row.isNull(3)) "" else when (val type = row.opt(3)) {
                 is String -> type
-                is Number -> if (type.toDouble() == 0.0) "" else error("Tipo de nota numérico no compatible en sección $i.")
+                is Number -> error("Tipo de nota numérico $type en sección $i: la tabla puede variar por mod y el editor no puede conservarlo de forma reversible.")
                 else -> error("Tipo de nota inválido en sección $i.")
             }
             require(kind.length <= 128 && kind.none(Char::isISOControl)) { "Tipo de nota inválido en sección $i." }

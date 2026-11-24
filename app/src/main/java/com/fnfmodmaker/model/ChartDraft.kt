@@ -105,6 +105,7 @@ data class ChartDraft(
 
     /** Convierte a JSON Psych Engine (formato psych_v1). */
     fun toPsychJson(): String {
+        require(bpm.isFinite() && bpm in 1.0..400.0) { "BPM inicial Psych inválido; no se exportó el chart." }
         requireExportable()
         if (psychLayout.isNotEmpty()) return psychSectionsToJson(this)
         val beatMs = if (bpm > 0) 60000.0 / bpm else 400.0

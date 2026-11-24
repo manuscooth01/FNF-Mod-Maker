@@ -2169,8 +2169,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun setActiveSongBpm(value: String) {
+        val bpm = value.replace(',', '.')
+        // Never truncate pasted precision into a different valid BPM.
+        if (bpm.length > 128 || bpm.any { !it.isDigit() && it != '.' }) return
         updateActiveSong { song ->
-            val bpm = value.filter { c -> c.isDigit() || c == '.' || c == ',' }.replace(',', '.').take(16)
             if (song.vSliceIndependentInitialBpm) song.copy(bpm = bpm)
             else song.copy(bpm = bpm, vSliceTempoUndo = emptyList(), vSliceTempoRedo = emptyList())
         }

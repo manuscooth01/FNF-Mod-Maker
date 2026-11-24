@@ -80,4 +80,15 @@ class PsychChartReaderTest {
         val tempo = chart("", true).replace("\"sectionBeats\":4", "\"sectionBeats\":4,\"changeBPM\":true")
         assertThrows(IllegalArgumentException::class.java) { readPsychChart(tempo, "test", "normal") }
     }
+    @Test fun numericNoteTypesAreRejectedUntilTheirOriginalRepresentationCanBePreserved() {
+        // Even 0 must not silently become a missing type; mods may also redefine the table.
+        for (value in listOf("0", "1", "2", "3", "4", "5", "6", "-1", "1.5")) {
+            assertThrows(IllegalStateException::class.java) {
+                readPsychChart(chart("", true, ",[300,1,0,$value]"), "test", "normal")
+            }
+        }
+        val text = readPsychChart(chart("", true, ",[300,1,0,\"Hey!\"]"), "test", "normal")
+        assertEquals("Hey!", readPsychChart(text.toPsychJson(), "test", "normal").notes.last().kind)
+    }
+
 }

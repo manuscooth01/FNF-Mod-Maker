@@ -547,8 +547,8 @@ eliminan las copias locales. El selector, el guardado y la apariencia deben prob
 
 En el editor de personaje (herramienta independiente o asistente del mod), **Importar JSON de
 personaje** permite revisar y aplicar campos editables de JSON Psych o V-Slice reconocidos.
-Importa identidad derivada del nombre del archivo, imagen de referencia, escala, giro, posiciones,
-prefijos, FPS, bucles y offsets compatibles. El PNG y XML Sparrow se eligen aparte. Se conserva el
+Importa identidad derivada del nombre del archivo, escala, giro, posiciones,
+prefijos, FPS, bucles y offsets compatibles. La ruta de imagen se muestra como referencia; el PNG y XML Sparrow se eligen aparte. Se conserva el
 JSON original dentro del proyecto editable y en su respaldo `.fnfproject`, pero el ZIP exportado
 regenera el JSON: índices de frames, renderizadores como AnimateAtlas y otros campos específicos no
 se trasladan. Revisa los avisos y comprueba el resultado en el motor; no es una conversión sin pérdidas.

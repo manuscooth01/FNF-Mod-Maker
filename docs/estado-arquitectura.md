@@ -77,3 +77,13 @@ MediaPlayer y corrección de deriva; esto NO ofrece sincronización a nivel de m
 silencio y offsets son ajustes del editor, no transforman el audio exportado. El cálculo y la
 serialización tienen pruebas unitarias, pero MediaCodec, MediaPlayer, latencia, foco de audio y
 sincronización aún necesitan pruebas instrumentadas o físicas en varios dispositivos Android.
+
+## JSON de personajes y copias ZIP
+
+El editor compartido permite revisar y aplicar parcialmente JSON Psych/V-Slice; el original se
+conserva en el proyecto, no en el ZIP del mod generado. Los índices de frames, AnimateAtlas y
+otros campos no representados no se convierten. Los recursos gráficos se seleccionan aparte.
+La biblioteca de ZIP conserva archivos intactos y permite exportar copias, sin extracción ni
+ejecución; no convierte mods a proyectos editables ni verifica integridad de cada entrada. Se
+retiró el placeholder inseguro de importación de mod y stage. Falta probar los selectores y los
+resultados en Android y en los motores.

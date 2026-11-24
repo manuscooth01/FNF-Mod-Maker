@@ -179,7 +179,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
                     }
                 }
             }
-            Text("Guarda un .fnfproject fuera de la app para conservar una copia. La importación de ZIP de mods externos sigue sin estar disponible.", style = MaterialTheme.typography.labelSmall)
+            Text("Guarda un .fnfproject fuera de la app para conservar una copia. Los ZIP de mods no se convierten en proyectos editables.", style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(12.dp))
             ToolCard(
                 icon = com.fnfmodmaker.R.drawable.tool_person,
@@ -189,6 +189,10 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 badge = null,
                 onClick = { vm.openTool(Tool.CHARACTER) }
             )
+            Spacer(Modifier.height(12.dp))
+            ToolCard(icon = com.fnfmodmaker.R.drawable.tool_music_note, title = "Copias de mods ZIP",
+                description = "Guarda y recupera el ZIP original sin modificar el proyecto. No permite editar el mod.", badge = "Copia local",
+                onClick = { vm.openTool(Tool.IMPORT) })
             Spacer(Modifier.height(12.dp))
             ToolCard(
                 icon = com.fnfmodmaker.R.drawable.tool_music_note,
@@ -202,7 +206,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 description = "Pide un plan para tu mod o revisa propuestas antes de aplicarlas.", badge = "Opcional",
                 onClick = { vm.openTool(Tool.ASSISTANT) })
             Spacer(Modifier.height(12.dp))
-            Text("Escenario sencillo disponible dentro de Canciones. Importación de mods y cinemáticas: aún no disponibles.",
+            Text("Escenario sencillo disponible dentro de Canciones. Conversión de mods ZIP a proyectos editables y cinemáticas: aún no disponibles.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(Modifier.height(20.dp))

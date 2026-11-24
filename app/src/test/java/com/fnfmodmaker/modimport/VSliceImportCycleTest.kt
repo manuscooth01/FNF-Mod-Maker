@@ -107,6 +107,27 @@ class VSliceImportCycleTest {
         val changed = p.config.copy(songs = listOf(p.config.firstSong.copy(bpm = "130")))
         assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(changed, File(temp.root, "build"), temp.root, {}, services()) }
     }
+    @Test fun preservesPolymodFieldsAndSingleCharacterVoiceFilename() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val p = prepare(zip(extra = mapOf("_polymod_meta.json" to """{"title":"Source","description":"Original","license":"CUSTOM","vendor":{"keep":1}}""")), store)
+        val singleSong = p.config.firstSong.copy(vocalsOpponent = null, vSliceOrigin = p.config.firstSong.vSliceOrigin!!.copy(opponentVoiceFile = ""))
+        // A single V-Slice voice must retain its suffix, not turn into Voices.ogg.
+        val single = p.config.copy(songs = listOf(singleSong), modTitle = "Edited title")
+        val built = ModBuilder.buildInternal(single, File(temp.root, "build"), temp.root, {}, services())
+        assertTrue(File(built.rootDir, "songs/test/Voices-bf.ogg").isFile)
+        assertFalse(File(built.rootDir, "songs/test/Voices.ogg").exists())
+        val meta = JSONObject(File(built.rootDir, "_polymod_meta.json").readText())
+        assertEquals("Edited title", meta.getString("title")); assertEquals("CUSTOM", meta.getString("license")); assertEquals(1, meta.getJSONObject("vendor").getInt("keep"))
+    }
+    @Test fun noneditableDifficultyCannotBeAddedOrSilentlyDropped() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val p = prepare(zip(), store)
+        val hard = ChartDraft(songFolder = "test", difficulty = "hard", notes = listOf(ChartNote(200, 0)))
+        val extra = p.config.withChart("test", "hard", hard)
+        assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(extra, File(temp.root, "build"), temp.root, {}, services()) }
+        val disabled = p.config.copy(songs = listOf(p.config.firstSong.copy(difficulties = emptySet())))
+        assertTrue(com.fnfmodmaker.mod.vSliceImportProblems(disabled.firstSong).isNotEmpty())
+    }
     @Test fun rejectsUnsupportedVersionsAndBothWithoutPublishing() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         assertThrows(IllegalArgumentException::class.java) { prepare(zip(meta = metadata.replace("2.2.4", "3.0.0")), store) }

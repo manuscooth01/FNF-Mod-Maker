@@ -2050,6 +2050,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     internal fun toggleActiveSongDifficulty(difficulty: String) {
+        if (config.songs.getOrNull(activeSongIndex)?.vSliceOrigin != null) {
+            error = "Las dificultades importadas de V-Slice son de solo lectura; las compatibles se pueden editar, las demás se conservan intactas."
+            return
+        }
         updateActiveSong { song ->
             val current = song.difficulties
             val updated = if (difficulty in current) current - difficulty else current + difficulty

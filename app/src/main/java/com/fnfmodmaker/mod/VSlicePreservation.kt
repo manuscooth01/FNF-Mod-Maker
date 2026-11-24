@@ -15,8 +15,8 @@ internal fun vSliceImportProblems(song: SongConfig): List<String> {
             song.bpm != o.originalBpm || song.speed != o.originalSpeed || song.offsetMs != o.originalOffset ||
             song.player != o.originalPlayer || song.opponent != o.originalOpponent || song.girlfriend != o.originalGirlfriend || song.stageVSlice != o.originalStage)
             add("${o.folder}: la metadata V-Slice original es de solo lectura; deshaz los cambios de nombre, artista, BPM, velocidad, offset, personajes o escenario.")
-        if (song.difficulties.any { it !in o.editableDifficulties })
-            add("${o.folder}: hay dificultades no editables; desactívalas para conservar sus datos originales.")
+        if (song.difficulties != o.editableDifficulties)
+            add("${o.folder}: las dificultades originales son de solo lectura; restaura las dificultades editables importadas.")
         if ((song.vocalsPlayer != null) != o.playerVoiceFile.isNotEmpty() || (song.vocalsOpponent != null) != o.opponentVoiceFile.isNotEmpty())
             add("${o.folder}: no se puede añadir ni quitar una pista de voz sin modificar la metadata original; restaura las pistas seleccionadas.")
     }
@@ -33,6 +33,9 @@ internal fun originalVSliceText(config: ModConfig, path: String, appRoot: File, 
 internal fun buildImportedVSliceChart(config: ModConfig, song: SongConfig, appRoot: File): String {
     val origin = song.vSliceOrigin ?: error("No hay origen V-Slice.")
     require(vSliceImportProblems(song).isEmpty()) { vSliceImportProblems(song).joinToString(" ") }
+    require(config.charts[song.songFolder].orEmpty().keys.all { it in origin.editableDifficulties }) {
+        "${song.songFolder}: un chart no editable contiene cambios que no se pueden exportar sin pérdida."
+    }
     val drafts = song.difficulties.associateWith { diff -> config.getChart(song.songFolder, diff) ?: error("Falta el chart editable $diff de ${song.songFolder}; no se reemplazó el original.") }
     return patchVSliceChart(originalVSliceText(config, origin.chartPath, appRoot, true), drafts, origin.editableDifficulties)
 }

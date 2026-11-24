@@ -31,13 +31,56 @@ data class StageDraft(
     val baseStagePsych: String = "stage",
     
     // Para V-Slice: nombre del stage base (mainStage, phillyStreets, etc.)
-    val baseStageVSlice: String = "mainStage"
+    val baseStageVSlice: String = "mainStage",
+    // Engine-specific coordinates keep old project defaults and schemas separate.
+    val vSliceLayout: StageLayout = defaultVSliceLayout(),
+    val psychLayout: StageLayout = defaultPsychLayout(),
+    val psychCameraSpeed: Float = 1f
 ) {
     val stageFolder: String
         get() = "fnfmm-" + stageId.lowercase().replace(" ", "-").replace(Regex("[^a-z0-9-]"), "").take(40).ifEmpty { "escenario" }
     
     val isReady: Boolean
         get() = enabled && stageId.isNotBlank() && backgroundImage != null
+}
+
+/** Stage placement is separate from character and animation offsets. */
+data class StageActorPlacement(
+    val x: Float = 0f, val y: Float = 0f,
+    val cameraX: Float = 0f, val cameraY: Float = 0f,
+    val scale: Float = 1f, val zIndex: Int = 0,
+    val scrollX: Float = 1f, val scrollY: Float = 1f
+)
+enum class StageRole(val label: String) { BF("Jugador · BF"), DAD("Rival · DAD"), GF("Acompañante · GF") }
+data class StageLayout(val bf: StageActorPlacement = StageActorPlacement(), val dad: StageActorPlacement = StageActorPlacement(), val gf: StageActorPlacement = StageActorPlacement()) {
+    fun actor(role: StageRole): StageActorPlacement = when (role) { StageRole.BF -> bf; StageRole.DAD -> dad; StageRole.GF -> gf }
+    fun withActor(role: StageRole, actor: StageActorPlacement): StageLayout = when (role) {
+        StageRole.BF -> copy(bf = actor); StageRole.DAD -> copy(dad = actor); StageRole.GF -> copy(gf = actor)
+    }
+}
+fun defaultVSliceLayout() = StageLayout(
+    bf = StageActorPlacement(989.5f, 885f, -100f, -100f, zIndex = 300),
+    dad = StageActorPlacement(335f, 885f, 150f, -100f, zIndex = 200),
+    gf = StageActorPlacement(751.5f, 787f, 0f, 0f, zIndex = 100))
+fun defaultPsychLayout() = StageLayout(
+    bf = StageActorPlacement(770f, 100f), dad = StageActorPlacement(100f, 100f), gf = StageActorPlacement(400f, 130f))
+
+/** Do not silently serialize fields absent from a target engine's stage format. */
+fun stageLayoutProblems(stage: StageDraft, engine: TargetEngine): List<String> = buildList {
+    fun check(layout: StageLayout, name: String, psych: Boolean) {
+        StageRole.entries.forEach { role ->
+            val actor = layout.actor(role)
+            if (listOf(actor.x, actor.y, actor.cameraX, actor.cameraY, actor.scale, actor.scrollX, actor.scrollY).any { !it.isFinite() } || actor.scale <= 0f || actor.scale > 100f || listOf(actor.x, actor.y, actor.cameraX, actor.cameraY).any { kotlin.math.abs(it) > 100000f })
+                add("$name · ${role.label}: posición, cámara o escala inválida.")
+            if (psych && (actor.scale != 1f || actor.zIndex != 0 || actor.scrollX != 1f || actor.scrollY != 1f))
+                add("Psych · ${role.label}: escala, Z y scroll de personaje no se representan en el JSON de escenario.")
+        }
+    }
+    if (engine.includesVSlice) check(stage.vSliceLayout, "V-Slice", false)
+    if (engine.includesPsych) {
+        check(stage.psychLayout, "Psych", true)
+        if (!stage.psychCameraSpeed.isFinite() || stage.psychCameraSpeed <= 0f || stage.psychCameraSpeed > 100f) add("Psych: velocidad de cámara inválida.")
+    }
 }
 
 /** Sprite individual dentro del stage (prop, foreground element, etc.). */

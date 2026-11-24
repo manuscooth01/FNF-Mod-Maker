@@ -8,22 +8,27 @@ import org.json.JSONObject
 object StageTemplate {
     private fun pair(x: Number, y: Number) = JSONArray().put(x).put(y)
     fun vslice(stage: StageDraft): String {
-        fun character(x: Number, y: Number, z: Int, cx: Int, cy: Int) = JSONObject()
-            .put("position", pair(x, y)).put("zIndex", z).put("cameraOffsets", pair(cx, cy))
+        fun character(actor: com.fnfmodmaker.model.StageActorPlacement) = JSONObject()
+            .put("position", pair(actor.x, actor.y)).put("zIndex", actor.zIndex)
+            .put("scale", actor.scale).put("scroll", pair(actor.scrollX, actor.scrollY))
+            .put("cameraOffsets", pair(actor.cameraX, actor.cameraY))
         return JSONObject().put("version", "1.0.1").put("name", stage.displayName.ifBlank { stage.stageId })
             .put("cameraZoom", stage.cameraPosition.zoom)
             .put("props", JSONArray().put(JSONObject().put("name", "background")
                 .put("assetPath", "stages/${stage.stageFolder}/background")
                 .put("position", pair(-600, -200)).put("scale", pair(1, 1)).put("scroll", pair(1, 1)).put("zIndex", 10)))
-            .put("characters", JSONObject().put("bf", character(989.5, 885, 300, -100, -100))
-                .put("dad", character(335, 885, 200, 150, -100))
-                .put("gf", character(751.5, 787, 100, 0, 0))).toString(2)
+            .put("characters", JSONObject().put("bf", character(stage.vSliceLayout.bf))
+                .put("dad", character(stage.vSliceLayout.dad))
+                .put("gf", character(stage.vSliceLayout.gf))).toString(2)
     }
-    fun psych(stage: StageDraft): String = JSONObject().put("directory", "").put("defaultZoom", stage.cameraPosition.zoom)
-        .put("stageUI", "normal").put("isPixelStage", false).put("hide_girlfriend", false)
-        .put("boyfriend", pair(770, 100)).put("opponent", pair(100, 100)).put("girlfriend", pair(400, 130))
-        .put("camera_boyfriend", pair(0, 0)).put("camera_opponent", pair(0, 0)).put("camera_girlfriend", pair(0, 0))
-        .put("camera_speed", 1).toString(2)
+    fun psych(stage: StageDraft): String {
+        val layout = stage.psychLayout
+        return JSONObject().put("directory", "").put("defaultZoom", stage.cameraPosition.zoom)
+            .put("stageUI", "normal").put("isPixelStage", false).put("hide_girlfriend", false)
+            .put("boyfriend", pair(layout.bf.x, layout.bf.y)).put("opponent", pair(layout.dad.x, layout.dad.y)).put("girlfriend", pair(layout.gf.x, layout.gf.y))
+            .put("camera_boyfriend", pair(layout.bf.cameraX, layout.bf.cameraY)).put("camera_opponent", pair(layout.dad.cameraX, layout.dad.cameraY)).put("camera_girlfriend", pair(layout.gf.cameraX, layout.gf.cameraY))
+            .put("camera_speed", stage.psychCameraSpeed).toString(2)
+    }
     fun psychLua(stage: StageDraft): String = """-- Fondo estático creado por FNF Mod Maker.
 function onCreate()
     makeLuaSprite('fnfmmBackground', 'stages/${stage.stageFolder}/background', -600, -200)

@@ -2783,6 +2783,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(zoom = zoom))); scheduleAutoSave()
     }
 
+    internal fun updateStageActor(vSlice: Boolean, role: com.fnfmodmaker.model.StageRole, actor: com.fnfmodmaker.model.StageActorPlacement) {
+        if (busy) return
+        val stage = config.stageDraft
+        val updated = if (vSlice) stage.copy(vSliceLayout = stage.vSliceLayout.withActor(role, actor))
+            else stage.copy(psychLayout = stage.psychLayout.withActor(role, actor))
+        config = config.copy(stageDraft = updated); scheduleAutoSave()
+    }
+    internal fun setPsychCameraSpeed(value: Float) {
+        if (busy || !value.isFinite()) return
+        config = config.copy(stageDraft = config.stageDraft.copy(psychCameraSpeed = value)); scheduleAutoSave()
+    }
+
     fun setStageDisplayName(value: String) {
         config = config.copy(stageDraft = config.stageDraft.copy(displayName = value))
     }

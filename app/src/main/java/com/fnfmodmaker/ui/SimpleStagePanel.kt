@@ -39,14 +39,14 @@ internal fun SimpleStagePanel(vm: WizardViewModel) {
                 Field("Nombre corto del escenario", stage.stageId, vm::setStageId, hint = "La app usará el ID ${stage.stageFolder}.", enabled = !vm.busy)
                 Button(onClick = { picker.launch(arrayOf("image/png", "image/jpeg")) }, enabled = !vm.busy) { Text("Elegir imagen de fondo") }
                 Text(stage.backgroundImage?.displayName ?: "Aún no has elegido un fondo.", style = MaterialTheme.typography.bodySmall)
-                StageScenePreview(stage.backgroundImage?.path, stage.cameraPosition.zoom)
+                StagePositionStudio(vm)
                 Text("Encuadre inicial: ${stage.cameraPosition.zoom}", fontWeight = FontWeight.SemiBold)
                 Row {
                     listOf("Amplio" to 0.7f, "Normal" to 1f, "Cerca" to 1.3f).forEach { (label, zoom) ->
                         FilterChip(stage.cameraPosition.zoom == zoom, onClick = { vm.setSimpleStageZoom(zoom) }, enabled = !vm.busy, label = { Text(label) }, modifier = Modifier.padding(end = 4.dp))
                     }
                 }
-                Text("La imagen comienza en −600, −200; las posiciones de personajes son orientativas. Prueba el resultado en cada motor. Para cambios de cámara o cinemáticas pide al asistente un plan.", style = MaterialTheme.typography.labelSmall)
+                Text("El fondo comienza en −600, −200. Prueba el escenario en cada motor; la vista es orientativa.", style = MaterialTheme.typography.labelSmall)
                 if (stage.hasUnsupportedFeatures()) Text("Este borrador contiene objetos avanzados no compatibles: desactiva este escenario para conservarlos.", color = MaterialTheme.colorScheme.error)
             }
         }

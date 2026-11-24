@@ -20,6 +20,7 @@ fun characterInputProblems(draft: CharacterDraft, fileExists: (String) -> Boolea
 fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(it).isFile }): List<WizardIssue> = buildList {
     if (config.stageDraft.enabled) {
         val stage = config.stageDraft
+        stageLayoutProblems(stage, config.engine).forEach { add(WizardIssue(1, it)) }
         if (stage.stageId.isBlank()) add(WizardIssue(1, "Escenario: escribe un nombre para el identificador."))
         if (stage.backgroundImage == null || !fileExists(stage.backgroundImage.path)) add(WizardIssue(1, "Escenario: elige una imagen de fondo disponible."))
         if (!stage.cameraPosition.zoom.isFinite() || stage.cameraPosition.zoom !in 0.4f..2f) add(WizardIssue(1, "Escenario: el zoom debe estar entre 0.4 y 2."))

@@ -331,6 +331,8 @@ object StageBuilder {
     fun build(root: File, config: ModConfig, onProgress: (String) -> Unit, warnings: MutableList<String>) {
         val stage = config.stageDraft
         if (!stage.enabled) return
+        val layoutProblems = com.fnfmodmaker.model.stageLayoutProblems(stage, config.engine)
+        require(layoutProblems.isEmpty()) { layoutProblems.joinToString(" ") }
         require(!stage.hasUnsupportedFeatures()) { "Los objetos avanzados del escenario no son compatibles; desactiva el escenario para no perderlos." }
         require(stage.stageId.isNotBlank() && stage.backgroundImage != null && stage.cameraPosition.zoom.isFinite() && stage.cameraPosition.zoom in 0.4f..2f) { "Completa el escenario, su fondo y el zoom." }
         onProgress("Preparando escenario sencillo…")

@@ -36,7 +36,7 @@ class ModImportPathTest {
         assertTrue(inst.canonicalFile.toPath().startsWith(File(stage, "assets").canonicalFile.toPath()))
         assertTrue(inst.canonicalFile.isFile)
         val data = document("instrumental" to asset(inst.absolutePath, "Inst.ogg"),
-            "atlasSheet" to asset(png.absolutePath, "hero.png"), "atlasXml" to asset(xml.absolutePath, "hero.xml"))
+            "atlasSheet" to asset(png.canonicalPath, "hero.png"), "atlasXml" to asset(xml.absolutePath, "hero.xml"))
         val id = store.publishModImport(stage, data) { }
         assertFalse(stage.exists())
         val loaded = store.load(id).config
@@ -105,4 +105,16 @@ class ModImportPathTest {
         assertTrue(error.message!!.contains("Carpeta de recursos temporal insegura"))
         assertTrue(outside.isDirectory)
     }
+    @Test fun stageItselfCannotLinkOutsideTheProjectsRoot() {
+        val store = aliasedStore(); val stage = store.newImportStage()
+        assertTrue(stage.parentFile.mkdirs())
+        val externalParent = File(temp.root, "external-stage-parent").apply { mkdirs() }
+        val target = File(externalParent, stage.name).apply { mkdirs() }
+        File(target, "assets").mkdirs()
+        Files.createSymbolicLink(stage.toPath(), target.toPath())
+        val error = assertThrows(IllegalArgumentException::class.java) { store.publishModImport(stage, document()) { } }
+        assertTrue(error.message!!.contains("Carpeta temporal insegura"))
+        assertTrue(target.isDirectory)
+    }
+
 }

@@ -37,7 +37,12 @@ class ModZipConfirmationTest {
     @Before fun setup() {
         Dispatchers.setMain(dispatcher)
         app = RuntimeEnvironment.getApplication()
-        File(app.filesDir, "projects").deleteRecursively()
+        val projects = File(app.filesDir, "projects")
+        if (java.nio.file.Files.isSymbolicLink(projects.toPath())) java.nio.file.Files.delete(projects.toPath())
+        else projects.deleteRecursively()
+        val realProjects = File(app.filesDir, "actual-projects")
+        realProjects.deleteRecursively(); check(realProjects.mkdirs())
+        java.nio.file.Files.createSymbolicLink(projects.toPath(), realProjects.toPath())
         store = ViewModelStore()
         val factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
@@ -78,6 +83,10 @@ class ModZipConfirmationTest {
         await { !vm.busy }
         assertNotNull(vm.portableMessage, vm.modZipReview)
         assertEquals(listOf("Tarde"), vm.modZipReview!!.songs)
+        val stage = File(app.filesDir, "projects").listFiles()!!.single { it.name.startsWith(".pending-") }
+        val asset = File(stage, "assets/imported").listFiles()!!.first()
+        assertNotEquals(asset.absoluteFile, asset.canonicalFile)
+        assertTrue(asset.isFile)
     }
     @Test fun confirmationOpensVSliceProject() {
         val previous = vm.currentProjectId

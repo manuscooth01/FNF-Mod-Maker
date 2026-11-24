@@ -63,4 +63,19 @@ class ModArchiveLibraryTest {
             assertTrue(root.listFiles().orEmpty().none { it.name.startsWith(".pending-") })
         }
     }
+    @Test fun rejectsExactDuplicateEntryNamesInARealZip() {
+        val bytes = zip("a.txt" to "a", "b.txt" to "b")
+        val old = "b.txt".toByteArray(); val replacement = "a.txt".toByteArray()
+        var replaced = 0
+        for (i in 0..bytes.size - old.size) {
+            if (old.indices.all { bytes[i + it] == old[it] }) {
+                replacement.copyInto(bytes, i); replaced++
+            }
+        }
+        assertEquals(2, replaced) // local header and central directory
+        val root = File(folder.root, "exact-duplicate")
+        val library = ModArchiveLibrary(root)
+        assertThrows(IllegalArgumentException::class.java) { library.import(bytes.inputStream(), "duplicate.zip") }
+        assertTrue(library.list().isEmpty()); assertTrue(root.listFiles().orEmpty().isEmpty())
+    }
 }

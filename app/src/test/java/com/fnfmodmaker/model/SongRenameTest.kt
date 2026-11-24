@@ -67,6 +67,12 @@ class SongRenameTest {
         assertThrows(IllegalArgumentException::class.java) { renameSong(config, 0, "different") }
         assertEquals(2, config.songs.size); assertTrue(config.charts.containsKey("same"))
     }
+    @Test fun caseAmbiguousLegacyKeysAreRejectedWithoutOrphaningData() {
+        val chart = ChartDraft(songFolder = "old", notes = listOf(ChartNote(1, 0)))
+        val base = ModConfig(songs = listOf(SongConfig(songName = "old")), charts = mapOf("OLD" to mapOf("normal" to chart)))
+        assertThrows(IllegalArgumentException::class.java) { renameSong(base, 0, "new") }
+        assertEquals(chart, base.charts.getValue("OLD").getValue("normal"))
+    }
     @Test fun cosmeticRenameWithSameFolderKeepsHistoryUnchanged() {
         val config = ModConfig(songs = listOf(SongConfig(songName = "Song Name")))
         assertEquals("SONG NAME", renameSong(config, 0, "SONG NAME").songs.single().songName)

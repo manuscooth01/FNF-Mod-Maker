@@ -14,6 +14,10 @@ internal fun renameSong(config: ModConfig, index: Int, name: String): ModConfig 
         "Ya existe una canción con ese nombre o carpeta; elige otro."
     }
     if (newFolder != oldFolder) {
+        require(config.charts.keys.none { it != oldFolder && it.equals(oldFolder, ignoreCase = true) } &&
+            config.chartHistories.keys.none { it != oldFolder && it.equals(oldFolder, ignoreCase = true) }) {
+            "Hay charts o historiales con una carpeta anterior ambigua; no se modificaron."
+        }
         require(config.songs.withIndex().none { it.index != index && it.value.songFolder.equals(oldFolder, ignoreCase = true) } ||
             (oldFolder !in config.charts && oldFolder !in config.chartHistories)) {
             "La carpeta anterior está compartida con otra canción; no se pueden mover sus charts con seguridad."

@@ -72,6 +72,28 @@ class SongAudioExportTest {
         assertTrue(File(dir, "Voices.ogg").readText().startsWith("mixed"))
         for (engine in TargetEngine.entries) assertEquals(setOf("Inst.ogg"), runExport(engine, inst).list()!!.toSet())
     }
+    @Test fun bothTracksArePresentInPackagedZip() {
+        val dir = runExport(TargetEngine.BOTH, input("inst.wav"), input("p.wav"), input("o.wav"))
+        val bytes = java.io.ByteArrayOutputStream()
+        ModBuilder.zip(dir, bytes, includeRoot = false)
+        val contents = mutableMapOf<String, String>()
+        java.util.zip.ZipInputStream(bytes.toByteArray().inputStream()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                contents[entry.name] = zip.readBytes().toString(Charsets.UTF_8)
+            }
+        }
+        assertEquals(setOf("Inst.ogg", "Voices-bf.ogg", "Voices-dad.ogg", "Voices.ogg"), contents.keys)
+        assertTrue(contents.values.all { it.isNotBlank() })
+    }
+    @Test fun psychTemporaryTracksAreCleanedOnFailure() {
+        val dir = File(temp.root, "psych-cleanup")
+        val inst = input("inst.ogg", true); val p = input("player.wav"); val o = input("opponent.wav")
+        assertThrows(IllegalStateException::class.java) {
+            exportSongAudio(dir, "track", TargetEngine.PSYCH, "bf", "dad", inst, p, o, FakeEncoder(failMix = true))
+        }
+        assertEquals(setOf("Inst.ogg"), dir.list()!!.toSet())
+    }
     @Test fun singleVoiceFailureInBothIdentifiesVoiceAndBothEngines() {
         val failure = assertThrows(IllegalStateException::class.java) { runExport(TargetEngine.BOTH, input("inst.ogg", true), opponent = input("voice.wav"), encoder = FakeEncoder(failConvert = "voice.wav")) }
         assertTrue(failure.message!!.contains("rival")); assertTrue(failure.message!!.contains("V-Slice y Psych Engine"))

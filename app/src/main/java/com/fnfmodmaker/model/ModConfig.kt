@@ -180,6 +180,8 @@ data class ModConfig(
         if (!draft.enabled || songs.isEmpty()) return this
         val id = draft.charFolder
         val updated = songs.map { song ->
+            // Imported V-Slice metadata is preserved verbatim, not regenerated.
+            if (song.vSliceOrigin != null) return@map song
             val (player, opponent) = if (draft.side == CharacterSide.PLAYER) {
                 id to song.opponent
             } else {
@@ -188,6 +190,18 @@ data class ModConfig(
             song.copy(player = player, opponent = opponent)
         }
         return copy(songs = updated)
+    }
+
+    /** Exactly the configuration used by validation and the ZIP builder. */
+    fun effectiveExportConfig(): ModConfig {
+        val characterConfig = withCharacter()
+        if (!characterConfig.stageDraft.enabled) return characterConfig
+        return characterConfig.copy(songs = characterConfig.songs.map { song ->
+            if (song.vSliceOrigin != null) song else song.copy(
+                stagePsych = characterConfig.stageDraft.stageFolder,
+                stageVSlice = characterConfig.stageDraft.stageFolder
+            )
+        })
     }
 }
 

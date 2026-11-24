@@ -11,14 +11,37 @@ import java.io.File
 internal fun vSliceImportProblems(song: SongConfig): List<String> {
     val o = song.vSliceOrigin ?: return emptyList()
     return buildList {
-        if (song.songFolder != o.folder || song.songName != o.originalName || song.artist != o.originalArtist ||
-            song.bpm != o.originalBpm || song.speed != o.originalSpeed || song.offsetMs != o.originalOffset ||
-            song.player != o.originalPlayer || song.opponent != o.originalOpponent || song.girlfriend != o.originalGirlfriend || song.stageVSlice != o.originalStage)
-            add("${o.folder}: la metadata V-Slice original es de solo lectura; deshaz los cambios de nombre, artista, BPM, velocidad, offset, personajes o escenario.")
+        fun changed(field: String, original: String, current: String) {
+            if (original != current) add("${o.folder}: $field de metadata V-Slice es de solo lectura (original: ${JSONObject.quote(original)}; actual: ${JSONObject.quote(current)}). Restaura el valor original.")
+        }
+        changed("carpeta de canción", o.folder, song.songFolder)
+        changed("nombre", o.originalName, song.songName)
+        changed("artista", o.originalArtist, song.artist)
+        changed("BPM", o.originalBpm, song.bpm)
+        changed("velocidad", o.originalSpeed, song.speed)
+        changed("offset", o.originalOffset, song.offsetMs)
+        changed("jugador", o.originalPlayer, song.player)
+        changed("rival", o.originalOpponent, song.opponent)
+        changed("GF", o.originalGirlfriend, song.girlfriend)
+        changed("escenario", o.originalStage, song.stageVSlice)
         if (song.difficulties != o.editableDifficulties)
             add("${o.folder}: las dificultades originales son de solo lectura; restaura las dificultades editables importadas.")
         if ((song.vocalsPlayer != null) != o.playerVoiceFile.isNotEmpty() || (song.vocalsOpponent != null) != o.opponentVoiceFile.isNotEmpty())
             add("${o.folder}: no se puede añadir ni quitar una pista de voz sin modificar la metadata original; restaura las pistas seleccionadas.")
+    }
+}
+
+/** An editable imported character must still target the exact original JSON. */
+internal fun vSliceCharacterProblems(config: ModConfig): List<String> {
+    val character = config.character
+    if (!character.enabled || character.importedSourceFormat != "V-Slice" || config.songs.none { it.vSliceOrigin != null }) return emptyList()
+    val paths = config.importedModResources.filter { it.converted && Regex("^data/characters/[A-Za-z0-9_-]{1,64}\\.json$").matches(it.originalPath) }
+    if (paths.size != 1) return listOf("Personaje V-Slice importado: no se encontró un único JSON original editable; conserva el proyecto y revisa el personaje.")
+    val original = paths.single().originalPath.substringAfterLast('/').removeSuffix(".json")
+    val savedId = character.importedVSliceCharacterId
+    return buildList {
+        if (savedId.isNotEmpty() && savedId != original) add("Personaje V-Slice: ID original incompatible (archivo: ${JSONObject.quote(original)}; guardado: ${JSONObject.quote(savedId)}). Restaura el ID original.")
+        if (character.charId != original || character.charFolder != original) add("Personaje V-Slice: el ID es de solo lectura (original: ${JSONObject.quote(original)}; actual: ${JSONObject.quote(character.charId)}). Restaura el ID original.")
     }
 }
 

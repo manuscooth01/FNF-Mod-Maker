@@ -208,11 +208,14 @@ data class CharacterDraft(
     val customFrameCounts: Map<String, String> = emptyMap(),
     // Original import is retained in editable projects; engine JSON is regenerated on export.
     val importedSourceJson: String = "",
-    val importedSourceFormat: String = ""
+    val importedSourceFormat: String = "",
+    // Exact identifier of an editable character imported as part of a V-Slice mod.
+    val importedVSliceCharacterId: String = ""
 ) {
     /** Carpeta/ID del personaje (minúsculas y guiones). */
     val charFolder: String
         get() {
+            if (importedVSliceCharacterId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return importedVSliceCharacterId
             val fromId = slugify(charId)
             if (fromId.isNotEmpty()) return fromId
             val fromName = slugify(displayName)

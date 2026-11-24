@@ -38,6 +38,7 @@ import com.fnfmodmaker.model.characterInputProblems
 import com.fnfmodmaker.model.parseSparrowAtlas
 import com.fnfmodmaker.model.slugify
 import com.fnfmodmaker.mod.ModBuilder
+import com.fnfmodmaker.mod.buildAndWriteModZip
 import com.fnfmodmaker.mod.ModArchiveLibrary
 import com.fnfmodmaker.mod.ArchivedMod
 import com.fnfmodmaker.modimport.ModZipInspector
@@ -2105,7 +2106,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun setCharacterEnabled(enabled: Boolean) = updateCharacter { it.copy(enabled = enabled) }
 
     internal fun setCharId(value: String) = updateCharacter {
+        if (it.importedVSliceCharacterId.isNotEmpty()) return@updateCharacter it
         it.copy(charId = value.lowercase().filter { c -> c in 'a'..'z' || c in '0'..'9' || c == '-' || c == '_' }.take(64))
+    }
+
+    internal fun restoreImportedCharId() = updateCharacter {
+        if (it.importedVSliceCharacterId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) it.copy(charId = it.importedVSliceCharacterId) else it
     }
 
     internal fun setCharName(value: String) = updateCharacter { it.copy(displayName = value) }
@@ -2851,7 +2857,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     fun export(uri: Uri) {
         if (busy) return
         if (!exportReady) {
-            error = "Completa los datos pendientes antes de exportar."
+            error = validationIssues.firstOrNull()?.message ?: "Completa los datos pendientes antes de exportar."
             return
         }
         val app = getApplication<Application>()
@@ -2862,33 +2868,42 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         warnings = emptyList()
         status = "Preparando…"
 
+        val snapshot = config
         viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    val workRoot = File(app.cacheDir, "modmaker")
-                    // Evita que se acumulen los audios de exportaciones anteriores.
-                    if (workRoot.exists()) workRoot.deleteRecursively()
-                    val built = ModBuilder.build(app, config, workRoot) { message -> status = message }
-                    val stream = app.contentResolver.openOutputStream(uri, "wt")
-                        ?: throw IllegalStateException("No se pudo abrir el destino elegido.")
-                    stream.use { ModBuilder.zip(built.rootDir, it) }
-                    built
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    try {
+                        val workRoot = File(app.cacheDir, "modmaker")
+                        if (workRoot.exists()) workRoot.deleteRecursively()
+                        // Construction errors must not be described as destination failures.
+                        val built = buildAndWriteModZip(
+                            { ModBuilder.build(app, snapshot, workRoot) { message -> status = message } },
+                            { app.contentResolver.openOutputStream(uri, "wt") }
+                        ) { result, stream -> ModBuilder.zip(result.rootDir, stream) }
+                        Result.success(built)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
                 }
-            }
-            result.onSuccess { built ->
-                builtFiles = built.files
-                warnings = built.warnings
-                status = "¡Mod creado!"
-                savedName = MediaTools.displayName(app, uri).let {
-                    if (it.isBlank() || it == "archivo") zipFileName else it
+                result.onSuccess { built ->
+                    builtFiles = built.files
+                    warnings = built.warnings
+                    status = "¡Mod creado!"
+                    savedName = MediaTools.displayName(app, uri).let {
+                        if (it.isBlank() || it == "archivo") zipFileName else it
+                    }
+                }.onFailure {
+                    status = ""
+                    error = it.message ?: it.toString()
                 }
-            }.onFailure {
-                status = ""
-                error = (it.message ?: it.toString()) + " Revisa el destino elegido: el selector podría haber dejado un archivo vacío o incompleto."
+            } finally {
+                busy = false
             }
-            busy = false
         }
     }
+
     override fun onCleared() {
         closeLiveChart()
         releaseMediaPlayer()

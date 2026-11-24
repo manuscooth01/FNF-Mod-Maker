@@ -3,6 +3,8 @@ package com.fnfmodmaker.modimport
 import android.net.Uri
 import com.fnfmodmaker.mod.JsonBuilders
 import com.fnfmodmaker.mod.ModBuilder
+import com.fnfmodmaker.mod.AudioEncoder
+import com.fnfmodmaker.mod.ModBuildServices
 import com.fnfmodmaker.mod.mergeImportedResources
 import com.fnfmodmaker.model.*
 import com.fnfmodmaker.project.PortableProject
@@ -78,6 +80,28 @@ class PsychImportCycleTest {
         assertTrue(File(opened.config.character.atlasXml!!.path).isFile)
         assertEquals(File(opened.config.firstSong.instrumental!!.path).canonicalPath, opened.config.firstSong.instrumental!!.path)
         assertEquals("Current", store.load(active).config.get("modTitle").asString)
+    }
+    @Test fun psychCharacterAndStageBindingRemainUnchanged() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val stage = store.newImportStage()
+        val prepared = ModZipInspector(File(temp.root, "cache")).withExtracted(fixture().inputStream()) { dir, names ->
+            PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, stage)
+        }
+        val config = prepared.config.copy(character = prepared.config.character.copy(charId = "New_Enemy"),
+            stageDraft = StageDraft(enabled = true, stageId = "Test Stage", backgroundImage = prepared.config.character.atlasSheet))
+        val effective = config.effectiveExportConfig()
+        assertEquals("new-enemy", effective.firstSong.opponent)
+        assertEquals("fnfmm-test-stage", effective.firstSong.stagePsych)
+        val services = ModBuildServices(object : AudioEncoder {
+            override fun convert(input: File, output: File): String? = error("OGG should be copied")
+            override fun mix(first: File, second: File, output: File): String? = error("Only one voice")
+        }, { root, cfg, _, _ ->
+            File(root, "characters/${cfg.character.charFolder}.json").apply { parentFile.mkdirs(); writeText("{}") }
+        }, { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
+        val built = ModBuilder.buildInternal(config, File(temp.root, "build"), temp.root, {}, services)
+        val json = org.json.JSONObject(File(built.rootDir, "data/test/test.json").readText()).getJSONObject("song")
+        assertEquals("new-enemy", json.getString("player2"))
+        assertEquals("fnfmm-test-stage", json.getString("stage"))
     }
     @Test fun extractedPsychProjectCanBeSavedReopenedPackagedAndOpaqueAssetsSurvive() {
         val real = File(temp.root, "real").apply { mkdirs() }

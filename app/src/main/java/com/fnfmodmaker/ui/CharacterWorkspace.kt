@@ -148,7 +148,12 @@ private fun CharacterIdentity(vm: WizardViewModel, draft: CharacterDraft, onPick
     Text("Tu personaje", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
     Field("Nombre visible", draft.displayName, vm::setCharName, hint = "Opcional; ID de salida: ${draft.charFolder}", enabled = !vm.busy)
     Spacer(Modifier.height(8.dp))
-    Field("ID de archivo", draft.charId, vm::setCharId, hint = "Opcional. Se usa en los archivos exportados.", enabled = !vm.busy)
+    Field("ID de archivo", draft.charId, vm::setCharId,
+        hint = if (draft.importedVSliceCharacterId.isNotEmpty()) "ID original V-Slice: no se puede cambiar sin modificar la metadata." else "Opcional. Se usa en los archivos exportados.",
+        enabled = !vm.busy && draft.importedVSliceCharacterId.isEmpty())
+    if (draft.importedVSliceCharacterId.isNotEmpty() && draft.charId != draft.importedVSliceCharacterId) {
+        TextButton(onClick = vm::restoreImportedCharId, enabled = !vm.busy) { Text("Restaurar ID original") }
+    }
     SectionTitle("Lado en la canción")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         CharacterSide.entries.forEach { side -> FilterChip(side == draft.side, { vm.setCharSide(side) }, enabled = !vm.busy, label = { Text(side.label) }) }

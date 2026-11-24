@@ -61,11 +61,9 @@ object ModBuilder {
             "Los proyectos importados solo se exportan para su motor original; BOTH aún no está soportado."
         }
         require(!importedVSlice || rawConfig.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) { "El proyecto importado debe exportarse para V-Slice." }
-        // Si hay personaje propio, el chart de cada canción debe apuntar a él.
-        val characterConfig = rawConfig.withCharacter()
-        val config = if (characterConfig.stageDraft.enabled) characterConfig.copy(songs = characterConfig.songs.map {
-            it.copy(stagePsych = characterConfig.stageDraft.stageFolder, stageVSlice = characterConfig.stageDraft.stageFolder)
-        }) else characterConfig
+        val config = rawConfig.effectiveExportConfig()
+        val metadataProblems = config.songs.flatMap(::vSliceImportProblems) + vSliceCharacterProblems(config)
+        require(metadataProblems.isEmpty()) { metadataProblems.joinToString(" ") }
         val importedCharts = config.songs.filter { it.vSliceOrigin != null }.associate { song ->
             require(song.difficulties.isNotEmpty()) { "${song.songFolder}: elige una dificultad editable." }
             song.songFolder to buildImportedVSliceChart(config, song, appRoot)

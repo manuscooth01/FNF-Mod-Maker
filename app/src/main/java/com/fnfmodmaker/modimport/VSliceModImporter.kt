@@ -139,7 +139,7 @@ internal class VSliceModImporter(
                     require(data.optString("renderType", "sparrow").equals("sparrow", true)) { "Solo se admite renderType Sparrow" }
                     val source = index.getValue(path); require(source.length() <= 512_000)
                     val preview = parseCharacterJson(source.readText(), path.substringAfterLast('/'), side)
-                    require(preview.format == "V-Slice" && preview.id == id)
+                    require(preview.format == "V-Slice" && id.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "ID de personaje no compatible." }
                     val pngPath = "images/${preview.assetPath}.png"; val xmlPath = "images/${preview.assetPath}.xml"
                     val png = index[pngPath] ?: error("Falta $pngPath"); val xml = index[xmlPath] ?: error("Falta $xmlPath")
                     require(xml.length() <= 4_000_000)
@@ -147,7 +147,8 @@ internal class VSliceModImporter(
                     require(atlasFramesFit(frames, size.first, size.second))
                     val iconId = data.optJSONObject("healthIcon")?.optString("id", "") ?: ""
                     val iconPath = "images/icons/icon-$iconId.png"
-                    character = applyCharacterJson(CharacterDraft(side = side), preview).copy(
+                    character = applyCharacterJson(CharacterDraft(side = side), preview.copy(id = id)).copy(
+                        importedVSliceCharacterId = id,
                         atlasSheet = imageAsset(png, pngPath.substringAfterLast('/')), atlasXml = imageAsset(xml, xmlPath.substringAfterLast('/')),
                         atlasSheetWidth = size.first, atlasSheetHeight = size.second, atlasFrames = frames,
                         icon = index[iconPath]?.let { imageAsset(it, iconPath.substringAfterLast('/')) })

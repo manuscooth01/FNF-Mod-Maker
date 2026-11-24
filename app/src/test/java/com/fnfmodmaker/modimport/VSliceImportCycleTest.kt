@@ -33,14 +33,17 @@ class VSliceImportCycleTest {
     private val metadata = """{"version":"2.2.4","songName":"Test","artist":"Example","playData":{"songVariations":["remix"],"difficulties":["normal","hard"],"characters":{"player":"bf","opponent":"hero","girlfriend":"gf","playerVocals":["bf","gf"],"opponentVocals":["hero"]},"stage":"mainStage","noteStyle":"funkin"},"timeChanges":[{"t":0,"bpm":120},{"t":4000,"bpm":180}],"extraMetadata":{"keep":true}}"""
     private val chart = """{"version":"2.0.0","scrollSpeed":{"normal":1.3,"hard":1.5},"events":[{"t":10,"e":"FocusCamera","v":1}],"notes":{"normal":[{"t":100.25,"d":0,"l":0},{"t":500,"d":6,"l":200}],"hard":[{"t":300,"d":1,"k":"mine"}]},"unknownChart":"retained"}"""
     private val character = """{"version":"1.0.2","name":"Hero","assetPath":"characters/hero","renderType":"sparrow","scale":1,"singTime":6,"healthIcon":{"id":"hero","custom":true},"unknownCharacter":123,"animations":[{"name":"idle","prefix":"idle","frameRate":24,"looped":false,"frameIndices":[0],"offsets":[0,0],"extraAnim":"retained"}]}"""
-    private fun zip(meta: String = metadata, chartText: String = chart, extra: Map<String, String> = emptyMap()): ByteArray {
-        val text = linkedMapOf("data/songs/test/test-metadata.json" to meta, "data/songs/test/test-chart.json" to chartText,
+    private fun zip(meta: String = metadata, chartText: String = chart, extra: Map<String, String> = emptyMap(), characterId: String = "hero", side: CharacterSide = CharacterSide.OPPONENT): ByteArray {
+        val adjustedMeta = if (side == CharacterSide.OPPONENT) meta.replace("\"opponent\":\"hero\"", "\"opponent\":\"$characterId\"")
+            else meta.replace("\"player\":\"bf\",\"opponent\":\"hero\"", "\"player\":\"$characterId\",\"opponent\":\"dad\"")
+        val characterJson = character.replace("characters/hero", "characters/$characterId").replace("\"id\":\"hero\"", "\"id\":\"$characterId\"")
+        val text = linkedMapOf("data/songs/test/test-metadata.json" to adjustedMeta, "data/songs/test/test-chart.json" to chartText,
             "data/songs/test/test-metadata-remix.json" to "{\"variation\":true}", "data/songs/test/test-chart-remix.json" to "{\"variation\":true}",
-            "data/characters/hero.json" to character, "images/characters/hero.xml" to """<TextureAtlas imagePath="hero.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>""",
+            "data/characters/$characterId.json" to characterJson, "images/characters/$characterId.xml" to """<TextureAtlas imagePath="$characterId.png"><SubTexture name="idle0000" x="0" y="0" width="1" height="1"/></TextureAtlas>""",
             "data/stages/custom.json" to "{\"unknown\":true}", "data/levels/old.json" to "{\"level\":true}", "scripts/a.hx" to "trace('safe data');", "other/data.json" to "{\"extra\":true}")
         text.putAll(extra)
         val binaries = mapOf("songs/test/Inst.ogg" to "/psych-fixture/Inst.ogg", "songs/test/Voices-bf.ogg" to "/psych-fixture/Voices.ogg",
-            "songs/test/Voices-hero.ogg" to "/psych-fixture/Voices.ogg", "songs/test/Voices-gf.ogg" to "/psych-fixture/Voices.ogg", "images/characters/hero.png" to "/psych-fixture/dad.png")
+            "songs/test/Voices-hero.ogg" to "/psych-fixture/Voices.ogg", "songs/test/Voices-gf.ogg" to "/psych-fixture/Voices.ogg", "images/characters/$characterId.png" to "/psych-fixture/dad.png")
         val result = ByteArrayOutputStream()
         ZipOutputStream(result).use { zip ->
             text.forEach { (p, content) -> zip.putNextEntry(ZipEntry("wrapper/$p")); zip.write(content.toByteArray()); zip.closeEntry() }
@@ -177,6 +180,85 @@ class VSliceImportCycleTest {
         assertEquals("{\"variation\":true}", text("data/songs/test/test-chart-remix.json"))
         for (p in listOf("songs/test/Inst.ogg", "songs/test/Voices-bf.ogg", "songs/test/Voices-hero.ogg", "songs/test/Voices-gf.ogg", "data/stages/custom.json", "data/levels/old.json")) assertTrue(p, p in files)
     }
+    @Test fun importedCharacterIdentifiersSurvivePersistenceAndExportWithoutChangingMetadata() {
+        listOf("Hero_Day" to CharacterSide.OPPONENT, "Tarde-1" to CharacterSide.PLAYER,
+            "hero__night" to CharacterSide.OPPONENT, "hero" to CharacterSide.OPPONENT).forEachIndexed { index, (id, side) ->
+            val store = ProjectStore(File(temp.root, "projects-$index"), temp.root)
+            val prepared = prepare(zip(characterId = id, side = side), store)
+            assertTrue("Character $id must be editable", prepared.config.character.enabled)
+            assertEquals(id, prepared.config.character.charId)
+            assertEquals(id, prepared.config.character.charFolder)
+            assertEquals(id, prepared.config.character.importedVSliceCharacterId)
+            val old = store.newId(); val oldConfig = gson.toJsonTree(ModConfig(modTitle = "Previous")).asJsonObject
+            store.save(old, oldConfig); store.setActive(old)
+            val projectId = store.publishModImport(prepared.stage, productionJson(prepared.config), productionValidator::validate)
+            var project = gson.fromJson(store.load(projectId).config, ModConfig::class.java)
+            val song = project.firstSong
+            // Editing the character, including side, must not rewrite a song's imported IDs.
+            project = project.copy(character = project.character.copy(displayName = "Editado", scale = "1.5",
+                side = if (side == CharacterSide.OPPONENT) CharacterSide.PLAYER else CharacterSide.OPPONENT))
+            store.save(projectId, productionJson(project))
+            project = gson.fromJson(store.load(projectId).config, ModConfig::class.java)
+            assertTrue(validateWizard(project).joinToString { it.message }, validateWizard(project).isEmpty())
+            assertEquals(song.player, project.effectiveExportConfig().firstSong.player)
+            assertEquals(song.opponent, project.effectiveExportConfig().firstSong.opponent)
+            val built = ModBuilder.buildInternal(project, File(temp.root, "case-build-$index"), temp.root, {}, services())
+            val original = project.importedModResources.single { it.originalPath == "data/songs/test/test-metadata.json" }
+            assertEquals(File(original.asset!!.path).readText(),
+                File(built.rootDir, "data/songs/test/test-metadata.json").readText())
+            val outputMeta = JSONObject(File(built.rootDir, "data/songs/test/test-metadata.json").readText())
+            val chars = outputMeta.getJSONObject("playData").getJSONObject("characters")
+            assertEquals(song.player, chars.getString("player")); assertEquals(song.opponent, chars.getString("opponent"))
+            assertTrue(File(built.rootDir, "data/characters/$id.json").isFile)
+            assertTrue(File(built.rootDir, "images/characters/$id.png").isFile)
+            assertEquals("1.5", JSONObject(File(built.rootDir, "data/characters/$id.json").readText()).get("scale").toString())
+            assertEquals(old, store.activeId()); assertEquals(oldConfig, store.load(old).config)
+        }
+    }
+
+    @Test fun eachChangedMetadataFieldIsReportedAndBlockedByWizardAndBuilder() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val p = prepare(zip(), store)
+        val song = p.config.firstSong
+        val variants = listOf(
+            Triple("nombre", song.copy(songName = "Other"), "Test" to "Other"),
+            Triple("artista", song.copy(artist = "Other"), "Example" to "Other"),
+            Triple("BPM", song.copy(bpm = "130"), "120" to "130"),
+            Triple("velocidad", song.copy(speed = "2.0"), "1.3" to "2.0"),
+            Triple("offset", song.copy(offsetMs = "4"), "0" to "4"),
+            Triple("jugador", song.copy(player = "BF-New"), "bf" to "BF-New"),
+            Triple("rival", song.copy(opponent = "Hero_New"), "hero" to "Hero_New"),
+            Triple("GF", song.copy(girlfriend = "GF-New"), "gf" to "GF-New"),
+            Triple("escenario", song.copy(stageVSlice = "custom"), "mainStage" to "custom")
+        )
+        variants.forEach { (field, changed, values) ->
+            val config = p.config.copy(songs = listOf(changed))
+            val issues = validateWizard(config).map { it.message }
+            val problem = issues.first { it.contains(": $field de metadata") }
+            assertTrue(problem.contains("original: \"${values.first}\"")); assertTrue(problem.contains("actual: \"${values.second}\""))
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                ModBuilder.buildInternal(config, File(temp.root, "invalid-$field"), temp.root, {}, services())
+            }
+            assertTrue(error.message, error.message!!.contains(problem))
+        }
+        val renamedChar = p.config.copy(character = p.config.character.copy(charId = "another"))
+        assertTrue(validateWizard(renamedChar).any { it.message.contains("ID es de solo lectura") })
+        assertThrows(IllegalArgumentException::class.java) { ModBuilder.buildInternal(renamedChar, File(temp.root, "invalid-char"), temp.root, {}, services()) }
+    }
+
+    @Test fun generatedStageAndCharacterDoNotRewriteImportedVSliceMetadata() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val p = prepare(zip(), store)
+        val changed = p.config.copy(character = p.config.character.copy(side = CharacterSide.PLAYER),
+            stageDraft = StageDraft(enabled = true, stageId = "another", backgroundImage = p.config.character.atlasSheet))
+        val effective = changed.effectiveExportConfig().firstSong
+        assertEquals(p.config.firstSong.player, effective.player)
+        assertEquals(p.config.firstSong.opponent, effective.opponent)
+        assertEquals(p.config.firstSong.stageVSlice, effective.stageVSlice)
+        assertTrue(validateWizard(changed).joinToString { it.message }, validateWizard(changed).isEmpty())
+        ModBuilder.buildInternal(changed, File(temp.root, "stage-build"), temp.root, {}, services())
+    }
+
     @Test fun unknownCollisionAndMetadataEditsFailRatherThanLoseData() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val p = prepare(zip(extra = mapOf("LEEME.txt" to "unknown original")), store)

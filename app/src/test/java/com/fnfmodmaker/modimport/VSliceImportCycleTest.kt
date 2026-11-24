@@ -216,6 +216,24 @@ class VSliceImportCycleTest {
         }
     }
 
+    @Test fun anotherCharacterDoesNotSilentlyReplaceTheOriginalRival() {
+        val store = ProjectStore(File(temp.root, "projects"), temp.root)
+        val p = prepare(zip(), store)
+        val draft = p.config.character.copy(charId = "New_Enemy", importedVSliceCharacterId = "",
+            importedSourceFormat = "", importedSourceJson = "", side = CharacterSide.OPPONENT)
+        val config = p.config.copy(character = draft)
+        assertEquals("hero", config.firstSong.opponent)
+        assertEquals("new-enemy", draft.charFolder)
+        assertEquals("hero", config.effectiveExportConfig().firstSong.opponent)
+        assertTrue(validateWizard(config).joinToString { it.message }, validateWizard(config).isEmpty())
+        val built = ModBuilder.buildInternal(config, File(temp.root, "new-character-build"), temp.root, {}, services())
+        val exported = JSONObject(File(built.rootDir, "data/songs/test/test-metadata.json").readText())
+        assertEquals("hero", exported.getJSONObject("playData").getJSONObject("characters").getString("opponent"))
+        assertTrue(built.warnings.any { it.contains("no se asigna automáticamente") })
+        assertTrue(File(built.rootDir, "data/characters/hero.json").isFile)
+        assertTrue(File(built.rootDir, "data/characters/new-enemy.json").isFile)
+    }
+
     @Test fun eachChangedMetadataFieldIsReportedAndBlockedByWizardAndBuilder() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val p = prepare(zip(), store)

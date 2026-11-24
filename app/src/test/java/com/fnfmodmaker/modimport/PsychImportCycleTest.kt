@@ -99,7 +99,7 @@ class PsychImportCycleTest {
             File(root, "characters/${cfg.character.charFolder}.json").apply { parentFile.mkdirs(); writeText("{}") }
         }, { _, _, _, _ -> }, { _, _ -> true }, { _, _, _ -> true })
         val built = ModBuilder.buildInternal(config, File(temp.root, "build"), temp.root, {}, services)
-        val json = org.json.JSONObject(File(built.rootDir, "data/test/test.json").readText()).getJSONObject("song")
+        val json = org.json.JSONObject(File(built.rootDir, "data/test/test.json").readText())
         assertEquals("new-enemy", json.getString("player2"))
         assertEquals("fnfmm-test-stage", json.getString("stage"))
     }

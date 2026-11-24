@@ -77,7 +77,7 @@ class ProjectStoreTest {
         val portable = PortableProject(temp.root); val archive = File(temp.root, "legacy.fnfproject")
         portable.export(store.load(id).config, store.assets(id), archive)
         val imported = store.publishImport(portable.prepare(archive, store.newImportStage()), portable, validator::validate)
-        val old = gson.fromJson(store.load(imported).config, com.fnfmodmaker.model.ModConfig::class.java)
+        val old = gson.fromJson(migrateCharacterLibrary(store.load(imported).config), com.fnfmodmaker.model.ModConfig::class.java)
         assertEquals("erect", old.character.variations.single().variationId)
         assertEquals("19", old.character.settingsFor("idle").offsetX)
         assertEquals(989.5f, old.stageDraft.vSliceLayout.bf.x, 0f)

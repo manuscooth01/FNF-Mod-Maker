@@ -267,7 +267,7 @@ class VSliceImportCycleTest {
     @Test fun generatedStageChangesAreReportedByBothWizardAndBuilder() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val p = prepare(zip(), store)
-        val changed = p.config.copy(character = p.config.character.copy(side = CharacterSide.PLAYER),
+        val changed = p.config.copy(character = p.config.character.copy(side = CharacterSide.PLAYER)).copy(
             stageDraft = StageDraft(enabled = true, stageId = "another", backgroundImage = p.config.character.atlasSheet))
         val effective = changed.effectiveExportConfig().firstSong
         assertEquals(p.config.firstSong.player, effective.player)

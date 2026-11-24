@@ -23,7 +23,7 @@ class StagePositionStudioTest {
         val v = defaultVSliceLayout().copy(bf = defaultVSliceLayout().bf.copy(x = 123f, cameraY = 67f, scale = 1.5f, zIndex = 450, scrollX = .5f),
             dad = defaultVSliceLayout().dad.copy(y = 333f), gf = defaultVSliceLayout().gf.copy(cameraX = 88f))
         val p = defaultPsychLayout().copy(bf = defaultPsychLayout().bf.copy(x = 90f), dad = defaultPsychLayout().dad.copy(cameraX = 22f), gf = defaultPsychLayout().gf.copy(y = 44f, cameraY = 66f))
-        val config = ModConfig(engine = TargetEngine.BOTH, character = oldChar,
+        val config = ModConfig(engine = TargetEngine.BOTH, characterLibrary = listOf(CharacterEntry(draft = oldChar)),
             stageDraft = StageDraft(vSliceLayout = v, psychLayout = p, psychCameraSpeed = 1.7f, cameraPosition = CameraPosition(zoom = 1.2f)))
         val restored = Gson().fromJson(Gson().toJson(config), ModConfig::class.java)
         assertEquals(oldChar.animationSettings, restored.character.animationSettings)

@@ -287,7 +287,8 @@ private fun WizardSongsStep(vm: WizardViewModel) {
 @Composable
 private fun WizardCharacterStep(vm: WizardViewModel, config: com.fnfmodmaker.model.ModConfig,
     onPickSheet: () -> Unit, onPickXml: () -> Unit, onPickIcon: () -> Unit, onPickFrames: (String) -> Unit) {
-    StepHeader("Personaje propio", "Este paso es opcional. También puedes usar los personajes del juego.")
+    StepHeader("Biblioteca de personajes", "Cada personaje conserva sus animaciones, recursos y variaciones. La asignación a BF, DAD y GF es independiente de la posición.")
+    CharacterLibraryPanel(vm)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Añadir personaje", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
         androidx.compose.material3.Switch(config.character.enabled, vm::setCharacterEnabled, enabled = !vm.busy)

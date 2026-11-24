@@ -16,6 +16,36 @@ fun characterInputProblems(draft: CharacterDraft, fileExists: (String) -> Boolea
     if (draft.icon != null && !fileExists(draft.icon.path)) add("Vuelve a elegir el icono de vida.")
 }
 
+/** Shared preflight for wizard and builder; file names include variation output IDs. */
+fun characterLibraryProblems(config: ModConfig, fileExists: (String) -> Boolean = { File(it).isFile }): List<String> = buildList {
+    val entries = config.characterLibrary
+    if (entries.size !in 1..64 || entries.any { !it.id.matches(Regex("[A-Za-z0-9_-]{1,64}")) } || entries.map { it.id }.toSet().size != entries.size)
+        add("Biblioteca: identificadores internos inválidos o duplicados.")
+    if (entries.none { it.id == config.selectedCharacterId }) add("Biblioteca: el personaje seleccionado no existe.")
+    val assignments = config.resolvedAssignments()
+    listOf("BF" to assignments.player, "DAD" to assignments.opponent, "GF" to assignments.girlfriend).forEach { (role, id) ->
+        if (id.isNotEmpty()) {
+            val entry = entries.singleOrNull { it.id == id }
+            if (entry == null) add("$role: el personaje asignado no existe.")
+            else if (!entry.draft.enabled) add("$role: activa el personaje asignado.")
+        }
+    }
+    val names = mutableSetOf<String>()
+    config.charactersToExport().forEach { entry ->
+        val draft = entry.draft
+        val prefix = draft.charFolder
+        if (!prefix.matches(Regex("[A-Za-z0-9_-]{1,64}")) || !names.add(prefix.lowercase(java.util.Locale.ROOT))) add("Personaje: ID de archivo duplicado o inseguro: $prefix.")
+        characterInputProblems(draft, fileExists).forEach { add("Personaje $prefix: $it") }
+        draft.variations.forEach { variation ->
+            if (!variation.variationId.matches(Regex("[a-z0-9_-]{1,40}"))) add("Personaje $prefix: ID de variación inválido.")
+            val path = "$prefix-${variation.variationId}"
+            if (!names.add(path.lowercase(java.util.Locale.ROOT))) add("Personaje: ID de archivo duplicado: $path.")
+            if (!variation.isReady || variation.sheet?.let { !fileExists(it.path) } == true || variation.icon?.let { !fileExists(it.path) } == true)
+                add("Personaje $prefix: completa los recursos de la variación ${variation.variationId}.")
+        }
+    }
+}
+
 /** Una sola validación para navegación, resumen y exportación. */
 fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(it).isFile }): List<WizardIssue> = buildList {
     if (config.stageDraft.enabled) {
@@ -33,7 +63,10 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
     val repeated = config.songs.filter { it.songName.isNotBlank() }
         .groupBy { it.songFolder.lowercase() }.filterValues { it.size > 1 }.keys
     val exportConfig = config.effectiveExportConfig()
-    com.fnfmodmaker.mod.vSliceCharacterProblems(exportConfig).forEach { add(WizardIssue(2, it)) }
+    characterLibraryProblems(config, fileExists).forEach { add(WizardIssue(2, it)) }
+    config.charactersToExport().forEach { entry ->
+        com.fnfmodmaker.mod.vSliceCharacterProblems(exportConfig.copy(selectedCharacterId = entry.id)).forEach { add(WizardIssue(2, it)) }
+    }
     config.songs.forEachIndexed { index, song ->
         val label = "Canción ${index + 1}"
         com.fnfmodmaker.mod.vSliceExportProblems(song, exportConfig.songs[index]).forEach { add(WizardIssue(1, it, index)) }
@@ -62,9 +95,6 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
         listOf("voces del jugador" to song.vocalsPlayer, "voces del rival" to song.vocalsOpponent).forEach { (name, audio) ->
             if (audio != null && !fileExists(audio.path)) add(WizardIssue(3, "$label: vuelve a elegir las $name.", index))
         }
-    }
-    if (config.character.enabled) {
-        characterInputProblems(config.character, fileExists).forEach { add(WizardIssue(2, "Personaje: $it")) }
     }
     if (config.icon != null && !fileExists(config.icon.path)) add(WizardIssue(3, "Vuelve a elegir el icono del mod."))
 }

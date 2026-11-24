@@ -100,6 +100,11 @@ data class SongConfig(
     val hasSplitVocals: Boolean get() = vocalsPlayer != null && vocalsOpponent != null
 }
 
+/** One stable project-local identity per independent character; variations stay in its draft. */
+data class CharacterEntry(val id: String = "legacy", val draft: CharacterDraft = CharacterDraft())
+data class CharacterAssignments(val player: String = "", val opponent: String = "", val girlfriend: String = "")
+enum class CharacterRole(val label: String) { PLAYER("BF"), OPPONENT("DAD"), GIRLFRIEND("GF") }
+
 /**
  * Toda la información que el usuario rellena en el asistente.
  * Ahora soporta varias canciones y semanas por mod.
@@ -122,8 +127,11 @@ data class ModConfig(
     /** Si es true, las semanas también aparecen en el modo historia, no solo en Freeplay. */
     val showInStoryMode: Boolean = false,
 
-    /** Personaje propio opcional (spritesheet + JSON) */
-    val character: CharacterDraft = CharacterDraft(),
+    /** Canonical source for independent characters; the selected draft is derived from this list. */
+    val characterLibrary: List<CharacterEntry> = listOf(CharacterEntry()),
+    val selectedCharacterId: String = "legacy",
+    // Null retains legacy automatic single-character assignment until explicitly edited.
+    val characterAssignments: CharacterAssignments? = null,
 
     /** Stage propio opcional (fondo, sprites, cámara) */
     val stageDraft: StageDraft = StageDraft(),
@@ -140,6 +148,28 @@ data class ModConfig(
     val psychScripts: Map<String, String> = emptyMap(),
     val importedModResources: List<ImportedModResource> = emptyList()
 ) {
+    val character: CharacterDraft get() = characterLibrary.firstOrNull { it.id == selectedCharacterId }?.draft
+        ?: characterLibrary.firstOrNull()?.draft ?: CharacterDraft()
+    fun copy(character: CharacterDraft): ModConfig = copy(characterLibrary = characterLibrary.map {
+        if (it.id == selectedCharacterId) it.copy(draft = character) else it
+    })
+    fun resolvedAssignments(): CharacterAssignments {
+        characterAssignments?.let { return it }
+        val entry = characterLibrary.firstOrNull() ?: return CharacterAssignments()
+        if (!entry.draft.enabled) return CharacterAssignments()
+        if (songs.any { it.vSliceOrigin != null } && songs.any { song ->
+                val current = if (entry.draft.side == CharacterSide.PLAYER) song.player else song.opponent
+                current != entry.draft.charFolder
+            }) return CharacterAssignments()
+        return if (entry.draft.side == CharacterSide.PLAYER) CharacterAssignments(player = entry.id) else CharacterAssignments(opponent = entry.id)
+    }
+    fun charactersToExport(): List<CharacterEntry> =
+        if (characterAssignments == null) characterLibrary.take(1).filter { it.draft.enabled } else assignedCharacters()
+    fun assignedCharacters(): List<CharacterEntry> {
+        val a = resolvedAssignments()
+        val ids = setOf(a.player, a.opponent, a.girlfriend) - ""
+        return characterLibrary.filter { it.id in ids }
+    }
     val hasAnyVocals: Boolean get() = songs.any { it.hasVocals }
 
     /** Obtiene el chart editado para una canción y dificultad, o null si no se editó. */
@@ -176,18 +206,13 @@ data class ModConfig(
      * elegido. Se aplica a todas las canciones.
      */
     fun withCharacter(): ModConfig {
-        val draft = character
-        if (!draft.enabled || songs.isEmpty()) return this
-        val id = draft.charFolder
+        val assignments = resolvedAssignments()
+        fun fileId(key: String) = characterLibrary.firstOrNull { it.id == key }?.draft?.charFolder
+        val playerId = fileId(assignments.player)
+        val opponentId = fileId(assignments.opponent)
+        val girlfriendId = fileId(assignments.girlfriend)
         val updated = songs.map { song ->
-            // Imported V-Slice metadata is preserved verbatim, not regenerated.
-            if (song.vSliceOrigin != null) return@map song
-            val (player, opponent) = if (draft.side == CharacterSide.PLAYER) {
-                id to song.opponent
-            } else {
-                song.player to id
-            }
-            song.copy(player = player, opponent = opponent)
+            song.copy(player = playerId ?: song.player, opponent = opponentId ?: song.opponent, girlfriend = girlfriendId ?: song.girlfriend)
         }
         return copy(songs = updated)
     }

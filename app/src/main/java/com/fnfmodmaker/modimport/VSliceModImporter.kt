@@ -163,7 +163,7 @@ internal class VSliceModImporter(
             if (candidates.size > if (character.enabled) 1 else 0) warnings.add("Solo se edita un personaje compatible; los demás se conservan sin edición.")
             val resources = files.map { path -> ImportedModResource(path, imageAsset(index.getValue(path), path.substringAfterLast('/')), path in converted) }
             val config = ModConfig(engine = TargetEngine.VSLICE, modTitle = title, modId = slugify(title), description = polymod.optString("description", "").take(1000),
-                songs = songs, charts = charts, character = character, importedModResources = resources)
+                songs = songs, charts = charts, characterLibrary = listOf(CharacterEntry(draft = character)), importedModResources = resources)
             return PreparedVSliceImport(stage, config, warnings.distinct())
         } catch (e: Throwable) { stage.deleteRecursively(); throw e }
     }

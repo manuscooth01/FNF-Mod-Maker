@@ -87,7 +87,7 @@ class PsychImportCycleTest {
         val prepared = ModZipInspector(File(temp.root, "cache")).withExtracted(fixture().inputStream()) { dir, names ->
             PsychModImporter({ 1 to 1 }, { 10_000 }, ::audio, ::image).prepare(dir, names, stage)
         }
-        val config = prepared.config.copy(character = prepared.config.character.copy(charId = "New_Enemy"),
+        val config = prepared.config.copy(character = prepared.config.character.copy(charId = "New_Enemy")).copy(
             stageDraft = StageDraft(enabled = true, stageId = "Test Stage", backgroundImage = prepared.config.character.atlasSheet))
         val effective = config.effectiveExportConfig()
         assertEquals("new-enemy", effective.firstSong.opponent)

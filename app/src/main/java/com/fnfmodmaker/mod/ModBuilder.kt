@@ -61,8 +61,11 @@ object ModBuilder {
             "Los proyectos importados solo se exportan para su motor original; BOTH aún no está soportado."
         }
         require(!importedVSlice || rawConfig.engine == com.fnfmodmaker.model.TargetEngine.VSLICE) { "El proyecto importado debe exportarse para V-Slice." }
+        val libraryProblems = com.fnfmodmaker.model.characterLibraryProblems(rawConfig)
+        require(libraryProblems.isEmpty()) { libraryProblems.joinToString(" ") }
         val config = rawConfig.effectiveExportConfig()
-        val metadataProblems = rawConfig.songs.zip(config.songs).flatMap { (raw, effective) -> vSliceExportProblems(raw, effective) } + vSliceCharacterProblems(config)
+        val metadataProblems = rawConfig.songs.zip(config.songs).flatMap { (raw, effective) -> vSliceExportProblems(raw, effective) } +
+            config.charactersToExport().flatMap { vSliceCharacterProblems(config.copy(selectedCharacterId = it.id)) }
         require(metadataProblems.isEmpty()) { metadataProblems.joinToString(" ") }
         val importedCharts = config.songs.filter { it.vSliceOrigin != null }.associate { song ->
             require(song.difficulties.isNotEmpty()) { "${song.songFolder}: elige una dificultad editable." }
@@ -88,14 +91,18 @@ object ModBuilder {
             }
         }
 
-        // ---------------- Personaje propio (uno solo para todo el mod) ----------------
-        services.character(root, config, onProgress, warnings)
-        if (importedVSlice && config.character.enabled && config.character.importedSourceFormat == "V-Slice") {
-            val path = "data/characters/${config.character.charFolder}.json"
-            val generated = File(root, path)
-            require(generated.isFile) { "No se generó el personaje importado: $path" }
-            val original = originalVSliceText(config, path, appRoot, true)
-            generated.writeText(patchVSliceCharacter(original, generated.readText(), config.character.icon != null))
+        // Each independently assigned identity is built exactly once, even if used by several roles.
+        config.charactersToExport().forEach { entry ->
+            val characterConfig = config.copy(selectedCharacterId = entry.id)
+            services.character(root, characterConfig, onProgress, warnings)
+            val draft = entry.draft
+            if (importedVSlice && draft.importedSourceFormat == "V-Slice") {
+                val path = "data/characters/${draft.charFolder}.json"
+                val generated = File(root, path)
+                require(generated.isFile) { "No se generó el personaje importado: $path" }
+                val original = originalVSliceText(config, path, appRoot, true)
+                generated.writeText(patchVSliceCharacter(original, generated.readText(), draft.icon != null))
+            }
         }
 
         // ---------------- Stage propio (uno solo para todo el mod) ----------------

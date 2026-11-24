@@ -9,7 +9,8 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
     private fun parseConfig(value: com.google.gson.JsonObject): ModConfig =
         autoSaveGson.fromJson(value, ModConfig::class.java) ?: error("El proyecto está vacío.")
     /** Reject malformed model shapes before they can reach screens or be published. */
-    fun validate(value: com.google.gson.JsonObject) {
+    fun validate(source: com.google.gson.JsonObject) {
+        val value = migrateCharacterLibrary(source)
         fun compare(input: com.google.gson.JsonObject, template: com.google.gson.JsonObject) {
             template.entrySet().forEach { (key, sample) ->
                 val item = input.get(key) ?: return@forEach
@@ -28,11 +29,9 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 }
             }
         }
-        require(value.get("songs")?.isJsonArray == true && value.get("character")?.isJsonObject == true && value.get("stageDraft")?.isJsonObject == true && value.get("charts")?.isJsonObject == true) { "Faltan datos del proyecto." }
+        require(value.get("songs")?.isJsonArray == true && value.get("characterLibrary")?.isJsonArray == true && value.get("stageDraft")?.isJsonObject == true && value.get("charts")?.isJsonObject == true) { "Faltan datos del proyecto." }
         compare(value, configJson(ModConfig()))
         value.get("engine")?.let { require(it.asString in TargetEngine.entries.map { engine -> engine.name }) { "Motor desconocido." } }
-        val character = value.getAsJsonObject("character")
-        character.get("side")?.let { require(it.asString in CharacterSide.entries.map { side -> side.name }) { "Lado de personaje inválido." } }
         fun objectArray(parent: com.google.gson.JsonObject, key: String, template: com.google.gson.JsonObject, extra: (com.google.gson.JsonObject) -> Unit = {}) {
             parent.get(key)?.let { array ->
                 require(array.isJsonArray) { "$key debe ser una lista." }
@@ -42,22 +41,40 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 }
             }
         }
-        objectArray(character, "variations", autoSaveGson.toJsonTree(com.fnfmodmaker.model.CharacterVariation()).asJsonObject)
-        objectArray(character, "atlasFrames", autoSaveGson.toJsonTree(com.fnfmodmaker.model.SparrowFrame("frame", 0, 0, 1, 1)).asJsonObject)
-        character.get("animationFrames")?.let { frames ->
-            require(frames.isJsonObject) { "Frames inválidos." }
-            frames.asJsonObject.entrySet().forEach { (_, array) ->
-                require(array.isJsonArray) { "Frames inválidos." }
-                array.asJsonArray.forEach { frame ->
-                    require(frame.isJsonObject && frame.asJsonObject.get("image")?.isJsonObject == true && frame.asJsonObject.get("width")?.isJsonPrimitive == true && frame.asJsonObject.get("height")?.isJsonPrimitive == true) { "Frame sin imagen o dimensiones." }
+        val library = value.getAsJsonArray("characterLibrary")
+        require(library.size() in 1..64) { "Biblioteca de personajes inválida." }
+        val ids = mutableSetOf<String>()
+        library.forEach { item ->
+            require(item.isJsonObject && item.asJsonObject.get("id")?.isJsonPrimitive == true && item.asJsonObject.get("draft")?.isJsonObject == true) { "Personaje inválido." }
+            val entry = item.asJsonObject
+            val id = entry.get("id").asString
+            require(id.matches(Regex("[A-Za-z0-9_-]{1,64}")) && ids.add(id)) { "ID de biblioteca inválido o repetido." }
+            val character = entry.getAsJsonObject("draft")
+            character.get("side")?.let { require(it.asString in CharacterSide.entries.map { side -> side.name }) { "Lado de personaje inválido." } }
+            objectArray(character, "variations", autoSaveGson.toJsonTree(com.fnfmodmaker.model.CharacterVariation()).asJsonObject)
+            objectArray(character, "atlasFrames", autoSaveGson.toJsonTree(com.fnfmodmaker.model.SparrowFrame("frame", 0, 0, 1, 1)).asJsonObject)
+            character.get("animationFrames")?.let { frames ->
+                require(frames.isJsonObject) { "Frames inválidos." }
+                frames.asJsonObject.entrySet().forEach { (_, array) ->
+                    require(array.isJsonArray) { "Frames inválidos." }
+                    array.asJsonArray.forEach { frame ->
+                        require(frame.isJsonObject && frame.asJsonObject.get("image")?.isJsonObject == true && frame.asJsonObject.get("width")?.isJsonPrimitive == true && frame.asJsonObject.get("height")?.isJsonPrimitive == true) { "Frame sin imagen o dimensiones." }
+                    }
+                }
+            }
+            character.get("animationSettings")?.let { settings ->
+                require(settings.isJsonObject) { "Ajustes de animación inválidos." }
+                settings.asJsonObject.entrySet().forEach { (_, item) ->
+                    require(item.isJsonObject) { "Ajustes de animación inválidos." }
+                    compare(item.asJsonObject, autoSaveGson.toJsonTree(CharacterAnimationSettings()).asJsonObject)
                 }
             }
         }
-        character.get("animationSettings")?.let { settings ->
-            require(settings.isJsonObject) { "Ajustes de animación inválidos." }
-            settings.asJsonObject.entrySet().forEach { (_, item) ->
-                require(item.isJsonObject) { "Ajustes de animación inválidos." }
-                compare(item.asJsonObject, autoSaveGson.toJsonTree(CharacterAnimationSettings()).asJsonObject)
+        value.get("selectedCharacterId")?.let { require(it.isJsonPrimitive && it.asString in ids) { "Personaje seleccionado no existe." } }
+        value.get("characterAssignments")?.let { assignments ->
+            require(assignments.isJsonObject) { "Asignaciones inválidas." }
+            listOf("player", "opponent", "girlfriend").forEach { key ->
+                assignments.asJsonObject.get(key)?.let { item -> require(item.isJsonPrimitive && item.asJsonPrimitive.isString && (item.asString.isEmpty() || item.asString in ids)) { "Asignación de personaje inválida." } }
             }
         }
         objectArray(value.getAsJsonObject("stageDraft"), "sprites", autoSaveGson.toJsonTree(com.fnfmodmaker.model.StageSprite()).asJsonObject) { sprite ->

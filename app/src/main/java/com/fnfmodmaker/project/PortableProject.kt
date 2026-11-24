@@ -194,7 +194,8 @@ internal class PortableProject(private val appRoot: File) {
                 val charts = config.get("charts")?.takeIf { it.isJsonObject }?.asJsonObject?.entrySet()?.sumOf { it.value.asJsonObject.size() } ?: 0
                 val songNames = config.getAsJsonArray("songs").map { it.asJsonObject.get("songName")?.asString?.ifBlank { "Sin nombre" } ?: "Sin nombre" }
                 val summary = PortableSummary(config.get("modTitle")?.asString?.ifBlank { "Proyecto sin nombre" } ?: "Proyecto sin nombre", songs, charts, described.size, archive.length(), songNames,
-                    config.getAsJsonObject("character")?.get("enabled")?.asBoolean == true,
+                    (config.getAsJsonObject("character")?.get("enabled")?.asBoolean == true ||
+                        config.get("characterLibrary")?.takeIf { it.isJsonArray }?.asJsonArray?.any { it.isJsonObject && it.asJsonObject.getAsJsonObject("draft")?.get("enabled")?.asBoolean == true } == true),
                     config.getAsJsonObject("stageDraft")?.get("enabled")?.asBoolean == true,
                     config.get("psychScripts")?.takeIf { it.isJsonObject }?.asJsonObject?.size() ?: 0)
                 return PreparedPortable(stage, config, summary, described)

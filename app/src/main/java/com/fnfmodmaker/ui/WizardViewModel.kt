@@ -58,6 +58,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.fnfmodmaker.project.ModImportSession
 import com.fnfmodmaker.project.ProjectConfigValidator
+import com.fnfmodmaker.project.migrateCharacterLibrary
 import com.fnfmodmaker.project.ProjectStore
 import com.fnfmodmaker.project.ProjectSummary
 import com.fnfmodmaker.project.PortableProject
@@ -1578,7 +1579,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private fun configJson(value: ModConfig) = autoSaveGson.toJsonTree(value).asJsonObject
     /** Fill fields missing from older local saves while retaining unknown JSON fields. */
     private fun portableConfig(source: com.google.gson.JsonObject): com.google.gson.JsonObject {
-        val target = configJson(parseConfig(source))
+        val migrated = migrateCharacterLibrary(source)
+        val target = configJson(parseConfig(migrated))
         fun merge(to: com.google.gson.JsonObject, from: com.google.gson.JsonObject) {
             from.entrySet().forEach { (name, value) ->
                 val existing = to.get(name)
@@ -1586,12 +1588,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 else to.add(name, value.deepCopy())
             }
         }
-        merge(target, source)
+        merge(target, migrated)
         validatePortableConfig(target)
         return target
     }
     private fun parseConfig(value: com.google.gson.JsonObject): ModConfig =
-        autoSaveGson.fromJson(value, ModConfig::class.java) ?: error("El proyecto está vacío.")
+        autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java) ?: error("El proyecto está vacío.")
 
     private fun beginProjects() {
         viewModelScope.launch {
@@ -2063,6 +2065,45 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             delay(1000)
             saveAutoSave()
         }
+    }
+
+    internal fun selectLibraryCharacter(id: String) {
+        if (busy || config.characterLibrary.none { it.id == id }) return
+        config = config.copy(selectedCharacterId = id); activeVariationIndex = null; scheduleAutoSave()
+    }
+    internal fun createLibraryCharacter(duplicate: Boolean = false) {
+        if (busy || config.characterLibrary.size >= 64) return
+        if (duplicate && config.character.importedSourceJson.isNotEmpty()) {
+            error = "La duplicación de un personaje JSON importado todavía no conserva todos sus campos; crea uno nuevo para evitar pérdidas."
+            return
+        }
+        val id = java.util.UUID.randomUUID().toString()
+        val used = config.characterLibrary.map { it.draft.charFolder.lowercase() }.toSet()
+        var n = 1
+        while ("personaje-$n" in used) n++
+        val draft = if (duplicate) config.character.copy(enabled = true, charId = "personaje-$n", displayName = config.character.displayName + " (copia)")
+            else CharacterDraft(enabled = true, charId = "personaje-$n", displayName = "Personaje $n")
+        config = config.copy(characterLibrary = config.characterLibrary + com.fnfmodmaker.model.CharacterEntry(id, draft),
+            selectedCharacterId = id, characterAssignments = config.resolvedAssignments())
+        activeVariationIndex = null; error = null; scheduleAutoSave()
+    }
+    internal fun removeLibraryCharacter(id: String) {
+        if (busy || config.characterLibrary.size <= 1 || config.characterLibrary.none { it.id == id }) return
+        val a = config.resolvedAssignments()
+        val rest = config.characterLibrary.filterNot { it.id == id }
+        config = config.copy(characterLibrary = rest, selectedCharacterId = if (config.selectedCharacterId == id) rest.first().id else config.selectedCharacterId,
+            characterAssignments = a.copy(player = a.player.takeUnless { it == id } ?: "", opponent = a.opponent.takeUnless { it == id } ?: "", girlfriend = a.girlfriend.takeUnless { it == id } ?: ""))
+        activeVariationIndex = null; scheduleAutoSave()
+    }
+    internal fun assignLibraryCharacter(role: com.fnfmodmaker.model.CharacterRole, id: String) {
+        if (busy || (id.isNotEmpty() && config.characterLibrary.none { it.id == id })) return
+        val a = config.resolvedAssignments()
+        val updated = when (role) {
+            com.fnfmodmaker.model.CharacterRole.PLAYER -> a.copy(player = id)
+            com.fnfmodmaker.model.CharacterRole.OPPONENT -> a.copy(opponent = id)
+            com.fnfmodmaker.model.CharacterRole.GIRLFRIEND -> a.copy(girlfriend = id)
+        }
+        config = config.copy(characterAssignments = updated); scheduleAutoSave()
     }
 
     private fun updateCharacter(block: (CharacterDraft) -> CharacterDraft) {

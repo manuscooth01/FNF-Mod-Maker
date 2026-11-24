@@ -72,6 +72,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 
+    // ZIP metadata incl. Unix file types for secure mod inspection (java.util.zip does not expose them).
+    implementation("org.apache.commons:commons-compress:1.26.2")
+
     // JSON para auto-guardado de ModConfig en caché.
     implementation("com.google.code.gson:gson:2.10.1")
 

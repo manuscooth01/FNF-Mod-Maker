@@ -40,6 +40,10 @@ import com.fnfmodmaker.model.slugify
 import com.fnfmodmaker.mod.ModBuilder
 import com.fnfmodmaker.mod.ModArchiveLibrary
 import com.fnfmodmaker.mod.ArchivedMod
+import com.fnfmodmaker.modimport.ModZipInspector
+import com.fnfmodmaker.modimport.ModZipReview
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -1000,6 +1004,39 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             null
         }
     }
+
+    // ZIP inspection is deliberately independent of .fnfproject and the copy library.
+    internal var modZipReview by mutableStateOf<ModZipReview?>(null)
+        private set
+    internal var modZipInspecting by mutableStateOf(false)
+        private set
+    private var modZipJob: kotlinx.coroutines.Job? = null
+
+    internal fun inspectModZip(uri: Uri) {
+        if (busy || modZipReview != null) return
+        val app = getApplication<Application>()
+        busy = true; modZipInspecting = true; portableMessage = null
+        portableProgress = "Validando ZIP y revisando recursos…"
+        modZipJob = viewModelScope.launch {
+            try {
+                val review = withContext(Dispatchers.IO) {
+                    val context = kotlin.coroutines.coroutineContext
+                    val source = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el archivo.")
+                    ModZipInspector(File(app.cacheDir, "mod-zip-inspection")).inspect(source, MediaTools.displayName(app, uri)) { context.ensureActive() }
+                }
+                modZipReview = review
+            } catch (e: CancellationException) {
+                portableMessage = "Análisis cancelado. El proyecto actual no cambió."
+                throw e
+            } catch (e: Exception) {
+                portableMessage = "No se pudo analizar el ZIP: ${e.message}. El proyecto actual no cambió."
+            } finally {
+                modZipInspecting = false; busy = false; portableProgress = null; modZipJob = null
+            }
+        }
+    }
+    internal fun cancelModZipInspection() { modZipJob?.cancel() }
+    internal fun closeModZipReview() { modZipReview = null }
 
     // ---------------- Importar Mod ----------------
 

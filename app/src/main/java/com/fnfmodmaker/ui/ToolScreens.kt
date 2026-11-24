@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -89,8 +92,31 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
 internal fun HomeScreen(vm: WizardViewModel) {
     val context = LocalContext.current
     val importProject = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.preparePortableImport(uri) }
+    val inspectZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.inspectModZip(uri) }
     val exportProject = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri == null) vm.cancelPortableExport() else vm.savePortableExport(uri)
+    }
+    vm.modZipReview?.let { review ->
+        AlertDialog(onDismissRequest = vm::closeModZipReview, title = { Text("Revisión del mod ZIP") },
+            text = {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                    item {
+                        Text(review.name, fontWeight = FontWeight.Bold)
+                        Text("Motor: ${review.engines.joinToString(" + ")}")
+                        Text("Canciones posibles: ${review.songs.size} · ${review.songs.joinToString().ifBlank { "ninguna detectada" }}")
+                        Text("Dificultades detectadas por nombre: ${review.difficulties.joinToString().ifBlank { "no determinadas" }}")
+                        Text("Personajes: ${review.characters} · Escenarios: ${review.stages} · Audios: ${review.audio} · Scripts: ${review.scripts}")
+                        Spacer(Modifier.height(8.dp))
+                        review.warnings.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                        Spacer(Modifier.height(8.dp))
+                        Text("Inventario (${review.files.size})", fontWeight = FontWeight.Bold)
+                    }
+                    items(review.files) { file ->
+                        Text("${file.path} · ${file.kind} · ${file.status}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                        Text(file.detail, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }, confirmButton = { TextButton(onClick = vm::closeModZipReview) { Text("Cerrar revisión") } })
     }
     vm.portableImportSummary?.let { summary ->
         AlertDialog(onDismissRequest = vm::cancelPortableImport, title = { Text("¿Importar este proyecto?") },
@@ -166,6 +192,9 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 TextButton(onClick = { vm.switchProject(duplicate = true) }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Duplicar actual") }
             }
             OutlinedButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy && vm.currentProjectId != null, modifier = Modifier.fillMaxWidth()) { Text("Importar proyecto .fnfproject") }
+            OutlinedButton(onClick = { inspectZip.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Importar mod ZIP para editar") }
+            Text("En desarrollo: por ahora solo analiza el ZIP; no crea un proyecto editable.", style = MaterialTheme.typography.labelSmall)
+            if (vm.modZipInspecting) TextButton(onClick = vm::cancelModZipInspection) { Text("Cancelar análisis ZIP") }
             vm.projects.forEach { project ->
                 Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {

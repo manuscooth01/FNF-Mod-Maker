@@ -580,3 +580,19 @@ guardar; comprueba o elimina ese destino.
 
 El metadata V-Slice ya no declara una licencia automáticamente. Esto no implica autorización para
 redistribuir recursos de terceros; comprueba sus derechos y condiciones antes de hacerlo.
+
+### Importador de mod ZIP editable: etapa V1.1 (en desarrollo)
+
+Inicio permite seleccionar un ZIP y revisar un inventario **provisional**, separado de la biblioteca
+que guarda copias y de la importación `.fnfproject`. Todavía no crea ni modifica proyectos, no
+convierte ni conserva recursos y no permite exportar un mod importado; cerrar o cancelar deja el
+proyecto actual intacto. La detección de motores, canciones y dificultades se basa en rutas, no en
+validación de esquemas. Los scripts nunca se ejecutan durante el análisis.
+
+El análisis descomprime en caché aislada y cuenta bytes reales, verifica CRC, rechaza enlaces y
+rutas ambiguas y limpia los temporales. Límites móviles: ZIP comprimido 128 MiB, extracción total
+256 MiB, archivo 64 MiB, 2048 entradas y relación de compresión máxima 200:1 para archivos mayores
+de 1 MiB. Son límites conservadores, no una promesa de que cualquier dispositivo tenga suficiente
+espacio. Se usa Apache Commons Compress porque el ZIP estándar de Java no expone los tipos Unix.
+Las etapas posteriores deben implementar conversión, persistencia, resolución de colisiones y
+preservación/exportación segura antes de considerar funcional la importación editable.

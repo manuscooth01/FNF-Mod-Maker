@@ -50,3 +50,37 @@ internal fun validatePsychEvents(text: String): String {
     }
     return events.toString()
 }
+
+/** Visual editor operations preserve all unedited event properties and validate atomically. */
+internal fun changeVSliceEvent(source: String, index: Int?, time: String, name: String, value: String): String {
+    val events = JsonParser.parseString(validateVSliceEvents(source)).asJsonArray
+    require(value.toByteArray(Charsets.UTF_8).size <= 64_000) { "Valor demasiado grande." }
+    val wrapped = "{\"v\":$value}"
+    readVSliceJson(wrapped, "valor de evento")
+    rejectDuplicateJsonKeys(wrapped)
+    val parsedValue = JsonParser.parseString(wrapped).asJsonObject.get("v")
+    require(time.length <= 128) { "Tiempo inválido." }
+    val timeWrapped = "{\"t\":$time}"
+    readVSliceJson(timeWrapped, "tiempo de evento"); rejectDuplicateJsonKeys(timeWrapped)
+    val timeObject = JsonParser.parseString(timeWrapped).asJsonObject
+    require(timeObject.size() == 1) { "Tiempo inválido." }
+    val parsedTime = timeObject.get("t")
+    require(parsedTime != null && parsedTime.isJsonPrimitive && parsedTime.asJsonPrimitive.isNumber) { "El tiempo debe ser un número." }
+    require(index == null || index in 0 until events.size()) { "Selección de evento obsoleta." }
+    val item = index?.let { events[it].asJsonObject.deepCopy() } ?: com.google.gson.JsonObject()
+    item.add("t", parsedTime); item.addProperty("e", name); item.add("v", parsedValue)
+    if (index == null) events.add(item) else events.set(index, item)
+    return validateVSliceEvents(events.toString())
+}
+internal fun duplicateVSliceEvent(source: String, index: Int): String {
+    val events = JsonParser.parseString(validateVSliceEvents(source)).asJsonArray
+    require(index in 0 until events.size()) { "Selección de evento obsoleta." }
+    events.add(events[index].deepCopy())
+    return validateVSliceEvents(events.toString())
+}
+internal fun removeVSliceEvent(source: String, index: Int): String {
+    val events = JsonParser.parseString(validateVSliceEvents(source)).asJsonArray
+    require(index in 0 until events.size()) { "Selección de evento obsoleta." }
+    events.remove(index)
+    return events.toString()
+}

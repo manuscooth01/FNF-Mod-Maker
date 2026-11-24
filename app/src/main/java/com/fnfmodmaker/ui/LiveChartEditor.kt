@@ -232,7 +232,10 @@ private fun LiveTransport(vm: WizardViewModel, onOpenGrid: () -> Unit) {
         text = { Text("Se eliminarán el chart y la dificultad de la canción. Las demás dificultades no cambian; el original del proyecto se conserva.") },
         confirmButton = { TextButton(onClick = { vm.deleteLiveCustomChart(); confirmDelete = false }) { Text("Borrar") } },
         dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancelar") } })
-    if (vm.config.engine.includesVSlice) VSliceEventsEditor(vm)
+    if (vm.config.engine.includesVSlice) {
+        VSliceVisualEvents(vm)
+        VSliceEventsEditor(vm)
+    }
     if (vm.config.engine == com.fnfmodmaker.model.TargetEngine.PSYCH) PsychEventsEditor(vm)
     if (chart != null && chart.notes.isNotEmpty()) RecentNotes(vm, chart.notes)
 }

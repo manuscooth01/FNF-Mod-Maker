@@ -232,6 +232,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
         lastAiApplied = proposal; lastAiProjectId = currentProjectId
         config = updated
+        if (proposal.base.charts != updated.charts) { updateChartEditorState(); initChartHistory() }
         characterSaved = null
         aiProposal = null
         aiError = null
@@ -243,7 +244,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val batch = lastAiApplied ?: return
         if (busy || aiBusy) return
         if (!canUndoAi) { aiError = "El proyecto cambió después del lote; no se puede deshacer sin sobrescribir cambios posteriores."; return }
-        config = batch.base; lastAiApplied = null; lastAiProjectId = null; aiProposal = null; characterSaved = null
+        config = batch.base
+        if (batch.base.charts != batch.result.charts) { updateChartEditorState(); initChartHistory() }
+        lastAiApplied = null; lastAiProjectId = null; aiProposal = null; characterSaved = null
         aiError = null; aiProposalNotice = "Lote de IA deshecho; guardando el proyecto."
         scheduleAutoSave(); forceAutoSave()
     }

@@ -62,6 +62,10 @@ object ProjectProposalPlanner {
 
     fun applyIfUnchanged(current: ModConfig, proposal: ProjectProposal): ModConfig {
         if (current != proposal.base) throw AiException("El proyecto cambió desde la propuesta. Solicítala de nuevo antes de aplicar.")
+        if (current.characterAssignments != proposal.result.characterAssignments) {
+            val problems = characterLibraryProblems(proposal.result)
+            if (problems.isNotEmpty()) throw AiException("La asignación ya no es válida: ${problems.joinToString(" ")}")
+        }
         return proposal.result
     }
 
@@ -121,6 +125,7 @@ object ProjectProposalPlanner {
                     val oldPrefix = draft.prefixFor(name)
                     draft = draft.copy(animationSettings = draft.animationSettings + (name to setting),
                         atlasPrefixes = if (prefix != null) draft.atlasPrefixes + (name to prefix) else draft.atlasPrefixes)
+                    if (draft.animations.none { it.first == name }) fail("la animación $name no tiene frames; añádelos antes de editarla con IA")
                     current = replaceDraft(current, selected.id, draft)
                     items.add(ProposalItem("${draft.charFolder} · Animación $name${if (new) " · nueva, revisa sus imágenes" else ""}", "Antes: ${old.fps} FPS, bucle ${old.loop}, offset (${old.offsetX}, ${old.offsetY})${if (draft.useAtlas) ", prefijo '$oldPrefix'" else ""}\nDespués: ${setting.fps} FPS, bucle ${setting.loop}, offset (${setting.offsetX}, ${setting.offsetY})${if (draft.useAtlas) ", prefijo '${draft.prefixFor(name)}'" else ""}"))
                 }
@@ -215,7 +220,10 @@ object ProjectProposalPlanner {
                     val chart = ChartDraft(songFolder = song.songFolder, difficulty = diff, notes = notes, bpm = song.bpmValue,
                         scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
                         player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych)
-                    current = current.withChart(song.songFolder, diff, chart)
+                    val history = current.chartHistories[song.songFolder]?.get(diff) ?: ChartPersistentHistory()
+                    val recorded = recordChartHistory(history, previous, chart)
+                    current = current.withChart(song.songFolder, diff, chart).copy(chartHistories = current.chartHistories +
+                        (song.songFolder to (current.chartHistories[song.songFolder].orEmpty() + (diff to recorded))))
                     val previousText = previous?.let { "${it.notes.size} notas editadas" } ?: if (song.practiceNotes) "notas de práctica generadas al exportar" else "chart vacío"
                     fun describeNotes(list: List<ChartNote>) = list.joinToString("\n") { "${it.timeMs} ms · carril ${it.lane} · duración ${it.lengthMs} ms" }.ifEmpty { "(sin notas)" }
                     val oldNotes = previous?.let { "\nNOTAS ANTERIORES:\n${describeNotes(it.notes)}" } ?: ""

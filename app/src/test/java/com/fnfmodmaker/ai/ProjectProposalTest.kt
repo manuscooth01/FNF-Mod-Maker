@@ -112,6 +112,7 @@ class ProjectProposalTest {
             )
             bad.forEach { assertTrue(it, runCatching { ProjectProposalPlanner.plan(config, it) }.isFailure) }
             file.delete()
+            assertTrue(runCatching { ProjectProposalPlanner.applyIfUnchanged(config, proposal) }.isFailure)
             assertTrue(runCatching { ProjectProposalPlanner.plan(config, args) }.isFailure)
         } finally { file.delete() }
     }

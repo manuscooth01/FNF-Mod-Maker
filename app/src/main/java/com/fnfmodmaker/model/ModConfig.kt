@@ -169,6 +169,10 @@ data class ModConfig(
 
     // Charts editados por canción/dificultad (songFolder -> difficulty -> ChartDraft)
     val charts: Map<String, Map<String, ChartDraft>> = emptyMap(),
+    // Charts independientes por motor (esquema v2): songId -> engine -> difficulty -> ChartDraft.
+    // Es la fuente de verdad para proyectos con chartSchemaVersion == 2.
+    val independentCharts: com.fnfmodmaker.model.IndependentChartCollection? = null,
+
     // Editable project only; never emitted in engine mod ZIPs.
     val chartHistories: Map<String, Map<String, ChartPersistentHistory>> = emptyMap(),
 

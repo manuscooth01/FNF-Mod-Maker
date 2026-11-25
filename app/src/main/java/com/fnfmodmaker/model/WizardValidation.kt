@@ -1,16 +1,14 @@
 package com.fnfmodmaker.model
 
+import com.fnfmodmaker.model.ChartEngine
+import com.fnfmodmaker.project.CHART_SCHEMA_V2
 import java.io.File
 
 data class WizardIssue(val step: Int, val message: String, val songIndex: Int? = null)
 
 fun characterInputProblems(draft: CharacterDraft, fileExists: (String) -> Boolean = { File(it).isFile }): List<String> = buildList {
     addAll(draft.problems)
-    val images = when {
-        draft.useAtlas -> listOfNotNull(draft.atlasSheet)
-        draft.useIndividualFrames -> draft.animationFrames.values.flatten().map { it.image }
-        else -> listOfNotNull(draft.sheet)
-    }
+    val images = when { … }
     if (images.any { !fileExists(it.path) }) add("Vuelve a elegir las imágenes que ya no están disponibles.")
     if (draft.useAtlas && draft.atlasXml != null && !fileExists(draft.atlasXml.path)) add("Vuelve a elegir el XML del atlas.")
     if (draft.icon != null && !fileExists(draft.icon.path)) add("Vuelve a elegir el icono de vida.")
@@ -62,6 +60,10 @@ fun characterLibraryProblems(config: ModConfig, fileExists: (String) -> Boolean 
 
 /** Una sola validación para navegación, resumen y exportación. */
 fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(it).isFile }): List<WizardIssue> = buildList {
+    if (config.chartSchemaVersion == CHART_SCHEMA_V2) {
+        addAll(validateV2(config, fileExists))
+        return@buildList
+    }
     if (config.stageDraft.enabled) {
         val stage = config.stageDraft
         stageLayoutProblems(stage, config.engine).forEach { add(WizardIssue(1, it)) }
@@ -119,6 +121,50 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
     if (config.icon != null && !fileExists(config.icon.path)) add(WizardIssue(3, "Vuelve a elegir el icono del mod."))
 }
 
-/** Scripts are confined to mods/<mod>/scripts/<name>.lua on export. */
-fun isValidPsychScript(name: String, code: String): Boolean =
-    name.matches(Regex("[a-z0-9_-]{1,48}")) && code.isNotBlank() && code.length <= 16000 && !code.contains('\u0000')
+/** Validation for v2 independent-chart projects. */
+private fun validateV2(config: ModConfig, fileExists: (String) -> Boolean): List<WizardIssue> = buildList {
+    require(config.independentCharts != null) { "Proyecto v2 sin colección de charts independientes." }
+    val collection = config.independentCharts!!
+    val songIds = mutableSetOf<String>()
+    collection.songs.forEach { (songId, song) ->
+        require(songId.matches(Regex("[A-Za-z0-9_-]{1,80}")) && songIds.add(songId)) {
+            "ID de canción inválido o duplicado: $songId."
+        }
+        listOf(ChartEngine.PSYCH to song.psych, ChartEngine.VSLICE to song.vSlice).forEach { (engine, variant) ->
+            if (variant == null) return@forEach
+            val folder = variant.metadata.songFolder
+            if (!folder.matches(Regex("[a-z0-9_-]{1,80}"))) {
+                add(WizardIssue(1, "Canción $songId ($engine): carpeta de canción inválida."))
+            }
+            variant.difficulties.forEach { difficulty ->
+                if (!isValidDifficulty(difficulty)) {
+                    add(WizardIssue(1, "Canción $songId ($engine): dificultad inválida $difficulty."))
+                }
+                val chart = variant.charts[difficulty]
+                if (chart == null && difficulty !in variant.uneditableDifficulties) {
+                    add(WizardIssue(1, "Canción $songId ($engine): falta chart editable para $difficulty."))
+                }
+                chart?.let { c ->
+                    if (c.songFolder != variant.metadata.songFolder) {
+                        add(WizardIssue(1, "Canción $songId ($engine): chart de $difficulty no pertenece a la canción."))
+                    }
+                    if (c.difficulty != difficulty) {
+                        add(WizardIssue(1, "Canción $songId ($engine): chart no corresponde a la dificultad $difficulty."))
+                    }
+                }
+            }
+            // Media references in metadata.
+            listOf("instrumental" to variant.metadata.instrumental, "vocalsPlayer" to variant.metadata.vocalsPlayer, "vocalsOpponent" to variant.metadata.vocalsOpponent).forEach { (name, audio) ->
+                if (audio != null && !fileExists(audio.path)) add(WizardIssue(3, "Canción $songId ($engine): vuelve a elegir $name."))
+            }
+            // Originals preserved.
+            variant.originals.forEach { original ->
+                if (!original.asset.path.isNotEmpty()) {
+                    add(WizardIssue(1, "Canción $songId ($engine): original sin ruta."))
+                }
+            }
+        }
+    }
+    if (config.modTitle.isBlank()) add(WizardIssue(0, "Escribe el nombre del mod."))
+    if (config.songs.isEmpty()) add(WizardIssue(1, "Añade al menos una canción."))
+}

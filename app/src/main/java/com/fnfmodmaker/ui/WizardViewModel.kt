@@ -335,6 +335,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var activeChartDifficulty by mutableStateOf("normal")
         internal set
 
+    /** Engine que se está editando (v2): Psych o V-Slice. Block ambiguous edits. */
+    var activeChartEngine by mutableStateOf<ChartEngine?>(null)
+        internal set
+
+
     /** Índice de la variación que se está editando. */
     var activeVariationIndex by mutableStateOf<Int?>(null)
         internal set
@@ -343,24 +348,31 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var chartEditorState by mutableStateOf(ChartEditorState())
         internal set
 
-    /** Chart actual que se está editando (crea uno nuevo basado en notas de práctica si no existe). */
+    /** Chart actual que se está editing (crea uno nuevo basado en notas de práctica si no existe). */
     val activeChartDraft: ChartDraft
         get() {
             val song = config.songs.getOrElse(activeChartSongIndex) { return ChartDraft() }
             val difficulty = activeChartDifficulty
+            if (chartRepository.isV2()) {
+                val engine = activeChartEngine ?: return ChartDraft(
+                    songFolder = song.songFolder, difficulty = difficulty,
+                    scrollSpeed = song.speedValue, bpm = song.bpmValue, offsetMs = song.offsetValue,
+                    needsVoices = song.hasVocals, player1 = song.player, player2 = song.opponent,
+                    gfVersion = song.girlfriend, stage = song.stagePsych)
+                val key = com.fnfmodmaker.model.IndependentChartKey(song.songFolder, engine, difficulty)
+                return chartRepository.getChart(key)
+                    ?: ChartDraft(
+                        songFolder = song.songFolder, difficulty = difficulty,
+                        scrollSpeed = song.speedValue, bpm = song.bpmValue, offsetMs = song.offsetValue,
+                        needsVoices = song.hasVocals, player1 = song.player, player2 = song.opponent,
+                        gfVersion = song.girlfriend, stage = song.stagePsych)
+            }
             return config.getChart(song.songFolder, difficulty)
                 ?: ChartDraft(
-                    songFolder = song.songFolder,
-                    difficulty = difficulty,
-                    scrollSpeed = song.speedValue,
-                    bpm = song.bpmValue,
-                    offsetMs = song.offsetValue,
-                    needsVoices = song.hasVocals,
-                    player1 = song.player,
-                    player2 = song.opponent,
-                    gfVersion = song.girlfriend,
-                    stage = song.stagePsych
-                )
+                    songFolder = song.songFolder, difficulty = difficulty,
+                    scrollSpeed = song.speedValue, bpm = song.bpmValue, offsetMs = song.offsetValue,
+                    needsVoices = song.hasVocals, player1 = song.player, player2 = song.opponent,
+                    gfVersion = song.girlfriend, stage = song.stagePsych)
         }
 
     // ---------------- Grabación táctil de charts ----------------
@@ -1016,8 +1028,22 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (busy) return
         releaseMediaPlayer()
         activeChartSongIndex = index.coerceIn(0, config.songs.lastIndex)
+        activeChartEngine = null
         val song = config.songs[activeChartSongIndex]
         activeChartDifficulty = song.orderedDifficulties.firstOrNull() ?: "normal"
+        updateChartEditorState()
+        initChartHistory()
+    }
+
+    /** Select the engine variant to edit (v2 only). Blocks ambiguous edits until chosen. */
+    internal fun selectChartEngine(engine: ChartEngine) {
+        if (busy || !chartRepository.isV2()) return
+        val song = config.songs.getOrElse(activeChartSongIndex) { return }
+        val key = com.fnfmodmaker.model.IndependentChartKey(song.songFolder, engine, activeChartDifficulty)
+        if (chartRepository.getChart(key) == null) {
+            throw IllegalArgumentException("No hay chart editable para $engine en la dificultad ${activeChartDifficulty}.")
+        }
+        activeChartEngine = engine
         updateChartEditorState()
         initChartHistory()
     }
@@ -1026,6 +1052,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (busy) return
         // No liberar MediaPlayer al cambiar dificultad de la misma canción
         activeChartDifficulty = difficulty
+        activeChartEngine = null
         updateChartEditorState()
         initChartHistory()
     }
@@ -1654,8 +1681,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Sobrescribe saveChartDraft para no duplicar historial cuando se llama desde UI. */
     internal fun saveChartDraft(chart: com.fnfmodmaker.model.ChartDraft) {
-        config = config.withChart(chart.songFolder, chart.difficulty, chart)
+        if (chartRepository.isV2()) {
+            val key = com.fnfmodmaker.model.IndependentChartKey(
+                chart.songFolder, ChartEngine.PSYCH, chart.difficulty)
+            config = chartRepository.editChart(key, chart)
+        } else {
+            config = config.withChart(chart.songFolder, chart.difficulty, chart)
+        }
     }
+
+
 
     /** Undo. */
     internal fun undo() {
@@ -1734,8 +1769,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         tool = Tool.HOME
     }
 
+    /** Repository for per-engine chart operations (v2 independent-chart schema). */
+    private val chartRepository = ChartRepositoryImpl(autoSaveGson)
+
     var config by mutableStateOf(ModConfig())
         private set
+
 
     // Project snapshots are serialized through one mutex; disk work runs off the UI thread.
     private var autoSaveJob: kotlinx.coroutines.Job? = null
@@ -1796,9 +1835,22 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         return target
     }
     private fun parseConfig(value: com.google.gson.JsonObject): ModConfig {
+        val version = value.get("chartSchemaVersion")
+        val isV2 = version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
+        if (isV2) {
+            com.fnfmodmaker.project.requireIndependentChartSchema(value, autoSaveGson)
+            val config = autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java)
+                ?: error("El proyecto está vacío.")
+            chartRepository.setConfig(config)
+            return config
+        }
         requireSupportedChartSchema(value)
-        return autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java) ?: error("El proyecto está vacío.")
+        val config = autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java)
+            ?: error("El proyecto está vacío.")
+        chartRepository.setConfig(config)
+        return config
     }
+
     /** Merge the loaded document with model edits; unknown fields remain untouched. */
     private fun projectSnapshot(id: String, value: ModConfig): com.google.gson.JsonObject {
         val raw = migrateCharacterLibrary(projectStore.load(id).config)

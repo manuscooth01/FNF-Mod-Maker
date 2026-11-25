@@ -1,18 +1,48 @@
 package com.fnfmodmaker.model
 
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+
 /** Individual chart identity: BOTH is a project destination, never a chart engine. */
 internal enum class ChartEngine { PSYCH, VSLICE }
 
-internal data class IndependentChartKey(val songId: String, val engine: ChartEngine, val difficulty: String) {
+/** Stable identity of one editable chart: song + engine + difficulty. */
+internal data class IndependentChartKey(
+    val songId: String,
+    val engine: ChartEngine,
+    val difficulty: String
+) {
     init {
-        require(songId.matches(Regex("[A-Za-z0-9_-]{1,80}")) && isValidDifficulty(difficulty)) { "Identidad de chart inválida." }
+        require(songId.matches(Regex("[A-Za-z0-9_-]{1,80}")) && isValidDifficulty(difficulty)) {
+            "Identidad de chart inválida."
+        }
+    }
+}
+
+/**
+ * A media reference that can represent either an image or an audio original.
+ * Paths are archive paths within the project, never local file paths.
+ * The `kind` field distinguishes image vs audio without guessing from property names.
+ */
+internal data class ProjectMediaReference(
+    val uri: String,
+    val displayName: String,
+    val path: String,
+    val kind: String
+) {
+    init {
+        require(kind in setOf("image", "audio")) { "Tipo de medio inválido: $kind." }
+        require(path.isNotEmpty() && path.split('/').none { it == "." || it == ".." }) {
+            "Ruta de medio insegura: $path."
+        }
     }
 }
 
 /** Exact original files are project assets; paths here are archive paths, not local file paths. */
 internal data class IndependentOriginal(
     val originalPath: String,
-    val asset: PickedImage,
+    val asset: ProjectMediaReference,
     val editable: Boolean = false
 )
 
@@ -42,25 +72,77 @@ internal data class IndependentSong(
 }
 
 /**
- * Experimental in-memory model only. No migration, portable publication, existing
- * project loading or visual editor consumes it yet. Legacy JSON is retained as an
+ * The v2 independent-chart model. Integrated into [ModConfig] as the source of truth
+ * for projects with [ModConfig.chartSchemaVersion] == 2. Legacy JSON is retained as an
  * opaque document until a lossless, validated migration has been implemented.
  */
 internal data class IndependentChartCollection(
     val songs: Map<String, IndependentSong> = emptyMap(),
     val legacyDocumentJson: String = ""
 ) {
-    fun chart(key: IndependentChartKey): ChartDraft? = songs[key.songId]?.variant(key.engine)?.charts?.get(key.difficulty)
+    fun chart(key: IndependentChartKey): ChartDraft? =
+        songs[key.songId]?.variant(key.engine)?.charts?.get(key.difficulty)
 
     /** Edit exactly one variant and record its own history, never synthesize the other. */
     fun edit(key: IndependentChartKey, next: ChartDraft): IndependentChartCollection {
         val song = songs[key.songId] ?: error("Canción no encontrada.")
         require(song.id == key.songId) { "Identidad de canción inconsistente." }
         val variant = song.variant(key.engine) ?: error("Variante de motor no encontrada.")
-        require(key.difficulty in variant.difficulties && key.difficulty !in variant.uneditableDifficulties) { "La dificultad no es editable." }
-        require(next.songFolder == variant.metadata.songFolder && next.difficulty == key.difficulty) { "El chart pertenece a otra canción o dificultad." }
-        val history = recordChartHistory(variant.histories[key.difficulty] ?: ChartPersistentHistory(), variant.charts[key.difficulty], next)
-        val revised = variant.copy(charts = variant.charts + (key.difficulty to next), histories = variant.histories + (key.difficulty to history))
+        require(key.difficulty in variant.difficulties && key.difficulty !in variant.uneditableDifficulties) {
+            "La dificultad no es editable."
+        }
+        require(next.songFolder == variant.metadata.songFolder && next.difficulty == key.difficulty) {
+            "El chart pertenece a otra canción o dificultad."
+        }
+        val history = recordChartHistory(variant.histories[key.difficulty] ?: ChartPersistentHistory(),
+            variant.charts[key.difficulty], next)
+        val revised = variant.copy(
+            charts = variant.charts + (key.difficulty to next),
+            histories = variant.histories + (key.difficulty to history)
+        )
         return copy(songs = songs + (key.songId to song.withVariant(key.engine, revised)))
     }
+
+    /** Replace the variant entirely (used by migration). */
+    fun withVariant(engine: ChartEngine, songId: String, value: IndependentVariant): IndependentChartCollection {
+        val song = songs[songId] ?: error("Canción no encontrada.")
+        return copy(songs = songs + (songId to song.withVariant(engine, value)))
+    }
+
+    /** Add a song with no variants yet. */
+    fun withSong(songId: String, metadata: SongConfig): IndependentChartCollection {
+        require(songId !in songs) { "La canción ya existe en la colección independiente." }
+        return copy(songs = songs + (songId to IndependentSong(songId)))
+    }
+
+    /** Set or replace a variant's metadata and difficulties without touching charts. */
+    fun withVariantMetadata(songId: String, engine: ChartEngine, metadata: SongConfig,
+        difficulties: Set<String>): IndependentChartCollection {
+        val song = songs[songId] ?: error("Canción no encontrada.")
+        val current = song.variant(engine)
+        val next = current?.copy(metadata = metadata, difficulties = difficulties)
+            ?: IndependentVariant(metadata = metadata, difficulties = difficulties)
+        return withVariant(engine, songId, next)
+    }
 }
+
+/**
+ * Convert a [ProjectMediaReference] to a JSON object suitable for opaque storage in
+ * [IndependentVariant.unknownMetadataJson]-adjacent structures. Never interpreted as a path.
+ */
+internal fun mediaReferenceToJson(ref: ProjectMediaReference): JsonObject =
+    JsonObject().apply {
+        addProperty("uri", ref.uri)
+        addProperty("displayName", ref.displayName)
+        addProperty("path", ref.path)
+        addProperty("kind", ref.kind)
+    }
+
+/** Parse a [ProjectMediaReference] from JSON; unknown fields are ignored, not treated as paths. */
+internal fun mediaReferenceFromJson(obj: JsonObject): ProjectMediaReference =
+    ProjectMediaReference(
+        uri = obj.get("uri")?.asString ?: "",
+        displayName = obj.get("displayName")?.asString ?: "",
+        path = obj.get("path")?.asString ?: "",
+        kind = obj.get("kind")?.asString?.takeIf { it in setOf("image", "audio") } ?: "image"
+    )

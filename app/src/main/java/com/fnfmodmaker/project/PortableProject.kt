@@ -172,10 +172,18 @@ internal class PortableProject(private val appRoot: File) {
                     val actual = zip.getInputStream(entries.getValue(name)).use { input -> file.outputStream().buffered().use { boundedCopy(input, it, expected.first) } }
                     require(actual == expected) { "Recurso dañado: $name." }
                 }
-                val songs = config.get("songs")?.takeIf { it.isJsonArray }?.asJsonArray?.size() ?: error("El proyecto no contiene una lista de canciones válida.")
+                val independentCharts = config.get("independentCharts")?.takeIf { it.isJsonObject }?.asJsonObject
+                val independentChartCount = independentCharts?.entrySet()?.sumOf { songEntry ->
+                    songEntry.value.asJsonObject.entrySet().sumOf { variantEntry ->
+                        if (variantEntry.value.isJsonObject) {
+                            variantEntry.value.asJsonObject.get("charts")?.takeIf { it.isJsonObject }?.asJsonObject?.size ?: 0
+                        } else 0
+                    }
+                } ?: 0
                 val charts = config.get("charts")?.takeIf { it.isJsonObject }?.asJsonObject?.entrySet()?.sumOf { it.value.asJsonObject.size() } ?: 0
+                val totalCharts = charts + independentChartCount
                 val songNames = config.getAsJsonArray("songs").map { it.asJsonObject.get("songName")?.asString?.ifBlank { "Sin nombre" } ?: "Sin nombre" }
-                val summary = PortableSummary(config.get("modTitle")?.asString?.ifBlank { "Proyecto sin nombre" } ?: "Proyecto sin nombre", songs, charts, described.size, archive.length(), songNames,
+                val summary = PortableSummary(config.get("modTitle")?.asString?.ifBlank { "Proyecto sin nombre" } ?: "Proyecto sin nombre", songs, totalCharts, described.size, archive.length(), songNames,
                     (config.getAsJsonObject("character")?.get("enabled")?.asBoolean == true ||
                         config.get("characterLibrary")?.takeIf { it.isJsonArray }?.asJsonArray?.any { it.isJsonObject && it.asJsonObject.getAsJsonObject("draft")?.get("enabled")?.asBoolean == true } == true),
                     config.getAsJsonObject("stageDraft")?.get("enabled")?.asBoolean == true,

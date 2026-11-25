@@ -2,15 +2,35 @@ package com.fnfmodmaker.project
 
 import com.fnfmodmaker.model.*
 import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
 
-/** Shared validation for portable and imported project configurations. */
+/**
+ * Shared validation for portable and imported project configurations.
+ *
+ * v2 projects (chartSchemaVersion == 2) are validated against the independent-chart
+ * schema: unique song IDs, per-engine variants, valid difficulties per variant,
+ * independent histories per (songId, engine, difficulty), valid media references,
+ * preserved unknown JSON, and no legacy `charts`/`chartHistories` as editable source.
+ */
 internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
     private fun configJson(value: ModConfig) = autoSaveGson.toJsonTree(value).asJsonObject
     private fun parseConfig(value: com.google.gson.JsonObject): ModConfig =
         autoSaveGson.fromJson(value, ModConfig::class.java) ?: error("El proyecto está vacío.")
+
     /** Reject malformed model shapes before they can reach screens or be published. */
     fun validate(source: com.google.gson.JsonObject) {
-        requireSupportedChartSchema(source)
+        val version = source.get("chartSchemaVersion")
+        val isV2 = version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
+        if (isV2) {
+            validateV2(source)
+        } else {
+            requireSupportedChartSchema(source)
+            validateV1(source)
+        }
+    }
+
+    private fun validateV1(source: com.google.gson.JsonObject) {
         visitProjectAssets(source) { }
         val value = migrateCharacterLibrary(source)
         fun compare(input: com.google.gson.JsonObject, template: com.google.gson.JsonObject) {
@@ -193,6 +213,228 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
         }
         parseConfig(value)
     }
-    private fun configJsonChartTemplate() = autoSaveGson.toJsonTree(ChartDraft()).asJsonObject
 
+    private fun validateV2(source: com.google.gson.JsonObject) {
+        source.get("chartSchemaVersion")?.let {
+            require(it.isJsonPrimitive && it.asJsonPrimitive.isNumber && it.asString == "2") {
+                "chartSchemaVersion debe ser 2 para proyectos con charts independientes."
+            }
+        }
+        require(source.has("independentCharts")) { "Falta independentCharts en el esquema v2." }
+        val independent = source.getAsJsonObject("independentCharts")
+
+        // Visit media references: songs metadata audio/images plus variant originals.
+        visitProjectAssets(source) { }
+        visitIndependentMedia(independent)
+
+        val songIds = mutableSetOf<String>()
+        independent.entrySet().forEach { (songId, songNode) ->
+            require(songNode.isJsonObject) { "Canción inválida: $songId." }
+            require(songId.matches(Regex("[A-Za-z0-9_-]{1,80}")) && songIds.add(songId)) {
+                "ID de canción inválido o duplicado: $songId."
+            }
+            val songObj = songNode.asJsonObject
+            val psychNode = songObj.get("psych")
+            val vSliceNode = songObj.get("vslice")
+            require((psychNode == null || psychNode.isJsonObject || psychNode.isJsonNull) &&
+                (vSliceNode == null || vSliceNode.isJsonObject || vSliceNode.isJsonNull)) {
+                "Variante de canción inválida: $songId."
+            }
+            require(psychNode != null && !psychNode.isJsonNull || vSliceNode != null && !vSliceNode.isJsonNull) {
+                "Canción $songId debe tener al menos una variante."
+            }
+            if (psychNode.isJsonObject) validateVariant(songId, ChartEngine.PSYCH, psychNode.asJsonObject)
+            if (vSliceNode.isJsonObject) validateVariant(songId, ChartEngine.VSLICE, vSliceNode.asJsonObject)
+        }
+
+        // Legacy charts/histories must not be the editable source in v2.
+        source.get("charts")?.let { require(it.isJsonNull || it.asJsonObject.size() == 0) {
+            "charts legacy no debe usarse como almacenamiento editable en v2."
+        } }
+        source.get("chartHistories")?.let { require(it.isJsonNull || it.asJsonObject.size() == 0) {
+            "chartHistories legacy no debe usarse como almacenamiento editable en v2."
+        } }
+    }
+
+    private fun validateVariant(songId: String, engine: ChartEngine, variant: JsonObject) {
+        val metadataNode = variant.get("metadata") ?: error("Falta metadata de la variante $engine para $songId.")
+        require(metadataNode.isJsonObject) { "metadata debe ser un objeto." }
+        val metadata = autoSaveGson.fromJson(metadataNode, SongConfig::class.java)
+            ?: error("metadata inválido.")
+        require(metadata.songFolder.isNotEmpty()) { "metadata.songFolder requerido." }
+
+        val difficulties = variant.get("difficulties")?.let {
+            require(it.isJsonArray) { "difficulties debe ser una lista." }
+            it.asJsonArray.map { it.asString }.toSet()
+        } ?: emptySet()
+        require(difficulties.all { isValidDifficulty(it) }) { "Dificultad inválida en la variante $engine de $songId." }
+
+        val charts = variant.get("charts")?.let {
+            require(it.isJsonObject) { "charts debe ser un objeto." }
+            it.asJsonObject
+        } ?: error("Falta charts en la variante $engine de $songId.")
+        val histories = variant.get("histories")?.let {
+            require(it.isJsonObject) { "histories debe ser un objeto." }
+            it.asJsonObject
+        } ?: error("Falta histories en la variante $engine de $songId.")
+        val uneditable = variant.get("uneditableDifficulties")?.let {
+            require(it.isJsonObject) { "uneditableDifficulties debe ser un objeto." }
+            it.asJsonObject
+        } ?: JsonObject()
+
+        // Every chart difficulty must be declared; every declared editable difficulty must have a chart.
+        val chartKeys = mutableSetOf<String>()
+        charts.entrySet().forEach { (difficulty, chartNode) ->
+            require(chartNode.isJsonObject) { "Chart inválido para $difficulty." }
+            require(chartKeys.add(difficulty)) { "Dificultad duplicada $difficulty en $engine/$songId." }
+            val draft = autoSaveGson.fromJson(chartNode, ChartDraft::class.java)
+                ?: error("Chart inválido para $difficulty.")
+            require(draft.songFolder == metadata.songFolder) { "El chart no pertenece a la canción $songId." }
+            require(draft.difficulty == difficulty) { "El chart no corresponde a la dificultad $difficulty." }
+            validateChartContent(draft.asJsonObject() ?: chartNode.asJsonObject)
+        }
+        histories.keys.forEach { difficulty ->
+            require(difficulty in difficulties) { "Historial para dificultad no declarada $difficulty en $engine/$songId." }
+        }
+        uneditable.entrySet().forEach { (difficulty, path) ->
+            require(difficulty in difficulties) { "Dificultad no editable no declarada: $difficulty." }
+            require(path.isJsonPrimitive && path.asString.isNotBlank()) { "Ruta original inválida para $difficulty." }
+        }
+
+        // Unknown metadata JSON preserved, not interpreted as paths.
+        variant.get("unknownMetadataJson")?.takeUnless { it.isJsonNull }?.let {
+            require(it.isJsonPrimitive && it.asString.length <= 256_000) {
+                "unknownMetadataJson inválido en la variante $engine de $songId."
+            }
+        }
+
+        // Originals: typed media references only, never interpreted as app paths.
+        variant.get("originals")?.let { originals ->
+            require(originals.isJsonArray) { "originals debe ser una lista." }
+            originals.asJsonArray.forEach { ref ->
+                require(ref.isJsonObject) { "Original inválido." }
+                val obj = ref.asJsonObject
+                require(obj.get("kind")?.isString == true && obj.get("kind").asString in setOf("image", "audio")) {
+                    "Tipo de medio inválido en original de $engine/$songId."
+                }
+                require(obj.get("path")?.isString == true && obj.get("path").asString.isNotEmpty() &&
+                    obj.get("path").asString.split('/').none { it == "." || it == ".." }) {
+                    "Ruta de original insegura en $engine/$songId."
+                }
+                require(obj.get("displayName")?.isString == true) { "Falta displayName en original de $engine/$songId." }
+            }
+        }
+    }
+
+    private fun validateChartContent(chart: JsonObject) {
+        chart.get("psychEventsJson")?.let { events ->
+            require(events.isJsonPrimitive && events.asJsonPrimitive.isString) { "Eventos Psych inválidos." }
+            if (events.asString.isNotBlank()) com.fnfmodmaker.mod.validatePsychEvents(events.asString)
+        }
+        chart.get("psychLayout")?.let { layout ->
+            require(layout.isJsonArray && layout.asJsonArray.size() <= 1000) { "Secciones Psych inválidas." }
+            layout.asJsonArray.forEach { entry ->
+                require(entry.isJsonObject) { "Sección Psych inválida." }
+                compareTemplate(entry.asJsonObject, autoSaveGson.toJsonTree(PsychSectionData()).asJsonObject)
+            }
+        }
+        chart.get("psychSongExtras")?.let { extras ->
+            require(extras.isJsonPrimitive && extras.asJsonPrimitive.isString) { "Propiedades Psych inválidas." }
+        }
+        objectArray(chart, "events", autoSaveGson.toJsonTree(ChartEvent()).asJsonObject) { event ->
+            event.get("type")?.let { require(it.asString in ChartEvent.EventType.entries.map { type -> type.name }) { "Evento inválido." } }
+        }
+        objectArray(chart, "sections", autoSaveGson.toJsonTree(ChartSection()).asJsonObject)
+        chart.get("notes")?.let { notes ->
+            require(notes.isJsonArray) { "Notas inválidas." }
+            notes.asJsonArray.forEach { n -> require(n.isJsonObject); validateNote(n.asJsonObject) }
+        }
+    }
+
+    private fun validateNote(value: JsonObject) {
+        compareTemplate(value, autoSaveGson.toJsonTree(ChartNote()).asJsonObject)
+        val note = autoSaveGson.fromJson(value, ChartNote::class.java)
+        com.fnfmodmaker.model.psychNoteTypeToken(note)
+    }
+
+    private fun compareTemplate(input: JsonObject, template: JsonObject) {
+        template.entrySet().forEach { (key, sample) ->
+            val item = input.get(key) ?: return@forEach
+            require(!item.isJsonNull && item.isJsonObject == sample.isJsonObject && item.isJsonArray == sample.isJsonArray && item.isJsonPrimitive == sample.isJsonPrimitive) { "Campo inválido: $key." }
+            if (sample.isJsonPrimitive) {
+                val a = item.asJsonPrimitive; val b = sample.asJsonPrimitive
+                require(a.isBoolean == b.isBoolean && a.isNumber == b.isNumber && a.isString == b.isString && (!a.isNumber || a.asDouble.isFinite())) { "Tipo inválido: $key." }
+            } else if (sample.isJsonObject) compareTemplate(item.asJsonObject, sample.asJsonObject)
+            else if (sample.isJsonArray && sample.asJsonArray.size() > 0) {
+                val first = sample.asJsonArray[0]
+                item.asJsonArray.forEach { child ->
+                    require(!child.isJsonNull && child.isJsonObject == first.isJsonObject && child.isJsonPrimitive == first.isJsonPrimitive) { "Elemento inválido: $key." }
+                    if (first.isJsonObject) compareTemplate(child.asJsonObject, first.asJsonObject)
+                    else if (first.isJsonPrimitive) require(child.asJsonPrimitive.isString == first.asJsonPrimitive.isString) { "Elemento inválido: $key." }
+                }
+            }
+        }
+    }
+
+    private fun objectArray(parent: JsonObject, key: String, template: JsonObject, extra: (JsonObject) -> Unit = {}) {
+        parent.get(key)?.let { array ->
+            require(array.isJsonArray) { "$key debe ser una lista." }
+            array.asJsonArray.forEach { item ->
+                require(item.isJsonObject) { "Elemento inválido en $key." }
+                compareTemplate(item.asJsonObject, template); extra(item.asJsonObject)
+            }
+        }
+    }
+
+    /** Visit media references inside independentCharts variants (typed, never guessed from property names). */
+    private fun visitIndependentMedia(independent: JsonObject) {
+        independent.entrySet().forEach { (songId, songNode) ->
+            if (!songNode.isJsonObject) return@forEach
+            val songObj = songNode.asJsonObject
+            listOf("psych", "vslice").forEach { engineKey ->
+                val variant = songObj.get(engineKey) ?: return@forEach
+                if (!variant.isJsonObject) return@forEach
+                // metadata may contain audio references in the SongConfig model.
+                variant.get("metadata")?.let { metadata ->
+                    if (metadata.isJsonObject) visitSongMedia(songId, metadata.asJsonObject)
+                }
+                variant.get("originals")?.let { originals ->
+                    if (originals.isJsonArray) {
+                        originals.asJsonArray.forEach { ref ->
+                            if (!ref.isJsonObject) return@forEach
+                            val obj = ref.asJsonObject
+                            val kind = obj.get("kind")?.asString
+                            val path = obj.get("path")?.asString ?: ""
+                            val name = obj.get("displayName")?.asString ?: path
+                            require(kind in setOf("image", "audio")) {
+                                "Tipo de medio inválido para $name en $engineKey/$songId."
+                            }
+                            require(path.isNotEmpty() && path.split('/').none { it == "." || it == ".." }) {
+                                "Ruta de medio insegura para $name en $engineKey/$songId."
+                            }
+                            require(obj.get("uri") == null || obj.get("uri").isJsonNull ||
+                                (obj.get("uri").isJsonPrimitive && obj.get("uri").asJsonPrimitive.isString)) {
+                                "URI inválida para $name en $engineKey/$songId."
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun visitSongMedia(songId: String, metadata: JsonObject) {
+        listOf("instrumental", "vocalsPlayer", "vocalsOpponent").forEach { key ->
+            val value = metadata.get(key)
+            if (value == null || value.isJsonNull) return
+            require(value.isJsonObject) { "$key debe ser un recurso de medio." }
+            val asset = value.asJsonObject
+            require(asset.get("path")?.isString == true && asset.get("path").asString.isNotEmpty() &&
+                asset.get("displayName")?.isString == true) {
+                "Referencia de medio inválida para $key en $songId."
+            }
+        }
+    }
+
+    private fun configJsonChartTemplate() = autoSaveGson.toJsonTree(ChartDraft()).asJsonObject
 }

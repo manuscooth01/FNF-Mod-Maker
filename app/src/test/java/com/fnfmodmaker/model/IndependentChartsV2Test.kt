@@ -1,0 +1,394 @@
+package com.fnfmodmaker.model
+
+import com.fnfmodmaker.project.CHART_SCHEMA_V2
+import com.fnfmodmaker.project.LegacyChartMigration
+import com.fnfmodmaker.project.ProjectConfigValidator
+import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import org.junit.Assert.*
+import org.junit.Test
+
+class IndependentChartsV2Test {
+
+    private fun psychChart(songFolder: String = "test", difficulty: String = "normal") = ChartDraft(
+        songFolder = songFolder, difficulty = difficulty, bpm = 120.0,
+        notes = listOf(ChartNote(100, 7, 250, psychTypeJson = "99")),
+        psychEventsJson = """[[10,[["Hey!","1",""]]]]""",
+        psychLayout = listOf(PsychSectionData(beats = 4.0, bpm = 120.0, sourceJson = "{}"))
+    )
+
+    private fun vsliceChart(songFolder: String = "test", difficulty: String = "normal") = ChartDraft(
+        songFolder = songFolder, difficulty = difficulty, bpm = 170.0,
+        notes = listOf(ChartNote(450, 2, 120, kind = "mine"))
+    )
+
+    private fun psychVariant(chart: ChartDraft): IndependentVariant =
+        IndependentVariant(
+            metadata = SongConfig(songName = "Test", bpm = "120", difficulties = setOf(chart.difficulty)),
+            difficulties = setOf(chart.difficulty),
+            charts = mapOf(chart.difficulty to chart)
+        )
+
+    private fun vsliceVariant(chart: ChartDraft): IndependentVariant =
+        IndependentVariant(
+            metadata = SongConfig(songName = "Test", bpm = "170", difficulties = setOf(chart.difficulty)),
+            difficulties = setOf(chart.difficulty),
+            charts = mapOf(chart.difficulty to chart)
+        )
+
+    private fun collection(songId: String = "stable-id", psych: ChartDraft? = null,
+        vslice: ChartDraft? = null): IndependentChartCollection {
+        return IndependentChartCollection(songs = mapOf(songId to IndependentSong(
+            songId,
+            psych?.let { psychVariant(it) },
+            vslice?.let { vsliceVariant(it) }
+        )))
+    }
+
+    @Test fun psychAndVsliceCanHaveDifferentChartsForSameSongAndDifficulty() {
+        val psych = psychChart(difficulty = "normal")
+        val vslice = vsliceChart(difficulty = "normal")
+        val col = collection(songId = "song", psych = psych, vslice = vslice)
+        val psychKey = IndependentChartKey("song", ChartEngine.PSYCH, "normal")
+        val vKey = IndependentChartKey("song", ChartEngine.VSLICE, "normal")
+        assertEquals(psych, col.chart(psychKey))
+        assertEquals(vslice, col.chart(vKey))
+        assertNotEquals(psych.bpm, col.chart(vKey)!!.bpm)
+    }
+
+    @Test fun editingPsychDoesNotModifyVslice() {
+        val psych = psychChart(difficulty = "normal")
+        val vslice = vsliceChart(difficulty = "normal")
+        val col = collection(songId = "song", psych = psych, vslice = vslice)
+        val key = IndependentChartKey("song", ChartEngine.PSYCH, "normal")
+        val edited = psych.copy(notes = psych.notes + ChartNote(900, 1, 100))
+        val changed = col.edit(key, edited)
+        assertEquals(vslice, changed.songs.getValue("song").vSlice!!.charts.getValue("normal"))
+        assertEquals(edited, changed.chart(key))
+    }
+
+    @Test fun undoRedoHistoriesAreIndependent() {
+        val psych = psychChart(difficulty = "normal")
+        val vslice = vsliceChart(difficulty = "normal")
+        val col = collection(songId = "song", psych = psych, vslice = vslice)
+        val psychKey = IndependentChartKey("song", ChartEngine.PSYCH, "normal")
+        val vKey = IndependentChartKey("song", ChartEngine.VSLICE, "normal")
+
+        val editedPsych = psych.copy(notes = listOf(ChartNote(900, 1, 100)))
+        val changedPsych = col.edit(psychKey, editedPsych)
+        val psychHist = changedPsych.songs.getValue("song").psych!!.histories.getValue("normal")
+        val undoResult = restoreChartHistory(psychHist, changedPsych.chart(psychKey), false)
+        assertEquals(psych, undoResult!!.chart)
+
+        val vsliceHist = changedPsych.songs.getValue("song").vSlice!!.histories.getValue("normal")
+        assertTrue(vsliceHist.undo.isEmpty() && vsliceHist.redo.isEmpty())
+    }
+
+    @Test fun difficultiesAreIndependentPerEngine() {
+        val psych = psychChart(difficulty = "normal")
+        val vsliceEasy = vsliceChart(difficulty = "easy")
+        val col = collection(songId = "song", psych = psych, vslice = vsliceEasy)
+        val pKey = IndependentChartKey("song", ChartEngine.PSYCH, "normal")
+        val vKey = IndependentChartKey("song", ChartEngine.VSLICE, "easy")
+        assertEquals("normal", col.chart(pKey)!!.difficulty)
+        assertEquals("easy", col.chart(vKey)!!.difficulty)
+        assertNull(col.chart(IndependentChartKey("song", ChartEngine.PSYCH, "easy")))
+        assertNull(col.chart(IndependentChartKey("song", ChartEngine.VSLICE, "normal")))
+    }
+
+    @Test fun metadataAndEventsPreservedSeparately() {
+        val psychMetadata = SongConfig(songName = "PsychSong", bpm = "120", vSliceEventsJson = null)
+        val vsliceMetadata = SongConfig(songName = "VSong", bpm = "170",
+            vSliceEventsJson = """[{"t":12.25,"e":"Camera"}]""",
+            vSliceTempoJson = """[{"t":0,"bpm":170}]""")
+        val psychChart = psychChart(difficulty = "normal")
+        val vsliceChart = vsliceChart(difficulty = "normal")
+        val col = IndependentChartCollection(songs = mapOf("song" to IndependentSong(
+            "song",
+            IndependentVariant(metadata = psychMetadata, difficulties = setOf("normal"), charts = mapOf("normal" to psychChart)),
+            IndependentVariant(metadata = vsliceMetadata, difficulties = setOf("normal"), charts = mapOf("normal" to vsliceChart))
+        )))
+        val p = col.chart(IndependentChartKey("song", ChartEngine.PSYCH, "normal"))!!
+        val v = col.chart(IndependentChartKey("song", ChartEngine.VSLICE, "normal"))!!
+        assertEquals("120", p.metadata.bpm)
+        assertEquals("170", v.metadata.bpm)
+        assertEquals("""[{"t":12.25,"e":"Camera"}]""", v.metadata.vSliceEventsJson)
+        assertNull(p.metadata.vSliceEventsJson)
+    }
+
+    @Test fun serializesAndDeserializesRoundTrip() {
+        val psych = psychChart(difficulty = "normal")
+        val vslice = vsliceChart(difficulty = "normal")
+        val col = collection(songId = "song", psych = psych, vslice = vslice)
+        val json = Gson().toJsonTree(col).asJsonObject
+        val restored = Gson().fromJson(json, IndependentChartCollection::class.java)!!
+        assertEquals(psych, restored.chart(IndependentChartKey("song", ChartEngine.PSYCH, "normal")))
+        assertEquals(vslice, restored.chart(IndependentChartKey("song", ChartEngine.VSLICE, "normal")))
+    }
+
+    @Test fun migrationAttributesExplicitPsychProvenance() {
+        val gson = Gson()
+        val legacy = JsonObject().apply {
+            addProperty("engine", TargetEngine.PSYCH.name)
+            addProperty("chartSchemaVersion", 1)
+            val songs = JsonArray()
+            songs.add(JsonObject().apply {
+                addProperty("songName", "Test")
+                addProperty("artist", "A")
+                addProperty("bpm", "120")
+                addProperty("speed", "2.0")
+                addProperty("player", "bf")
+                addProperty("girlfriend", "gf")
+                addProperty("opponent", "dad")
+                addProperty("stageVSlice", "mainStage")
+                addProperty("stagePsych", "stage")
+                addProperty("weekColor", "#C24B99")
+                add("difficulties", JsonArray().apply { add("normal"); add("hard") })
+                addProperty("practiceNotes", true)
+                addProperty("offsetMs", "0")
+                addProperty("importedPsychFolder", "test")
+            })
+            add("songs", songs)
+            val charts = JsonObject()
+            charts.add("test", JsonObject().apply {
+                add("normal", Gson().toJsonTree(psychChart("test", "normal")).asJsonObject)
+                add("hard", Gson().toJsonTree(psychChart("test", "hard")).asJsonObject)
+            })
+            add("charts", charts)
+            add("chartHistories", JsonObject())
+        }
+        val result = LegacyChartMigration.migrateToV2(legacy, gson)
+        assertTrue(result.engineAttributedCount >= 1)
+        val psychSong = result.collection.songs.getValue("test")
+        assertNotNull(psychSong.psych)
+        assertEquals(2, psychSong.psych!!.difficulties.size)
+    }
+
+    @Test fun ambiguousChartsRemainInLegacyDeposit() {
+        val gson = Gson()
+        val legacy = JsonObject().apply {
+            addProperty("engine", TargetEngine.BOTH.name)
+            addProperty("chartSchemaVersion", 1)
+            val songs = JsonArray()
+            songs.add(JsonObject().apply {
+                addProperty("songName", "Test")
+                addProperty("artist", "A")
+                addProperty("bpm", "120")
+                addProperty("speed", "2.0")
+                addProperty("player", "bf")
+                addProperty("girlfriend", "gf")
+                addProperty("opponent", "dad")
+                addProperty("stageVSlice", "mainStage")
+                addProperty("stagePsych", "stage")
+                addProperty("weekColor", "#C24B99")
+                add("difficulties", JsonArray().apply { add("normal") })
+                addProperty("practiceNotes", true)
+                addProperty("offsetMs", "0")
+            })
+            add("songs", songs)
+            val charts = JsonObject()
+            charts.add("test", JsonObject().apply {
+                add("normal", Gson().toJsonTree(psychChart("test", "normal")).asJsonObject)
+            })
+            add("charts", charts)
+            add("chartHistories", JsonObject())
+        }
+        val result = LegacyChartMigration.migrateToV2(legacy, gson)
+        val song = result.collection.songs.getValue("test")
+        assertNull(song.psych)
+        assertNull(song.vSlice)
+        assertTrue(result.legacyPreserved)
+    }
+
+    @Test fun migrationIsIdempotent() {
+        val gson = Gson()
+        val legacy = JsonObject().apply {
+            addProperty("engine", TargetEngine.PSYCH.name)
+            addProperty("chartSchemaVersion", 1)
+            val songs = JsonArray()
+            songs.add(JsonObject().apply {
+                addProperty("songName", "Test")
+                addProperty("artist", "A")
+                addProperty("bpm", "120")
+                addProperty("speed", "2.0")
+                addProperty("player", "bf")
+                addProperty("girlfriend", "gf")
+                addProperty("opponent", "dad")
+                addProperty("stageVSlice", "mainStage")
+                addProperty("stagePsych", "stage")
+                addProperty("weekColor", "#C24B99")
+                add("difficulties", JsonArray().apply { add("normal") })
+                addProperty("practiceNotes", true)
+                addProperty("offsetMs", "0")
+                addProperty("importedPsychFolder", "test")
+            })
+            add("songs", songs)
+            val charts = JsonObject()
+            charts.add("test", JsonObject().apply {
+                add("normal", Gson().toJsonTree(psychChart("test", "normal")).asJsonObject)
+            })
+            add("charts", charts)
+            add("chartHistories", JsonObject())
+        }
+        val first = LegacyChartMigration.migrateToV2(legacy, gson)
+        val v2Config = ModConfig(chartSchemaVersion = CHART_SCHEMA_V2, independentCharts = first.collection)
+        val v2Json = gson.toJsonTree(v2Config).asJsonObject
+        val second = LegacyChartMigration.migrateToV2(v2Json, gson)
+        assertEquals(first.collection.songs.size, second.collection.songs.size)
+        val applied = LegacyChartMigration.applyMigration(v2Json, gson)
+        assertEquals(v2Json, applied)
+    }
+
+    @Test fun unknownFieldsArePreservedInMigration() {
+        val gson = Gson()
+        val legacy = JsonObject().apply {
+            addProperty("engine", TargetEngine.PSYCH.name)
+            addProperty("chartSchemaVersion", 1)
+            val songs = JsonArray()
+            songs.add(JsonObject().apply {
+                addProperty("songName", "Test")
+                addProperty("artist", "A")
+                addProperty("bpm", "120")
+                addProperty("speed", "2.0")
+                addProperty("player", "bf")
+                addProperty("girlfriend", "gf")
+                addProperty("opponent", "dad")
+                addProperty("stageVSlice", "mainStage")
+                addProperty("stagePsych", "stage")
+                addProperty("weekColor", "#C24B99")
+                add("difficulties", JsonArray().apply { add("normal") })
+                addProperty("practiceNotes", true)
+                addProperty("offsetMs", "0")
+                addProperty("importedPsychFolder", "test")
+                add("unknownField", JsonObject().apply { addProperty("path", "not-a-file"); addProperty("custom", 42) })
+            })
+            add("songs", songs)
+            val charts = JsonObject()
+            charts.add("test", JsonObject().apply {
+                add("normal", Gson().toJsonTree(psychChart("test", "normal")).asJsonObject)
+            })
+            add("charts", charts)
+            add("chartHistories", JsonObject())
+        }
+        val result = LegacyChartMigration.migrateToV2(legacy, gson)
+        assertTrue(result.collection.legacyDocumentJson.isNotEmpty())
+    }
+
+    @Test fun v2ValidatorAcceptsValidIndependentProject() {
+        val gson = Gson()
+        val validator = ProjectConfigValidator(gson)
+        val psych = psychChart("test", "normal")
+        val vslice = vsliceChart("test", "normal")
+        val col = collection(songId = "test", psych = psych, vslice = vslice)
+        val config = ModConfig(chartSchemaVersion = CHART_SCHEMA_V2, independentCharts = col)
+        val json = gson.toJsonTree(config).asJsonObject
+        validator.validate(json)
+    }
+
+    @Test fun v2ValidatorRejectsMissingIndependentCharts() {
+        val gson = Gson()
+        val validator = ProjectConfigValidator(gson)
+        val config = ModConfig(chartSchemaVersion = CHART_SCHEMA_V2)
+        val json = gson.toJsonTree(config).asJsonObject
+        assertThrows(IllegalArgumentException::class.java) { validator.validate(json) }
+    }
+
+    @Test fun v2ValidatorRejectsUnknownSchemaVersion() {
+        val gson = Gson()
+        val validator = ProjectConfigValidator(gson)
+        val legacy = JsonObject().apply {
+            addProperty("engine", TargetEngine.VSLICE.name)
+            addProperty("chartSchemaVersion", 99)
+        }
+        assertThrows(IllegalArgumentException::class.java) { validator.validate(legacy) }
+    }
+
+    @Test fun oldReadersRejectV2Schema() {
+        val gson = Gson()
+        val psych = psychChart("test", "normal")
+        val col = collection(songId = "test", psych = psych, vslice = null)
+        val config = ModConfig(chartSchemaVersion = CHART_SCHEMA_V2, independentCharts = col)
+        val json = gson.toJsonTree(config).asJsonObject
+        assertThrows(IllegalArgumentException::class.java) {
+            com.fnfmodmaker.project.requireSupportedChartSchema(json)
+        }
+    }
+
+    @Test fun v1AndUnversionedStillValidate() {
+        val gson = Gson()
+        val validator = ProjectConfigValidator(gson)
+        val legacy = JsonObject().apply {
+            addProperty("engine", TargetEngine.BOTH.name)
+            val songs = JsonArray()
+            songs.add(JsonObject().apply {
+                addProperty("songName", "Test")
+                addProperty("artist", "A")
+                addProperty("bpm", "120")
+                addProperty("speed", "2.0")
+                addProperty("player", "bf")
+                addProperty("girlfriend", "gf")
+                addProperty("opponent", "dad")
+                addProperty("stageVSlice", "mainStage")
+                addProperty("stagePsych", "stage")
+                addProperty("weekColor", "#C24B99")
+                add("difficulties", JsonArray().apply { add("normal") })
+                addProperty("practiceNotes", true)
+                addProperty("offsetMs", "0")
+            })
+            add("songs", songs)
+            val charts = JsonObject()
+            charts.add("test", JsonObject().apply {
+                add("normal", Gson().toJsonTree(psychChart("test", "normal")).asJsonObject)
+            })
+            add("charts", charts)
+            add("chartHistories", JsonObject())
+        }
+        validator.validate(legacy)
+        val explicitV1 = legacy.deepCopy().apply { addProperty("chartSchemaVersion", 1) }
+        validator.validate(explicitV1)
+    }
+
+    @Test fun mediaReferencesAreTypedNotGuessed() {
+        val ref = ProjectMediaReference(uri = "content://x", displayName = "img.png", path = "assets/img.png", kind = "image")
+        assertEquals("image", ref.kind)
+        val audioRef = ProjectMediaReference(uri = "content://y", displayName = "Inst.ogg", path = "assets/Inst.ogg", kind = "audio")
+        assertEquals("audio", audioRef.kind)
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectMediaReference(uri = "", displayName = "x", path = "../escape", kind = "image")
+        }
+    @Test fun failedMigrationDoesNotModifyOriginal() {
+        val gson = Gson()
+        val legacy = JsonObject().apply {
+            addProperty("engine", TargetEngine.VSLICE.name)
+            addProperty("chartSchemaVersion", 1)
+            add("independentCharts", JsonParser.parseString("""{"x":{"y":1}}"""))
+        }
+        val before = legacy.deepCopy()
+        assertThrows(IllegalArgumentException::class.java) {
+            LegacyChartMigration.migrateToV2(legacy, gson)
+        }
+        assertEquals(before, legacy)
+    }
+
+    @Test fun portableRoundTripPreservesBothVariants() {
+        val gson = Gson()
+        val validator = ProjectConfigValidator(gson)
+        val psych = psychChart("test", "normal")
+        val vslice = vsliceChart("test", "normal")
+        val col = collection(songId = "test", psych = psych, vslice = vslice)
+        val config = ModConfig(chartSchemaVersion = CHART_SCHEMA_V2, independentCharts = col)
+        val json = gson.toJsonTree(config).asJsonObject
+        validator.validate(json)
+        // Round-trip through Gson serialization (simulates portable export/import)
+        val roundTrip = gson.fromJson(gson.toJson(json), JsonObject::class.java)!!
+        validator.validate(roundTrip)
+        val restored = gson.fromJson(roundTrip, ModConfig::class.java)!!
+        assertEquals(CHART_SCHEMA_V2, restored.chartSchemaVersion)
+        val restoredPsych = restored.independentCharts!!.songs.getValue("test").psych!!
+        val restoredVslice = restored.independentCharts!!.songs.getValue("test").vSlice!!
+        assertEquals(psych.bpm, restoredPsych.charts.getValue("normal").bpm)
+        assertEquals(vslice.bpm, restoredVslice.charts.getValue("normal").bpm)
+        assertEquals("""[{"t":12.25,"e":"Camera"}]""", restoredVslice.metadata.vSliceEventsJson)
+}

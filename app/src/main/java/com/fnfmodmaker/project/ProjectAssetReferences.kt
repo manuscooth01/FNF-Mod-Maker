@@ -7,8 +7,18 @@ import com.google.gson.JsonObject
  * Schema locations of PickedImage and PickedAudio in the v1 project model.
  * Never descend into unknown fields: an arbitrary object with path/displayName/uri
  * is not evidence that it references an app-owned file.
+ *
+ * For v2 projects, song media references live inside
+ * `independentCharts.<songId>.<psych|vslice>.metadata.{instrumental,vocalsPlayer,vocalsOpponent}`
+ * and original assets live inside `...<engine>.originals[].asset`. [visitProjectAssets]
+ * visits both v1 and v2 locations; [visitIndependentMedia] covers only v2.
  */
 internal fun visitProjectAssets(root: JsonObject, action: (JsonObject) -> Unit) {
+    visitV1Assets(root, action)
+    visitIndependentMedia(root, action)
+}
+
+private fun visitV1Assets(root: JsonObject, action: (JsonObject) -> Unit) {
     fun obj(node: JsonElement, label: String): JsonObject {
         require(node.isJsonObject) { "$label debe ser un objeto." }
         return node.asJsonObject
@@ -65,4 +75,63 @@ internal fun visitProjectAssets(root: JsonObject, action: (JsonObject) -> Unit) 
         arrayField(stage, "sprites") { field(it, "image") }
     }
     arrayField(root, "importedModResources") { field(it, "asset") }
+}
+
+/** Visit media references inside v2 independentCharts variants. Typed references only. */
+internal fun visitIndependentMedia(root: JsonObject, action: (JsonObject) -> Unit) {
+    fun obj(node: JsonElement, label: String): JsonObject {
+        require(node.isJsonObject) { "$label debe ser un objeto." }
+        return node.asJsonObject
+    }
+    fun field(parent: JsonObject, key: String, required: Boolean = false) {
+        val value = parent.get(key)
+        if (value == null || value.isJsonNull) {
+            require(!required) { "Falta el recurso $key." }
+            return
+        }
+        val asset = obj(value, "Recurso $key")
+        val path = asset.get("path"); val name = asset.get("displayName"); val uri = asset.get("uri")
+        require(path?.isJsonPrimitive == true && path.asJsonPrimitive.isString && path.asString.isNotEmpty() &&
+            name?.isJsonPrimitive == true && name.asJsonPrimitive.isString &&
+            (uri == null || uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString))) {
+            "Referencia de recurso $key inválida."
+        }
+        action(asset)
+    }
+    val independent = root.get("independentCharts") ?: return
+    require(independent.isJsonObject) { "independentCharts debe ser un objeto." }
+    independent.asJsonObject.entrySet().forEach { (songId, songNode) ->
+        if (!songNode.isJsonObject) return@forEach
+        val songObj = songNode.asJsonObject
+        listOf("psych", "vslice").forEach { engineKey ->
+            val variant = songObj.get(engineKey) ?: return@forEach
+            if (!variant.isJsonObject) return@forEach
+            // metadata may contain audio references.
+            variant.get("metadata")?.let { metadata ->
+                if (metadata.isJsonObject) {
+                    listOf("instrumental", "vocalsPlayer", "vocalsOpponent").forEach { field(metadata.asJsonObject, it) }
+                }
+            }
+            // originals are typed media references directly (not nested under "asset").
+            variant.get("originals")?.let { originals ->
+                if (originals.isJsonArray) {
+                    originals.asJsonArray.forEach { ref ->
+                        if (!ref.isJsonObject) return@forEach
+                        val obj = ref.asJsonObject
+                        val kind = obj.get("kind")?.asString
+                        require(kind in setOf("image", "audio")) {
+                            "Tipo de medio inválido en original de $engineKey/$songId."
+                        }
+                        val path = obj.get("path"); val name = obj.get("displayName"); val uri = obj.get("uri")
+                        require(path?.isJsonPrimitive == true && path.asJsonPrimitive.isString && path.asString.isNotEmpty() &&
+                            name?.isJsonPrimitive == true && name.asJsonPrimitive.isString &&
+                            (uri == null || uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString))) {
+                            "Referencia de original inválida en $engineKey/$songId."
+                        }
+                        action(obj)
+                    }
+                }
+            }
+        }
+    }
 }

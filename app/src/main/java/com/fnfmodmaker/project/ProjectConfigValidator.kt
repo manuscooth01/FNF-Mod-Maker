@@ -225,7 +225,6 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
 
         // Visit media references: songs metadata audio/images plus variant originals.
         visitProjectAssets(source) { }
-        visitIndependentMedia(independent)
 
         val songIds = mutableSetOf<String>()
         independent.entrySet().forEach { (songId, songNode) ->
@@ -314,17 +313,33 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
             originals.asJsonArray.forEach { ref ->
                 require(ref.isJsonObject) { "Original inválido." }
                 val obj = ref.asJsonObject
-                val kind = obj.get("kind")?.asString
-                if (kind in setOf("image", "audio")) {
-                    require(obj.get("path")?.isString == true && obj.get("path").asString.isNotEmpty() &&
-                        obj.get("path").asString.split('/').none { it == "." || it == ".." }) {
+                val assetNode = obj.get("asset")
+                if (assetNode != null && !assetNode.isJsonNull) {
+                    require(assetNode.isJsonObject) { "Recurso original inválido en $engine/$songId." }
+                    val asset = assetNode.asJsonObject
+                    require(asset.get("kind")?.isString == true && asset.get("kind").asString in setOf("image", "audio")) {
+                        "Tipo de medio inválido en original de $engine/$songId."
+                    }
+                    require(asset.get("path")?.isString == true && asset.get("path").asString.isNotEmpty() &&
+                        asset.get("path").asString.split('/').none { it == "." || it == ".." }) {
                         "Ruta de original insegura en $engine/$songId."
                     }
-                    require(obj.get("displayName")?.isString == true) { "Falta displayName en original de $engine/$songId." }
+                    require(asset.get("displayName")?.isString == true) { "Falta displayName en original de $engine/$songId." }
+                    asset.get("uri")?.let { uri ->
+                        require(uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString)) {
+                            "URI inválida en original de $engine/$songId."
+                        }
+                    }
+                    obj.get("contentJson")?.let { content ->
+                        require(content.isJsonNull || (content.isJsonPrimitive && content.asJsonPrimitive.isString && content.asString.isEmpty())) {
+                            "Un original no puede ser medio y documento a la vez."
+                        }
+                    }
                 } else {
-                    obj.get("contentJson")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) {
+                    val content = obj.get("contentJson")
+                    require(content?.isJsonPrimitive == true && content.asJsonPrimitive.isString && content.asString.isNotEmpty()) {
                         "Original sin medio ni documento opaco en $engine/$songId."
-                    } }
+                    }
                 }
             }
         }
@@ -386,56 +401,6 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
             array.asJsonArray.forEach { item ->
                 require(item.isJsonObject) { "Elemento inválido en $key." }
                 compareTemplate(item.asJsonObject, template); extra(item.asJsonObject)
-            }
-        }
-    }
-
-    /** Visit media references inside independentCharts variants (typed, never guessed from property names). */
-    private fun visitIndependentMedia(independent: JsonObject) {
-        independent.entrySet().forEach { (songId, songNode) ->
-            if (!songNode.isJsonObject) return@forEach
-            val songObj = songNode.asJsonObject
-            listOf("psych", "vslice").forEach { engineKey ->
-                val variant = songObj.get(engineKey) ?: return@forEach
-                if (!variant.isJsonObject) return@forEach
-                // metadata may contain audio references in the SongConfig model.
-                variant.get("metadata")?.let { metadata ->
-                    if (metadata.isJsonObject) visitSongMedia(songId, metadata.asJsonObject)
-                }
-                variant.get("originals")?.let { originals ->
-                    if (originals.isJsonArray) {
-                        originals.asJsonArray.forEach { ref ->
-                            if (!ref.isJsonObject) return@forEach
-                            val obj = ref.asJsonObject
-                            val kind = obj.get("kind")?.asString
-                            val path = obj.get("path")?.asString ?: ""
-                            val name = obj.get("displayName")?.asString ?: path
-                            require(kind in setOf("image", "audio")) {
-                                "Tipo de medio inválido para $name en $engineKey/$songId."
-                            }
-                            require(path.isNotEmpty() && path.split('/').none { it == "." || it == ".." }) {
-                                "Ruta de medio insegura para $name en $engineKey/$songId."
-                            }
-                            require(obj.get("uri") == null || obj.get("uri").isJsonNull ||
-                                (obj.get("uri").isJsonPrimitive && obj.get("uri").asJsonPrimitive.isString)) {
-                                "URI inválida para $name en $engineKey/$songId."
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun visitSongMedia(songId: String, metadata: JsonObject) {
-        listOf("instrumental", "vocalsPlayer", "vocalsOpponent").forEach { key ->
-            val value = metadata.get(key)
-            if (value == null || value.isJsonNull) return
-            require(value.isJsonObject) { "$key debe ser un recurso de medio." }
-            val asset = value.asJsonObject
-            require(asset.get("path")?.isString == true && asset.get("path").asString.isNotEmpty() &&
-                asset.get("displayName")?.isString == true) {
-                "Referencia de medio inválida para $key en $songId."
             }
         }
     }

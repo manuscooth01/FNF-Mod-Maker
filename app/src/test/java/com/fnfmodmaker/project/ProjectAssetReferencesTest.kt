@@ -1,6 +1,13 @@
 package com.fnfmodmaker.project
 
 import com.google.gson.JsonParser
+import com.fnfmodmaker.model.IndependentChartCollection
+import com.fnfmodmaker.model.IndependentOriginal
+import com.fnfmodmaker.model.IndependentSong
+import com.fnfmodmaker.model.IndependentVariant
+import com.fnfmodmaker.model.ModConfig
+import com.fnfmodmaker.model.ProjectMediaReference
+import com.fnfmodmaker.model.SongConfig
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -81,6 +88,42 @@ class ProjectAssetReferencesTest {
             assertFalse(File(temp.root, "projects/$dest").exists())
             assertThrows(Exception::class.java) { PortableProject(temp.root).export(config, store.assets(id), File(temp.root, "bad.fnfproject")) }
             assertEquals(id, store.activeId()); assertEquals(original, store.load(id).config)
+        }
+    }
+
+    @Test fun v2MetadataAndNestedOriginalAssetsAreVisitedAndValidated() {
+        val variant = IndependentVariant(
+            metadata = SongConfig(songName = "Test"),
+            originals = listOf(
+                IndependentOriginal(
+                    originalPath = "Inst.ogg",
+                    asset = ProjectMediaReference("content://original", "Inst.ogg", "assets/Inst.ogg", "audio")
+                ),
+                IndependentOriginal(originalPath = "metadata.json", contentJson = """{"unknown":{"path":"not-a-resource"}}""")
+            )
+        )
+        val config = com.google.gson.Gson().toJsonTree(ModConfig(
+            chartSchemaVersion = CHART_SCHEMA_V2,
+            modTitle = "Test",
+            independentCharts = IndependentChartCollection(
+                songs = mapOf("test" to IndependentSong("test", vSlice = variant))
+            )
+        )).asJsonObject
+        val metadata = config.getAsJsonObject("independentCharts").getAsJsonObject("test")
+            .getAsJsonObject("vslice").getAsJsonObject("metadata")
+        metadata.add("instrumental", JsonParser.parseString(ref(File(temp.root, "Inst.ogg").path)))
+
+        val references = mutableListOf<String>()
+        visitProjectAssets(config) { references.add(it.get("path").asString) }
+        assertEquals(setOf(File(temp.root, "Inst.ogg").path, "assets/Inst.ogg"), references.toSet())
+        ProjectConfigValidator(com.google.gson.Gson()).validate(config)
+
+        val malformed = config.deepCopy()
+        malformed.getAsJsonObject("independentCharts").getAsJsonObject("test")
+            .getAsJsonObject("vslice").getAsJsonArray("originals")[0].asJsonObject
+            .getAsJsonObject("asset").addProperty("path", "../escape")
+        assertThrows(IllegalArgumentException::class.java) {
+            ProjectConfigValidator(com.google.gson.Gson()).validate(malformed)
         }
     }
 }

@@ -86,7 +86,7 @@ internal object LegacyChartMigration {
                 collectionBuilder[songId] = IndependentSong(songId, psychVariant, vsliceVariant)
             }
         }
-        val collection = IndependentChartCollection(songs = collectionBuilder.build(),
+        val collection = IndependentChartCollection(songs = collectionBuilder.toMap(),
             legacyDocumentJson = config.toString())
         return MigrationResult(collection, legacyPreserved, engineAttributedCount)
     }
@@ -189,8 +189,8 @@ internal object LegacyChartMigration {
         return IndependentVariant(
             metadata = metadata,
             difficulties = difficulties,
-            charts = chartsMap.build(),
-            histories = historiesMap.build(),
+            charts = chartsMap.toMap(),
+            histories = historiesMap.toMap(),
             uneditableDifficulties = emptyMap(),
             originals = emptyList(),
             unknownMetadataJson = ""
@@ -234,9 +234,9 @@ internal object LegacyChartMigration {
         return IndependentVariant(
             metadata = metadata,
             difficulties = difficulties,
-            charts = chartsMap.build(),
-            histories = historiesMap.build(),
-            uneditableDifficulties = uneditable.build(),
+            charts = chartsMap.toMap(),
+            histories = historiesMap.toMap(),
+            uneditableDifficulties = uneditable.toMap(),
             originals = emptyList(),
             unknownMetadataJson = ""
         )

@@ -26,7 +26,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
     }
 
 
-    override fun songIds(): List<String> = _config.independentCharts?.songs.keys.toList() ?: emptyList()
+    override fun songIds(): List<String> = _config.independentCharts?.songs?.keys?.toList() ?: emptyList()
 
     override fun getChart(key: IndependentChartKey): ChartDraft? {
         require(isV2()) { "El proyecto no usa el esquema de charts independientes v2." }
@@ -155,7 +155,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
         val song = collection.songs[songId] ?: error("Canción no encontrada.")
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
-        val before = variant.metadata.vSliceEventsJson ?: ""
+        val before = com.fnfmodmaker.mod.validateVSliceEvents(variant.metadata.vSliceEventsJson ?: "[]")
         val edited = com.fnfmodmaker.mod.validateVSliceEvents(events)
         if (before == edited) return _config
         val metadata = variant.metadata.copy(
@@ -177,7 +177,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val metadata = variant.metadata.copy(
             vSliceEventsJson = previous,
             vSliceEventsUndo = variant.metadata.vSliceEventsUndo.dropLast(1),
-            vSliceEventsRedo = (variant.metadata.vSliceEventsRedo + variant.metadata.vSliceEventsJson).takeLast(10)
+            vSliceEventsRedo = (variant.metadata.vSliceEventsRedo + (variant.metadata.vSliceEventsJson ?: "[]")).takeLast(10)
         )
         val revised = variant.copy(metadata = metadata)
         val updated = collection.withVariant(engine, songId, revised)
@@ -193,7 +193,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val metadata = variant.metadata.copy(
             vSliceEventsJson = next,
             vSliceEventsRedo = variant.metadata.vSliceEventsRedo.dropLast(1),
-            vSliceEventsUndo = (variant.metadata.vSliceEventsUndo + variant.metadata.vSliceEventsJson).takeLast(10)
+            vSliceEventsUndo = (variant.metadata.vSliceEventsUndo + (variant.metadata.vSliceEventsJson ?: "[]")).takeLast(10)
         )
         val revised = variant.copy(metadata = metadata)
         val updated = collection.withVariant(engine, songId, revised)
@@ -208,7 +208,9 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
         val song = collection.songs[songId] ?: error("Canción no encontrada.")
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
-        val before = variant.metadata.vSliceTempoJson ?: ""
+        val before = com.fnfmodmaker.mod.validateVSliceTempo(
+            variant.metadata.vSliceTempoJson ?: """[{"t":0,"bpm":${variant.metadata.bpmValue},"n":4,"d":4}]"""
+        )
         val edited = com.fnfmodmaker.mod.validateVSliceTempo(tempo)
         if (before == edited) return _config
         val bpm = com.google.gson.JsonParser.parseString(edited).asJsonArray[0].asJsonObject.get("bpm").asString
@@ -216,7 +218,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
             bpm = bpm.toString(),
             vSliceIndependentInitialBpm = true,
             vSliceTempoJson = edited,
-            vSliceTempoUndo = (variant.metadata.vSliceTempoUndo + (variant.metadata.vSliceTempoJson ?: "")).takeLast(10),
+            vSliceTempoUndo = (variant.metadata.vSliceTempoUndo + before).takeLast(10),
             vSliceTempoRedo = emptyList()
         )
         val revised = variant.copy(metadata = metadata)
@@ -233,8 +235,8 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
         val current = variant.metadata.vSliceTempoJson ?: ""
         val metadata = variant.metadata.copy(
-            bpm = if (variant.metadata.vSliceIndependentInitialBpm) variant.metadata.bpm else bpm.toString(),
-            vSliceIndependentInitialBpm = variant.metadata.vSliceIndependentInitialBpm,
+            bpm = bpm.toString(),
+            vSliceIndependentInitialBpm = true,
             vSliceTempoJson = checked,
             vSliceTempoUndo = variant.metadata.vSliceTempoUndo.dropLast(1),
             vSliceTempoRedo = (variant.metadata.vSliceTempoRedo + current).takeLast(10)
@@ -253,8 +255,8 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
         val current = variant.metadata.vSliceTempoJson ?: ""
         val metadata = variant.metadata.copy(
-            bpm = if (variant.metadata.vSliceIndependentInitialBpm) variant.metadata.bpm else bpm.toString(),
-            vSliceIndependentInitialBpm = variant.metadata.vSliceIndependentInitialBpm,
+            bpm = bpm.toString(),
+            vSliceIndependentInitialBpm = true,
             vSliceTempoJson = checked,
             vSliceTempoRedo = variant.metadata.vSliceTempoRedo.dropLast(1),
             vSliceTempoUndo = (variant.metadata.vSliceTempoUndo + current).takeLast(10)

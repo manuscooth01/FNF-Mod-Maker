@@ -175,6 +175,57 @@ class IndependentChartsV2Test {
         assertNull(p.metadata.vSliceEventsJson)
     }
 
+    @Test fun repositoryKeepsNullVsliceEventSnapshotsAsStrings() {
+        val repository = ChartRepositoryImpl(Gson())
+        val variant = IndependentVariant(metadata = SongConfig(songName = "Test"))
+        repository.setConfig(ModConfig(
+            chartSchemaVersion = CHART_SCHEMA_V2,
+            independentCharts = IndependentChartCollection(
+                songs = mapOf("test" to IndependentSong("test", vSlice = variant))
+            )
+        ))
+
+        val events = """[{"t":0,"e":"FocusCamera","v":1}]"""
+        val saved = repository.saveVSliceEvents("test", ChartEngine.VSLICE, events)
+        repository.setConfig(saved)
+        assertEquals(listOf("[]"), repository.config.independentCharts!!.songs.getValue("test").vSlice!!.metadata.vSliceEventsUndo)
+
+        val undone = repository.undoVSliceEvents("test", ChartEngine.VSLICE)
+        repository.setConfig(undone)
+        assertEquals("[]", repository.getVSliceEvents("test", ChartEngine.VSLICE))
+        assertEquals(listOf(events), repository.config.independentCharts!!.songs.getValue("test").vSlice!!.metadata.vSliceEventsRedo)
+
+        val redone = repository.redoVSliceEvents("test", ChartEngine.VSLICE)
+        assertEquals(events, redone.independentCharts!!.songs.getValue("test").vSlice!!.metadata.vSliceEventsJson)
+    }
+
+    @Test fun repositoryUndoRedoRestoresInitialVsliceTempo() {
+        val repository = ChartRepositoryImpl(Gson())
+        val variant = IndependentVariant(metadata = SongConfig(songName = "Test", bpm = "170"))
+        repository.setConfig(ModConfig(
+            chartSchemaVersion = CHART_SCHEMA_V2,
+            independentCharts = IndependentChartCollection(
+                songs = mapOf("test" to IndependentSong("test", vSlice = variant))
+            )
+        ))
+
+        val editedTempo = """[{"t":0,"bpm":120,"n":4,"d":4}]"""
+        val saved = repository.saveVSliceTempo("test", ChartEngine.VSLICE, editedTempo)
+        repository.setConfig(saved)
+        val initialTempo = repository.config.independentCharts!!.songs.getValue("test").vSlice!!.metadata.vSliceTempoUndo.single()
+        assertEquals(170.0, com.google.gson.JsonParser.parseString(initialTempo).asJsonArray[0].asJsonObject.get("bpm").asDouble, 0.0)
+
+        val undone = repository.undoVSliceTempo("test", ChartEngine.VSLICE)
+        repository.setConfig(undone)
+        assertEquals("170", repository.config.independentCharts!!.songs.getValue("test").vSlice!!.metadata.bpm)
+        assertEquals(170.0, com.google.gson.JsonParser.parseString(
+            repository.getVSliceTempo("test", ChartEngine.VSLICE)!!
+        ).asJsonArray[0].asJsonObject.get("bpm").asDouble, 0.0)
+
+        val redone = repository.redoVSliceTempo("test", ChartEngine.VSLICE)
+        assertEquals("120", redone.independentCharts!!.songs.getValue("test").vSlice!!.metadata.bpm)
+    }
+
     @Test fun serializesAndDeserializesRoundTrip() {
         val psych = psychChart(difficulty = "normal")
         val vslice = vsliceChart(difficulty = "normal")

@@ -129,6 +129,25 @@ fun validateWizard(config: ModConfig, fileExists: (String) -> Boolean = { File(i
 private fun validateV2(config: ModConfig, fileExists: (String) -> Boolean): List<WizardIssue> = buildList {
     require(config.independentCharts != null) { "Proyecto v2 sin colección de charts independientes." }
     val collection = config.independentCharts!!
+    if (config.stageDraft.enabled) {
+        val stage = config.stageDraft
+        stageLayoutProblems(stage, config.engine).forEach { add(WizardIssue(1, it)) }
+        if (stage.stageId.isBlank()) add(WizardIssue(1, "Escenario: escribe un nombre para el identificador."))
+        if (stage.backgroundImage == null || !fileExists(stage.backgroundImage.path)) add(WizardIssue(1, "Escenario: elige una imagen de fondo disponible."))
+        if (!stage.cameraPosition.zoom.isFinite() || stage.cameraPosition.zoom !in 0.4f..2f) add(WizardIssue(1, "Escenario: el zoom debe estar entre 0.4 y 2."))
+        if (stage.hasUnsupportedFeatures()) add(WizardIssue(1, "Escenario: los objetos avanzados todavía no se exportan. Desactiva el escenario para conservarlos."))
+    }
+    if (config.psychScripts.isNotEmpty() && !config.engine.includesPsych) add(WizardIssue(0, "Los scripts Lua necesitan un destino que incluya Psych Engine."))
+    if (config.psychScripts.any { !isValidPsychScript(it.key, it.value) }) add(WizardIssue(0, "Hay un script Psych inválido; elimínalo antes de exportar."))
+    if (config.modTitle.isBlank()) add(WizardIssue(0, "Escribe el nombre del mod."))
+    if (config.songs.isEmpty() || collection.songs.isEmpty()) add(WizardIssue(1, "Añade al menos una canción."))
+
+    val exportConfig = config.effectiveExportConfig()
+    characterLibraryProblems(config, fileExists).forEach { add(WizardIssue(2, it)) }
+    config.charactersToExport().forEach { entry ->
+        com.fnfmodmaker.mod.vSliceCharacterProblems(exportConfig.copy(selectedCharacterId = entry.id)).forEach { add(WizardIssue(2, it)) }
+    }
+    val folders = mutableMapOf<String, String>()
     val songIds = mutableSetOf<String>()
     collection.songs.forEach { (songId, song) ->
         require(songId.matches(Regex("[A-Za-z0-9_-]{1,80}")) && songIds.add(songId)) {
@@ -136,42 +155,79 @@ private fun validateV2(config: ModConfig, fileExists: (String) -> Boolean): List
         }
         listOf(ChartEngine.PSYCH to song.psych, ChartEngine.VSLICE to song.vSlice).forEach { (engine, variant) ->
             if (variant == null) return@forEach
+            val label = "Canción $songId ($engine)"
+            val metadata = variant.metadata
             val folder = variant.metadata.songFolder
             if (!folder.matches(Regex("[a-z0-9_-]{1,80}"))) {
-                add(WizardIssue(1, "Canción $songId ($engine): carpeta de canción inválida."))
+                add(WizardIssue(1, "$label: carpeta de canción inválida."))
+            }
+            val priorSong = folders.putIfAbsent(folder.lowercase(), songId)
+            if (priorSong != null && priorSong != songId) {
+                add(WizardIssue(1, "$label: usa un nombre de carpeta distinto al de las otras canciones."))
+            }
+            if (metadata.songName.isBlank()) add(WizardIssue(1, "$label: escribe un nombre."))
+            if (metadata.bpmValue !in 1.0..400.0) add(WizardIssue(1, "$label: el BPM debe estar entre 1 y 400."))
+            val speed = metadata.speed.toFloatOrNull()
+            if (speed == null || !speed.isFinite() || speed <= 0f) {
+                add(WizardIssue(1, "$label: la velocidad debe ser mayor que cero."))
+            }
+            if (variant.difficulties.size > 64 || variant.difficulties.any { !isValidDifficulty(it) }) {
+                add(WizardIssue(1, "$label: hay IDs de dificultad inválidos o demasiadas dificultades."))
+            }
+            if (variant.charts.keys.any { it !in variant.difficulties }) {
+                add(WizardIssue(1, "$label: hay charts para dificultades no declaradas."))
             }
             variant.difficulties.forEach { difficulty ->
                 if (!isValidDifficulty(difficulty)) {
-                    add(WizardIssue(1, "Canción $songId ($engine): dificultad inválida $difficulty."))
+                    add(WizardIssue(1, "$label: dificultad inválida $difficulty."))
                 }
                 val chart = variant.charts[difficulty]
                 if (chart == null && difficulty !in variant.uneditableDifficulties) {
-                    add(WizardIssue(1, "Canción $songId ($engine): falta chart editable para $difficulty."))
+                    add(WizardIssue(1, "$label: falta chart editable para $difficulty."))
                 }
                 chart?.let { c ->
-                    if (c.songFolder != variant.metadata.songFolder) {
-                        add(WizardIssue(1, "Canción $songId ($engine): chart de $difficulty no pertenece a la canción."))
+                    if (c.songFolder != metadata.songFolder) {
+                        add(WizardIssue(1, "$label: chart de $difficulty no pertenece a la canción."))
                     }
                     if (c.difficulty != difficulty) {
-                        add(WizardIssue(1, "Canción $songId ($engine): chart no corresponde a la dificultad $difficulty."))
+                        add(WizardIssue(1, "$label: chart no corresponde a la dificultad $difficulty."))
+                    }
+                    val problems = c.exportProblems().toMutableList()
+                    if (engine == ChartEngine.VSLICE && c.notes.any { it.psychTypeJson.isNotEmpty() }) {
+                        problems.add("tipos Psych sin traducción reversible a V-Slice")
+                    }
+                    if (engine == ChartEngine.VSLICE && (c.psychLayout.isNotEmpty() || c.psychSongExtras.isNotBlank())) {
+                        problems.add("secciones Psych sin destino Psych")
+                    }
+                    if (engine == ChartEngine.PSYCH && c.psychLayout.isNotEmpty()) {
+                        runCatching { c.copy(bpm = metadata.bpmValue).toPsychJson() }
+                            .exceptionOrNull()?.let { problems.add(it.message ?: "secciones Psych inválidas") }
+                    }
+                    if (engine == ChartEngine.VSLICE && c.psychEventsJson.isNotBlank() && c.psychEventsJson != "[]") {
+                        problems.add("eventos Psych sin traducción a V-Slice")
+                    }
+                    if (problems.isNotEmpty()) {
+                        add(WizardIssue(1, "$label ($difficulty): no se puede exportar sin perder ${problems.joinToString()}. Conserva el proyecto editable."))
                     }
                 }
             }
             // Media references in metadata.
-            listOf("instrumental" to variant.metadata.instrumental, "vocalsPlayer" to variant.metadata.vocalsPlayer, "vocalsOpponent" to variant.metadata.vocalsOpponent).forEach { (name, audio) ->
-                if (audio != null && !fileExists(audio.path)) add(WizardIssue(3, "Canción $songId ($engine): vuelve a elegir $name."))
+            if (metadata.instrumental == null) add(WizardIssue(3, "$label: elige la instrumental."))
+            listOf("instrumental" to metadata.instrumental, "voces del jugador" to metadata.vocalsPlayer, "voces del rival" to metadata.vocalsOpponent).forEach { (name, audio) ->
+                if (audio != null && !fileExists(audio.path)) add(WizardIssue(3, "$label: vuelve a elegir $name."))
             }
             // Originals preserved.
             variant.originals.forEach { original ->
                 val asset = original.asset
-                if (asset != null && !asset.path.isNotEmpty()) {
-                    add(WizardIssue(1, "Canción $songId ($engine): original sin ruta."))
+                if (asset != null && (asset.path.isBlank() || '\u0000' in asset.path ||
+                        asset.path.split('/').any { it == "." || it == ".." })) {
+                    add(WizardIssue(1, "$label: original sin una ruta válida."))
                 }
             }
         }
     }
-    if (config.modTitle.isBlank()) add(WizardIssue(0, "Escribe el nombre del mod."))
-    if (config.songs.isEmpty()) add(WizardIssue(1, "Añade al menos una canción."))
+    if (config.icon != null && !fileExists(config.icon.path)) add(WizardIssue(3, "Vuelve a elegir el icono del mod."))
+}
 /** Scripts are confined to mods/<mod>/scripts/<name>.lua on export. */
 fun isValidPsychScript(name: String, code: String): Boolean =
     name.matches(Regex("[a-z0-9_-]{1,48}")) && code.isNotBlank() && code.length <= 16000 && !code.contains('\u0000')

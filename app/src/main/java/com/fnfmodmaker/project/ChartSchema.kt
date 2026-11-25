@@ -1,11 +1,14 @@
 package com.fnfmodmaker.project
 
-import com.fnfmodmaker.model.ChartEngine
+import com.fnfmodmaker.model.IndependentChartCollection
+import com.fnfmodmaker.model.IndependentSong
+import com.fnfmodmaker.model.IndependentVariant
+import com.fnfmodmaker.model.SongConfig
+import com.fnfmodmaker.model.ChartDraft
+import com.fnfmodmaker.model.ChartPersistentHistory
 import com.google.gson.Gson
 import com.google.gson.JsonArray
-import com.google.gson.JsonElement
 import com.google.gson.JsonObject
-import com.google.gson.JsonParser
 
 /**
  * Chart schema versions:
@@ -15,7 +18,7 @@ import com.google.gson.JsonParser
  * Any other value is rejected before deserialization so an older app never silently
  * erases a newer chart schema on the next save.
  */
-internal const val CHART_SCHEMA_LEGACY: Int? = null
+internal val CHART_SCHEMA_LEGACY: Int? = null
 internal const val CHART_SCHEMA_V1 = 1
 internal const val CHART_SCHEMA_V2 = 2
 /** Reject unknown schema markers and the v2 payload until the app can read it safely. */
@@ -49,8 +52,8 @@ internal fun requireIndependentChartSchema(config: JsonObject, gson: Gson): Inde
 
 /** Parse an independentCharts JSON block into [IndependentChartCollection]. */
 internal fun parseIndependentCharts(root: JsonObject, gson: Gson): IndependentChartCollection {
-    val songs = mutableMapOf<String, com.fnfmodmaker.model.IndependentSong>()
-    root.entrySet().forEach { (songId, songNode) ->
+    val songs = mutableMapOf<String, IndependentSong>()
+    root.entrySet().filterNot { it.key == "legacyDocumentJson" }.forEach { (songId, songNode) ->
         require(songNode.isJsonObject) { "Canción inválida: $songId." }
         val songObj = songNode.asJsonObject
         val psychNode = songObj.get("psych")
@@ -62,18 +65,21 @@ internal fun parseIndependentCharts(root: JsonObject, gson: Gson): IndependentCh
         val psych = if (psychNode == null || psychNode.isJsonNull) null else parseVariant(psychNode.asJsonObject, gson)
         val vSlice = if (vSliceNode == null || vSliceNode.isJsonNull) null else parseVariant(vSliceNode.asJsonObject, gson)
         require(psych != null || vSlice != null) { "Canción $songId sin variantes." }
-        songs[songId] = com.fnfmodmaker.model.IndependentSong(songId, psych, vSlice)
+        songs[songId] = IndependentSong(songId, psych, vSlice)
     }
     val legacy = root.get("legacyDocumentJson")
-    return com.fnfmodmaker.model.IndependentChartCollection(songs = songs.build(),
+    require(legacy == null || legacy.isJsonNull || (legacy.isJsonPrimitive && legacy.asJsonPrimitive.isString)) {
+        "legacyDocumentJson debe ser texto."
+    }
+    return IndependentChartCollection(songs = songs.toMap(),
         legacyDocumentJson = if (legacy == null || legacy.isJsonNull) "" else legacy.asString)
 }
 
 /** Parse one engine variant. */
-private fun parseVariant(node: JsonObject, gson: Gson): com.fnfmodmaker.model.IndependentVariant {
+private fun parseVariant(node: JsonObject, gson: Gson): IndependentVariant {
     val metadataNode = node.get("metadata") ?: error("Falta metadata de la variante.")
     require(metadataNode.isJsonObject) { "metadata debe ser un objeto." }
-    val metadata = gson.fromJson(metadataNode, com.fnfmodmaker.model.SongConfig::class.java)
+    val metadata = gson.fromJson(metadataNode, SongConfig::class.java)
         ?: error("metadata inválido.")
     val difficulties = node.get("difficulties")?.let {
         require(it.isJsonArray) { "difficulties debe ser una lista." }
@@ -83,7 +89,7 @@ private fun parseVariant(node: JsonObject, gson: Gson): com.fnfmodmaker.model.In
         require(it.isJsonObject) { "charts debe ser un objeto." }
         it.asJsonObject.mapValues { (_, chartNode) ->
             require(chartNode.isJsonObject) { "Chart inválido." }
-            gson.fromJson(chartNode, com.fnfmodmaker.model.ChartDraft::class.java)
+            gson.fromJson(chartNode, ChartDraft::class.java)
                 ?: error("Chart inválido.")
         }
     } ?: emptyMap()
@@ -91,7 +97,7 @@ private fun parseVariant(node: JsonObject, gson: Gson): com.fnfmodmaker.model.In
         require(it.isJsonObject) { "histories debe ser un objeto." }
         it.asJsonObject.mapValues { (_, histNode) ->
             require(histNode.isJsonObject) { "Historial inválido." }
-            gson.fromJson(histNode, com.fnfmodmaker.model.ChartPersistentHistory::class.java)
+            gson.fromJson(histNode, ChartPersistentHistory::class.java)
                 ?: error("Historial inválido.")
         }
     } ?: emptyMap()
@@ -108,7 +114,7 @@ private fun parseVariant(node: JsonObject, gson: Gson): com.fnfmodmaker.model.In
         }
     } ?: emptyList()
     val unknownMetadataJson = node.get("unknownMetadataJson")?.takeUnless { it.isJsonNull }?.asString ?: ""
-    return com.fnfmodmaker.model.IndependentVariant(
+    return IndependentVariant(
         metadata = metadata,
         difficulties = difficulties,
         charts = charts,
@@ -120,7 +126,7 @@ private fun parseVariant(node: JsonObject, gson: Gson): com.fnfmodmaker.model.In
 }
 
 /** Serialize [IndependentChartCollection] into the independentCharts JSON block. */
-internal fun independentChartsToJson(collection: com.fnfmodmaker.model.IndependentChartCollection, gson: Gson): JsonObject {
+internal fun independentChartsToJson(collection: IndependentChartCollection, gson: Gson): JsonObject {
     val root = JsonObject()
     collection.songs.forEach { (id, song) ->
         val songObj = JsonObject()
@@ -132,7 +138,7 @@ internal fun independentChartsToJson(collection: com.fnfmodmaker.model.Independe
     return root
 }
 
-private fun variantToJson(v: com.fnfmodmaker.model.IndependentVariant, gson: Gson): JsonObject {
+private fun variantToJson(v: IndependentVariant, gson: Gson): JsonObject {
     val obj = JsonObject()
     obj.add("metadata", gson.toJsonTree(v.metadata).asJsonObject)
     obj.add("difficulties", JsonArray().apply { v.difficulties.sorted().forEach { addProperty(it) } })

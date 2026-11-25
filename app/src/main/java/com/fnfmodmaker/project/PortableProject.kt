@@ -176,14 +176,14 @@ internal class PortableProject(private val appRoot: File) {
                 val independentChartCount = independentCharts?.entrySet()?.sumOf { songEntry ->
                     songEntry.value.asJsonObject.entrySet().sumOf { variantEntry ->
                         if (variantEntry.value.isJsonObject) {
-                            variantEntry.value.asJsonObject.get("charts")?.takeIf { it.isJsonObject }?.asJsonObject?.size ?: 0
+                            variantEntry.value.asJsonObject.get("charts")?.takeIf { it.isJsonObject }?.asJsonObject?.size() ?: 0
                         } else 0
                     }
                 } ?: 0
                 val charts = config.get("charts")?.takeIf { it.isJsonObject }?.asJsonObject?.entrySet()?.sumOf { it.value.asJsonObject.size() } ?: 0
                 val totalCharts = charts + independentChartCount
                 val songNames = config.getAsJsonArray("songs").map { it.asJsonObject.get("songName")?.asString?.ifBlank { "Sin nombre" } ?: "Sin nombre" }
-                val summary = PortableSummary(config.get("modTitle")?.asString?.ifBlank { "Proyecto sin nombre" } ?: "Proyecto sin nombre", songs, totalCharts, described.size, archive.length(), songNames,
+                val summary = PortableSummary(config.get("modTitle")?.asString?.ifBlank { "Proyecto sin nombre" } ?: "Proyecto sin nombre", songNames.size, totalCharts, described.size, archive.length(), songNames,
                     (config.getAsJsonObject("character")?.get("enabled")?.asBoolean == true ||
                         config.get("characterLibrary")?.takeIf { it.isJsonArray }?.asJsonArray?.any { it.isJsonObject && it.asJsonObject.getAsJsonObject("draft")?.get("enabled")?.asBoolean == true } == true),
                     config.getAsJsonObject("stageDraft")?.get("enabled")?.asBoolean == true,

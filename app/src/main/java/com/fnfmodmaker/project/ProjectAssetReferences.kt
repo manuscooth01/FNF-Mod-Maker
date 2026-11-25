@@ -83,29 +83,30 @@ internal fun visitIndependentMedia(root: JsonObject, action: (JsonObject) -> Uni
         require(node.isJsonObject) { "$label debe ser un objeto." }
         return node.asJsonObject
     }
-    fun field(parent: JsonObject, key: String, required: Boolean = false) {
-        val value = parent.get(key)
-        if (value == null || value.isJsonNull) {
-            require(!required) { "Falta el recurso $key." }
-            return
-        }
-        val asset = obj(value, "Recurso $key")
+    fun reference(asset: JsonObject, label: String) {
         val path = asset.get("path"); val name = asset.get("displayName"); val uri = asset.get("uri")
         require(path?.isJsonPrimitive == true && path.asJsonPrimitive.isString && path.asString.isNotEmpty() &&
             name?.isJsonPrimitive == true && name.asJsonPrimitive.isString &&
             (uri == null || uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString))) {
-            "Referencia de recurso $key inválida."
+            "Referencia de recurso $label inválida."
         }
         action(asset)
     }
+    fun field(parent: JsonObject, key: String) {
+        val value = parent.get(key)
+        if (value == null || value.isJsonNull) return
+        val asset = obj(value, "Recurso $key")
+        reference(asset, key)
+    }
     val independent = root.get("independentCharts") ?: return
     require(independent.isJsonObject) { "independentCharts debe ser un objeto." }
-    independent.asJsonObject.entrySet().forEach { (songId, songNode) ->
-        if (!songNode.isJsonObject) return@forEach
+    independent.asJsonObject.entrySet().forEach songLoop@{ (songId, songNode) ->
+        if (songId == "legacyDocumentJson" || !songNode.isJsonObject) return@songLoop
         val songObj = songNode.asJsonObject
-        listOf("psych", "vslice").forEach { engineKey ->
-            val variant = songObj.get(engineKey) ?: return@forEach
-            if (!variant.isJsonObject) return@forEach
+        listOf("psych", "vslice").forEach engineLoop@{ engineKey ->
+            val variantNode = songObj.get(engineKey) ?: return@engineLoop
+            if (!variantNode.isJsonObject) return@engineLoop
+            val variant = variantNode.asJsonObject
             // metadata may contain audio references.
             variant.get("metadata")?.let { metadata ->
                 if (metadata.isJsonObject) {
@@ -115,24 +116,16 @@ internal fun visitIndependentMedia(root: JsonObject, action: (JsonObject) -> Uni
             // originals: either an "asset" media reference (nested under "asset") or opaque "contentJson".
             variant.get("originals")?.let { originals ->
                 if (originals.isJsonArray) {
-                    originals.asJsonArray.forEach { ref ->
-                        if (!ref.isJsonObject) return@forEach
-                        val obj = ref.asJsonObject
-                        val asset = obj.get("asset")
-                        if (asset != null && asset.isJsonObject) {
-                            val kind = asset.asJsonObject.get("kind")?.asString
-                            if (kind in setOf("image", "audio")) {
-                                field(asset.asJsonObject, "path", required = true)
-                                field(asset.asJsonObject, "displayName", required = true)
-                                asset.asJsonObject.get("uri")?.let { uri ->
-                                    require(uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString)) {
-                                        "URI inválida en original de $engineKey/$songId."
-                                    }
-                                }
-                                action(asset.asJsonObject)
-                            }
+                    originals.asJsonArray.forEach originalLoop@{ ref ->
+                        if (!ref.isJsonObject) return@originalLoop
+                        val original = ref.asJsonObject
+                        val assetNode = original.get("asset")
+                        if (assetNode != null && assetNode.isJsonObject) {
+                            val asset = assetNode.asJsonObject
+                            val kind = asset.get("kind")?.asString
+                            if (kind in setOf("image", "audio")) reference(asset, "original de $engineKey/$songId")
                         } else {
-                            obj.get("contentJson")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) {
+                            original.get("contentJson")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) {
                                 "Original sin medio ni documento opaco en $engineKey/$songId."
                             } }
                         }

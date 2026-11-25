@@ -135,6 +135,8 @@ enum class CharacterRole(val label: String) { PLAYER("BF"), OPPONENT("DAD"), GIR
  * Ahora soporta varias canciones y semanas por mod.
  */
 data class ModConfig(
+    /** Null denotes the original unversioned shared-chart schema. */
+    val chartSchemaVersion: Int? = null,
     val engine: TargetEngine = TargetEngine.VSLICE,
     val psychChartFormat: PsychChartFormat = PsychChartFormat.PSYCH_V1,
 

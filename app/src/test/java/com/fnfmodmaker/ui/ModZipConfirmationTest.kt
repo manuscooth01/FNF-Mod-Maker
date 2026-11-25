@@ -97,6 +97,59 @@ class ModZipConfirmationTest {
         }
         return Uri.fromFile(file)
     }
+    @Test fun explicitV1SurvivesAutosaveAndReopening() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val old = vm.currentProjectId!!
+        val versioned = projects.newId()
+        projects.save(versioned, projects.load(old).config.deepCopy().apply { addProperty("chartSchemaVersion", 1) })
+        vm.switchProject(versioned); await { !vm.busy }
+        assertEquals(versioned, vm.currentProjectId)
+        assertEquals(1, vm.config.chartSchemaVersion)
+        vm.setModTitle("Version One")
+        vm.forceAutoSave()
+        await { projects.load(versioned).config.get("modTitle").asString == "Version One" }
+        assertEquals(1, projects.load(versioned).config.get("chartSchemaVersion").asInt)
+        vm.switchProject(old); await { !vm.busy }
+        vm.switchProject(versioned); await { !vm.busy }
+        assertEquals("Version One", vm.config.modTitle)
+        assertEquals(1, vm.config.chartSchemaVersion)
+    }
+
+    @Test fun incompatibleActiveProjectAllowsSafeRecovery() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val compatible = vm.currentProjectId!!
+        val futureId = projects.newId()
+        val future = projects.load(compatible).config.deepCopy().apply {
+            addProperty("chartSchemaVersion", 2)
+            add("independentCharts", com.google.gson.JsonParser.parseString("""{"psych":{"normal":[1]}}"""))
+        }
+        projects.save(futureId, future)
+        projects.setActive(futureId)
+        val file = File(app.filesDir, "projects/$futureId/project.json")
+        val bytes = file.readBytes()
+        store.clear(); scheduler.runCurrent()
+        store = ViewModelStore()
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = WizardViewModel(app) as T
+        }
+        vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
+        await { !vm.busy }
+        assertNull(vm.currentProjectId)
+        assertEquals(futureId, projects.activeId())
+        assertTrue(vm.projects.any { it.id == compatible })
+        vm.forceAutoSave(); scheduler.runCurrent()
+        assertArrayEquals(bytes, file.readBytes())
+        vm.switchProject(futureId); await { !vm.busy }
+        assertNull(vm.currentProjectId)
+        assertEquals(futureId, projects.activeId())
+        assertArrayEquals(bytes, file.readBytes())
+        vm.switchProject(compatible); await { !vm.busy }
+        assertEquals(compatible, vm.currentProjectId)
+        assertEquals(compatible, projects.activeId())
+        assertArrayEquals(bytes, file.readBytes())
+    }
+
     @Test fun futureChartSchemaIsNotOpenedOrOverwrittenByAutosave() {
         val previous = vm.currentProjectId!!
         val before = vm.config

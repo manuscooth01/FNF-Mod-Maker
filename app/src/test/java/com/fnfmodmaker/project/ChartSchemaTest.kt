@@ -38,6 +38,29 @@ class ChartSchemaTest {
         }
     }
 
+    @Test fun explicitV1SurvivesModelSerialization() {
+        val source = legacy().apply { addProperty("chartSchemaVersion", 1) }
+        val model = gson.fromJson(source, ModConfig::class.java)
+        assertEquals(1, model.chartSchemaVersion)
+        val saved = gson.toJsonTree(model).asJsonObject
+        assertEquals(1, saved.get("chartSchemaVersion").asInt)
+        assertEquals(source.get("charts"), saved.get("charts"))
+        assertEquals(source.get("chartHistories"), saved.get("chartHistories"))
+        validator.validate(saved)
+    }
+
+    @Test fun rejectsIndependentPayloadWithoutSupportedSchema() {
+        for (marker in listOf<String?>(null, "1", "2")) {
+            val source = legacy().apply {
+                if (marker != null) add("chartSchemaVersion", JsonParser.parseString(marker))
+                add("independentCharts", JsonParser.parseString("""{"psych":{"normal":{"notes":[1]}}}"""))
+            }
+            val before = source.deepCopy()
+            assertThrows(IllegalArgumentException::class.java) { validator.validate(source) }
+            assertEquals(before, source)
+        }
+    }
+
     @Test fun rejectsUnknownAndMalformedVersionsBeforeParsing() {
         for (raw in listOf("2", "0", "-1", "1.0", "1e0", "\"1\"", "null", "true", "{}", "[]", "999999999999999999999999999")) {
             val config = legacy().apply { add("chartSchemaVersion", JsonParser.parseString(raw)) }

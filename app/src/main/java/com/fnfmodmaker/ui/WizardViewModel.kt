@@ -1832,7 +1832,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 currentProjectId = record.first; projects = list; projectSaveStatus = "Guardado en este dispositivo"
                 modIdEdited = config.modId.isNotBlank() && config.modId != slugify(config.modTitle)
                 projectMessage = if (missing.isEmpty()) null else "No se encontraron ${missing.size} recursos del borrador anterior: ${missing.joinToString()}. Vuelve a elegirlos."
-            }.onFailure { projectSaveStatus = "Proyecto no disponible"; projectMessage = "No se pudo abrir o migrar el proyecto: ${it.message}. Los archivos anteriores se conservan; reinicia la app para reintentar." }
+            }.onFailure {
+                projects = withContext(Dispatchers.IO) { runCatching { projectStore.list() }.getOrDefault(emptyList()) }
+                projectSaveStatus = "Proyecto no disponible"
+                projectMessage = "No se pudo abrir o migrar el proyecto: ${it.message}. Los archivos anteriores se conservan; selecciona otro proyecto o crea uno nuevo."
+            }
             busy = false
         }
         autoSaveJob = viewModelScope.launch {
@@ -1984,8 +1988,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Save current work before switching. Failed copies/opening never replace the current draft. */
     internal fun switchProject(target: String? = null, duplicate: Boolean = false) {
-        if (busy || currentProjectId == null) return
-        val oldId = currentProjectId ?: return
+        if (busy || (duplicate && currentProjectId == null)) return
+        val oldId = currentProjectId
         val oldConfig = config
         pendingAutoSaveJob?.cancel()
         busy = true; projectMessage = null
@@ -1994,7 +1998,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(NonCancellable) {
                     projectMutex.withLock {
                         val (project, list, missing) = withContext(Dispatchers.IO) {
-                            projectStore.save(oldId, configJson(oldConfig))
+                            if (oldId != null) projectStore.save(oldId, configJson(oldConfig))
                             val id = target ?: projectStore.newId()
                             val missing = if (target == null) {
                                 val source = if (duplicate) configJson(oldConfig).also {

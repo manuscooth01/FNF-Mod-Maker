@@ -196,7 +196,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
             vm.portableMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             vm.projectMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             Row(Modifier.horizontalScroll(rememberScrollState())) {
-                Button(onClick = { vm.switchProject() }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Nuevo proyecto") }
+                Button(onClick = { vm.switchProject() }, enabled = !vm.busy) { Text("Nuevo proyecto") }
                 TextButton(onClick = { vm.switchProject(duplicate = true) }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Duplicar actual") }
             }
             OutlinedButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy && vm.currentProjectId != null, modifier = Modifier.fillMaxWidth()) { Text("Importar proyecto .fnfproject") }
@@ -210,7 +210,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
                         Text(project.problem ?: if (project.id == vm.currentProjectId) "Proyecto actual" else "Guardado en el dispositivo", style = MaterialTheme.typography.labelSmall)
                         Row(Modifier.horizontalScroll(rememberScrollState())) {
                             TextButton(onClick = { if (project.id == vm.currentProjectId) vm.openTool(Tool.MOD) else vm.switchProject(project.id) },
-                                enabled = !vm.busy && project.problem == null && vm.currentProjectId != null) { Text(if (project.id == vm.currentProjectId) "Continuar" else "Abrir") }
+                                enabled = !vm.busy && project.problem == null) { Text(if (project.id == vm.currentProjectId) "Continuar" else "Abrir") }
                             TextButton(onClick = { vm.preparePortableExport(project.id) }, enabled = !vm.busy && project.problem == null) { Text("Exportar proyecto") }
                         }
                     }

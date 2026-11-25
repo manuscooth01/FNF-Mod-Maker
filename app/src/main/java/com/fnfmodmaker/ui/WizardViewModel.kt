@@ -570,13 +570,17 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             config = if (redo) chartRepository.redoVSliceTempo(song.songFolder, ChartEngine.VSLICE)
             else chartRepository.undoVSliceTempo(song.songFolder, ChartEngine.VSLICE)
         } else {
-        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
-        val current = liveVSliceTempo()
-        val independent = song.vSliceIndependentInitialBpm || config.engine == TargetEngine.BOTH
-        val songs = config.songs.toMutableList()
-        songs[liveSongIndex] = if (redo) song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = checked, vSliceTempoRedo = song.vSliceTempoRedo.dropLast(1), vSliceTempoUndo = (song.vSliceTempoUndo + current).takeLast(10))
-            else song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = checked, vSliceTempoUndo = song.vSliceTempoUndo.dropLast(1), vSliceTempoRedo = (song.vSliceTempoRedo + current).takeLast(10))
-        config = config.copy(songs = songs); scheduleAutoSave(); forceAutoSave()
+            val checked = if (redo) song.vSliceTempoRedo.lastOrNull() ?: error("No hay cambios de tempo para rehacer.")
+            else song.vSliceTempoUndo.lastOrNull() ?: error("No hay cambios de tempo para deshacer.")
+            com.fnfmodmaker.mod.validateVSliceTempo(checked)
+            val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
+            val current = liveVSliceTempo()
+            val independent = song.vSliceIndependentInitialBpm || config.engine == TargetEngine.BOTH
+            val songs = config.songs.toMutableList()
+            songs[liveSongIndex] = if (redo) song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = checked, vSliceTempoRedo = song.vSliceTempoRedo.dropLast(1), vSliceTempoUndo = (song.vSliceTempoUndo + current).takeLast(10))
+                else song.copy(bpm = if (independent) song.bpm else bpm.toString(), vSliceIndependentInitialBpm = independent, vSliceTempoJson = checked, vSliceTempoUndo = song.vSliceTempoUndo.dropLast(1), vSliceTempoRedo = (song.vSliceTempoRedo + current).takeLast(10))
+            config = config.copy(songs = songs); scheduleAutoSave(); forceAutoSave()
+        }
     }
 
     /** Section edits are atomic chart history transitions for the selected difficulty. */

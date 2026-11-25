@@ -152,6 +152,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
     }
 
     override fun saveVSliceEvents(songId: String, engine: ChartEngine, events: String): ModConfig {
+        require(isV2()) { "El proyecto no usa el esquema de charts independientes v2." }
         val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
         val song = collection.songs[songId] ?: error("Canción no encontrada.")
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
@@ -169,6 +170,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
     }
 
     override fun undoVSliceEvents(songId: String, engine: ChartEngine): ModConfig {
+        require(isV2()) { "El proyecto no usa el esquema de charts independientes v2." }
         val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
         val song = collection.songs[songId] ?: error("Canción no encontrada.")
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
@@ -185,6 +187,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
     }
 
     override fun redoVSliceEvents(songId: String, engine: ChartEngine): ModConfig {
+        require(isV2()) { "El proyecto no usa el esquema de charts independientes v2." }
         val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
         val song = collection.songs[songId] ?: error("Canción no encontrada.")
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
@@ -205,6 +208,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
     }
 
     override fun saveVSliceTempo(songId: String, engine: ChartEngine, tempo: String): ModConfig {
+        require(isV2()) { "El proyecto no usa el esquema de charts independientes v2." }
         val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
         val song = collection.songs[songId] ?: error("Canción no encontrada.")
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
@@ -227,6 +231,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
     }
 
     override fun undoVSliceTempo(songId: String, engine: ChartEngine): ModConfig {
+        require(isV2()) { "El proyecto no usa el esquema de charts independientes v2." }
         val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
         val song = collection.songs[songId] ?: error("Canción no encontrada.")
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
@@ -247,6 +252,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
     }
 
     override fun redoVSliceTempo(songId: String, engine: ChartEngine): ModConfig {
+        require(isV2()) { "El proyecto no usa el esquema de charts independientes v2." }
         val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
         val song = collection.songs[songId] ?: error("Canción no encontrada.")
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")

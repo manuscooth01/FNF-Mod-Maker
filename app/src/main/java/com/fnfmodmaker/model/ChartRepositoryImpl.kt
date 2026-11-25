@@ -217,7 +217,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         )
         val edited = com.fnfmodmaker.mod.validateVSliceTempo(tempo)
         if (before == edited) return _config
-        val bpm = com.google.gson.JsonParser.parseString(edited).asJsonArray[0].asJsonObject.get("bpm").asString
+        val bpm = com.google.gson.JsonParser.parseString(edited).asJsonArray[0].asJsonObject.get("bpm").asDouble
         val metadata = variant.metadata.copy(
             bpm = bpm.toString(),
             vSliceIndependentInitialBpm = true,
@@ -237,7 +237,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
         val previous = (variant.metadata.vSliceTempoUndo.lastOrNull() ?: error("No hay cambio de tempo que restaurar."))
         val checked = com.fnfmodmaker.mod.validateVSliceTempo(previous)
-        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
+        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asDouble
         val current = variant.metadata.vSliceTempoJson ?: ""
         val metadata = variant.metadata.copy(
             bpm = bpm.toString(),
@@ -258,7 +258,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
         val next = variant.metadata.vSliceTempoRedo.lastOrNull() ?: error("No hay cambio de tempo que restaurar.")
         val checked = com.fnfmodmaker.mod.validateVSliceTempo(next)
-        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
+        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asDouble
         val current = variant.metadata.vSliceTempoJson ?: ""
         val metadata = variant.metadata.copy(
             bpm = bpm.toString(),

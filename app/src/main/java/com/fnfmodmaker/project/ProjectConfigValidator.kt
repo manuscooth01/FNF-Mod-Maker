@@ -21,7 +21,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
     /** Reject malformed model shapes before they can reach screens or be published. */
     fun validate(source: com.google.gson.JsonObject) {
         val version = source.get("chartSchemaVersion")
-        val isV2 = version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
+        val isV2 = version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
         if (isV2) {
             validateV2(source)
         } else {

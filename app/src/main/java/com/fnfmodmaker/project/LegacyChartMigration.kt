@@ -60,30 +60,33 @@ internal object LegacyChartMigration {
                 vsliceVariant?.let { engineAttributedCount++ }
             }
 
-            if (collectionBuilder.containsKey(songId)) {
-                // Duplicate song ID - attempt to merge variants
-                val existing = collectionBuilder[songId]!!
-                val mergedPsych = if (existing.psych != null && psychVariant != null) {
-                    // Check if variants are compatible (same charts/histories)
-                    if (existing.psych?.charts == psychVariant?.charts && existing.psych?.histories == psychVariant?.histories) {
-                        existing.psych
-                    } else {
-                        // Incompatible - preserve both in legacy
-                        legacyPreserved = true
-                        existing.psych
-                    }
-                } else existing.psych ?: psychVariant
-                val mergedVslice = if (existing.vSlice != null && vsliceVariant != null) {
-                    if (existing.vSlice?.charts == vsliceVariant?.charts && existing.vSlice?.histories == vsliceVariant?.histories) {
-                        existing.vSlice
-                    } else {
-                        legacyPreserved = true
-                        existing.vSlice
-                    }
-                } else existing.vSlice ?: vsliceVariant
-                collectionBuilder[songId] = IndependentSong(songId, mergedPsych, mergedVslice)
-            } else {
-                collectionBuilder[songId] = IndependentSong(songId, psychVariant, vsliceVariant)
+            // Only add songs that have at least one attributed variant.
+            if (psychVariant != null || vsliceVariant != null) {
+                if (collectionBuilder.containsKey(songId)) {
+                    // Duplicate song ID - attempt to merge variants
+                    val existing = collectionBuilder[songId]!!
+                    val mergedPsych = if (existing.psych != null && psychVariant != null) {
+                        // Check if variants are compatible (same charts/histories)
+                        if (existing.psych?.charts == psychVariant?.charts && existing.psych?.histories == psychVariant?.histories) {
+                            existing.psych
+                        } else {
+                            // Incompatible - preserve both in legacy
+                            legacyPreserved = true
+                            existing.psych
+                        }
+                    } else existing.psych ?: psychVariant
+                    val mergedVslice = if (existing.vSlice != null && vsliceVariant != null) {
+                        if (existing.vSlice?.charts == vsliceVariant?.charts && existing.vSlice?.histories == vsliceVariant?.histories) {
+                            existing.vSlice
+                        } else {
+                            legacyPreserved = true
+                            existing.vSlice
+                        }
+                    } else existing.vSlice ?: vsliceVariant
+                    collectionBuilder[songId] = IndependentSong(songId, mergedPsych, mergedVslice)
+                } else {
+                    collectionBuilder[songId] = IndependentSong(songId, psychVariant, vsliceVariant)
+                }
             }
         }
         val collection = IndependentChartCollection(songs = collectionBuilder.toMap(),

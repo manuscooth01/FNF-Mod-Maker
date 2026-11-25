@@ -589,6 +589,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         check((chartRepository.isV2() && activeChartEngine == ChartEngine.PSYCH)
             || (!chartRepository.isV2() && config.engine.includesPsych && !busy && !livePlaying
             && !liveLoading && liveChartAvailable && liveChart == null)) { "No se puede crear este chart." }
+        val song = liveSong ?: error("Selecciona una canción.")
         val draft = ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
             scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
             player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych,

@@ -1828,6 +1828,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private val portable = PortableProject(File(application.applicationInfo.dataDir))
     private var preparedImport: PreparedPortable? = null
     private var preparedExport: File? = null
+    private val projectStore = ProjectStore(File(application.filesDir, "projects"), application.applicationInfo.dataDir.let(::File))
+    var currentProjectId by mutableStateOf<String?>(null)
+        private set
+    internal var projects by mutableStateOf<List<ProjectSummary>>(emptyList())
+        private set
+    var projectMessage by mutableStateOf<String?>(null)
+        private set
+    var projectSaveStatus by mutableStateOf("Abriendo proyecto…")
+        private set
+    private var projectRevision = 0L
     internal var portableImportSummary by mutableStateOf<PortableSummary?>(null)
         private set
     var portableExportName by mutableStateOf<String?>(null)

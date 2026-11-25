@@ -1823,6 +1823,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // Project snapshots are serialized through one mutex; disk work runs off the UI thread.
     private var autoSaveJob: kotlinx.coroutines.Job? = null
+    private var pendingAutoSaveJob: kotlinx.coroutines.Job? = null
+    private val projectMutex = Mutex()
     private val autoSaveFile: File get() = File(getApplication<Application>().filesDir, "autosave_modconfig.json")
     private var modIdEdited = false
     private val portable = PortableProject(File(application.applicationInfo.dataDir))

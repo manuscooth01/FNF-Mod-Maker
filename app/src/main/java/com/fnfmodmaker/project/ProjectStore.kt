@@ -126,82 +126,82 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
             }
             return false
         }
-        fun visit(node: com.google.gson.JsonElement, depth: Int) {
-            require(depth <= 64)
-            if (node.isJsonArray) { node.asJsonArray.forEach { visit(it, depth + 1) }; return }
-            if (!node.isJsonObject) return
-            val obj = node.asJsonObject
-            if (obj.has("path") && obj.has("displayName") && obj.has("uri")) {
-                val nameValue = obj.get("displayName")
-                val name = if (nameValue?.isJsonPrimitive == true && nameValue.asJsonPrimitive.isString)
-                    nameValue.asString.filter { !it.isISOControl() }.take(120).ifBlank { "sin nombre" } else "sin nombre"
-                val pathValue = obj.get("path")
-                require(pathValue?.isJsonPrimitive == true && pathValue.asJsonPrimitive.isString) { "Recurso '$name': ruta insegura o inválida." }
-                val text = pathValue.asString
-                require(text.isNotEmpty() && '\u0000' !in text && '\\' !in text &&
-                    text.split('/').none { it == "." || it == ".." }) { "Recurso '$name': ruta insegura (traversal o componentes inválidos)." }
-                val path = File(text)
-                require(path.isAbsolute) { "Recurso '$name': ruta insegura (debe ser absoluta)." }
-                val absolute = path.absoluteFile
-                // Accept the stage's own spelling and its canonical spelling, but not arbitrary
-                // external aliases. Reject an external path even if a symlink leads inside.
-                require(isDescendant(absolute, absoluteAssets) || isDescendant(absolute, stagedAssets)) {
-                    "Recurso '$name': ruta externa a los recursos temporales."
-                }
-                val canonical = try { path.canonicalFile } catch (e: java.io.IOException) {
-                    throw IllegalArgumentException("Recurso '$name': no se pudo resolver la ruta segura.", e)
-                }
-                require(isDescendant(canonical, stagedAssets)) { "Recurso '$name': ruta insegura (un enlace sale de los recursos temporales)." }
-                require(canonical.isFile) { "Recurso '$name': archivo ausente o no es un archivo regular." }
-                // Relocate the resolved target, not an inner symlink that might break on rename.
-                val relative = canonical.relativeTo(canonicalStage).invariantSeparatorsPath
-                // Store a canonical spelling so downstream export checks do not mistake an
-                // Android data-directory alias for a symlink inside the project's assets.
-                obj.addProperty("path", File(finalDir, relative).canonicalPath)
-                obj.addProperty("uri", "")
-                return
-            }
-            obj.entrySet().forEach { visit(it.value, depth + 1) }
+        visitProjectAssets(output) { obj ->
+            val nameValue = obj.get("displayName")
+            val name = if (nameValue?.isJsonPrimitive == true && nameValue.asJsonPrimitive.isString)
+                nameValue.asString.filter { !it.isISOControl() }.take(120).ifBlank { "sin nombre" } else "sin nombre"
+            val pathValue = obj.get("path")
+            require(pathValue?.isJsonPrimitive == true && pathValue.asJsonPrimitive.isString) { "Recurso '$name': ruta insegura o inválida." }
+            val text = pathValue.asString
+            require(text.isNotEmpty() && '\u0000' !in text && '\\' !in text &&
+                text.split('/').none { it == "." || it == ".." }) { "Recurso '$name': ruta insegura (traversal o componentes inválidos)." }
+            val path = File(text)
+            require(path.isAbsolute) { "Recurso '$name': ruta insegura (debe ser absoluta)." }
+            val absolute = path.absoluteFile
+            // Accept the stage's own spelling and its canonical spelling, but not arbitrary
+            // external aliases. Reject an external path even if a symlink leads inside.
+            require(isDescendant(absolute, absoluteAssets) || isDescendant(absolute, stagedAssets)) {
+                "Recurso '$name': ruta externa a los recursos temporales."
         }
-        visit(output, 0); validate(output)
+            val canonical = try { path.canonicalFile } catch (e: java.io.IOException) {
+                throw IllegalArgumentException("Recurso '$name': no se pudo resolver la ruta segura.", e)
+        }
+            require(isDescendant(canonical, stagedAssets)) { "Recurso '$name': ruta insegura (un enlace sale de los recursos temporales)." }
+            require(canonical.isFile) { "Recurso '$name': archivo ausente o no es un archivo regular." }
+            // Relocate the resolved target, not an inner symlink that might break on rename.
+            val relative = canonical.relativeTo(canonicalStage).invariantSeparatorsPath
+            // Store a canonical spelling so downstream export checks do not mistake an
+            // Android data-directory alias for a symlink inside the project's assets.
+            obj.addProperty("path", File(finalDir, relative).canonicalPath)
+            obj.addProperty("uri", "")
+
+        }
+        validate(output)
         val wrapper = JsonObject().apply { addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", output) }
         SafeFile(File(stage, "project.json")).write(wrapper.toString())
         check(stage.renameTo(finalDir)) { "No se pudo publicar el proyecto importado." }
         return id
     }
 
-    /** Copy all recognized PickedImage/PickedAudio objects. Missing legacy assets remain referenced and are reported. */
+    /** Copy known assets; reject malformed or missing references before publishing a copy. */
     fun copyAssets(config: JsonObject, id: String): CopiedAssets {
         val result = config.deepCopy()
-        val copied = mutableMapOf<String, String>()
-        val missing = linkedSetOf<String>()
+        val refs = mutableListOf<JsonObject>()
+        visitProjectAssets(result) { refs.add(it) }
         val appRoot = permittedAssetRoot.canonicalFile
+        val sources = refs.map { obj ->
+            val text = obj.get("path").asString
+            val file = File(text)
+            require(file.isAbsolute && '\u0000' !in text && '\\' !in text && text.split('/').none { it == "." || it == ".." }) {
+                "Recurso ${obj.get("displayName").asString}: ruta inválida."
+            }
+            val source = file.canonicalFile
+            require(source.path.startsWith(appRoot.path + File.separator) && source.isFile) {
+                "Falta el recurso ${obj.get("displayName").asString} o está fuera del almacenamiento de la app."
+            }
+            source
+        }
         val targetDir = assets(id).canonicalFile
-        fun visit(node: com.google.gson.JsonElement) {
-            if (node.isJsonArray) { node.asJsonArray.forEach(::visit); return }
-            if (!node.isJsonObject) return
-            val obj = node.asJsonObject
-            if (obj.has("path") && obj.has("displayName") && obj.has("uri") && obj.get("path").isJsonPrimitive) {
-                val old = obj.get("path").asString
-                val source = File(old).canonicalFile
-                if (!(source.path == appRoot.path || source.path.startsWith(appRoot.path + File.separator)) || !source.isFile) {
-                    missing.add(obj.get("displayName").asString); return
-                }
+        val copied = mutableMapOf<String, String>()
+        val created = mutableListOf<File>()
+        try {
+            refs.zip(sources).forEach { (obj, source) ->
                 val destination = copied.getOrPut(source.path) {
                     if (source.parentFile == targetDir) source.path else {
                         val extension = source.extension.filter { it.isLetterOrDigit() }.take(10)
-                        val out = File.createTempFile("asset_", if (extension.isEmpty()) ".dat" else ".$extension", targetDir)
-                        try { source.inputStream().use { input -> out.outputStream().use { input.copyTo(it) } } }
-                        catch (e: Exception) { out.delete(); throw e }
+                        val out = File.createTempFile("asset_", if (extension.isEmpty()) ".dat" else ".$extension, targetDir)
+                        created.add(out)
+                        source.inputStream().use { input -> out.outputStream().use { input.copyTo(it) } }
                         out.absolutePath
                     }
                 }
                 obj.addProperty("path", destination)
-                return
             }
-            obj.entrySet().forEach { visit(it.value) }
+            return CopiedAssets(result, emptyList())
+        } catch (e: Throwable) {
+            created.forEach { it.delete() }
+            throw e
         }
-        visit(result)
-        return CopiedAssets(result, missing.toList())
     }
+
 }

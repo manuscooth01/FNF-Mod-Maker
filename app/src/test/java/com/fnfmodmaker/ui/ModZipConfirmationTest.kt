@@ -231,6 +231,39 @@ class ModZipConfirmationTest {
         assertArrayEquals(bytes, file.readBytes())
     }
 
+    @Test fun unknownJsonSurvivesAutosaveDuplicationAndPortableExport() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val first = vm.currentProjectId!!
+        val sourceId = projects.newId()
+        val fake = File(app.filesDir, "not-an-asset.ogg").apply { writeText("metadata only") }
+        val custom = com.google.gson.JsonParser.parseString("""{"path":"relative/file","displayName":"custom","uri":"not-an-asset","nested":[{"path":${com.google.gson.Gson().toJson(fake.absolutePath)},"displayName":"audio","uri":"content://x"}],"psych":{"path":"charts/file.json"},"vs":{"events":[{"v":{"path":"x"}}]}}""").asJsonObject
+        val source = projects.load(first).config.deepCopy().apply {
+            add("unknownDocument", custom.deepCopy())
+            getAsJsonArray("songs")[0].asJsonObject.add("unknownDocument", custom.deepCopy())
+        }
+        projects.save(sourceId, source)
+        vm.switchProject(sourceId); await { !vm.busy }
+        assertEquals(sourceId, vm.currentProjectId)
+        vm.setModTitle("Conservado")
+        vm.forceAutoSave(); await { projects.load(sourceId).config.get("modTitle").asString == "Conservado" }
+        assertEquals(custom, projects.load(sourceId).config.getAsJsonObject("unknownDocument"))
+        assertEquals(custom, projects.load(sourceId).config.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("unknownDocument"))
+        vm.switchProject(duplicate = true); await { !vm.busy }
+        assertNotEquals(sourceId, vm.currentProjectId)
+        val duplicate = projects.load(vm.currentProjectId!!).config
+        assertEquals(custom, duplicate.getAsJsonObject("unknownDocument"))
+        assertEquals(custom, duplicate.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("unknownDocument"))
+        vm.preparePortableExport(vm.currentProjectId!!); await { !vm.busy }
+        assertNotNull(vm.portableMessage, vm.portableExportName)
+        val output = File(app.cacheDir, "unknown-duplicate.fnfproject")
+        vm.savePortableExport(Uri.fromFile(output)); await { !vm.busy }
+        java.util.zip.ZipFile(output).use { z ->
+            assertEquals(setOf("project.json", "manifest.json"), z.entries().asSequence().map { it.name }.toSet())
+            val result = com.google.gson.JsonParser.parseString(z.getInputStream(z.getEntry("project.json")).reader().readText()).asJsonObject
+            assertEquals(custom, result.getAsJsonObject("unknownDocument"))
+        }
+    }
+
     @Test fun futureChartSchemaIsNotOpenedOrOverwrittenByAutosave() {
         val previous = vm.currentProjectId!!
         val before = vm.config

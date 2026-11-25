@@ -11,6 +11,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
     /** Reject malformed model shapes before they can reach screens or be published. */
     fun validate(source: com.google.gson.JsonObject) {
         requireSupportedChartSchema(source)
+        visitProjectAssets(source) { }
         val value = migrateCharacterLibrary(source)
         fun compare(input: com.google.gson.JsonObject, template: com.google.gson.JsonObject) {
             template.entrySet().forEach { (key, sample) ->

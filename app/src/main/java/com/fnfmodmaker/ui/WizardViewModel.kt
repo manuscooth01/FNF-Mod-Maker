@@ -1301,7 +1301,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             modZipImportError = "El proyecto actual no está disponible. Cierra la revisión y reinicia la app antes de volver a intentarlo."
             return
         }
-        val oldConfig = configJson(config)
+        val oldConfig = config
         pendingAutoSaveJob?.cancel()
         busy = true; modZipImporting = true; modZipImportError = null
         portableMessage = null; portableProgress = "Importando mod…"
@@ -1312,7 +1312,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(NonCancellable) {
                     projectMutex.withLock {
                         val opened = withContext(Dispatchers.IO) {
-                            session.publishAndOpen(projectStore, oldId, oldConfig, ::validatePortableConfig, ::parseConfig)
+                            session.publishAndOpen(projectStore, oldId, projectSnapshot(oldId, oldConfig), ::validatePortableConfig, ::parseConfig)
                         }
                         applyOpenedProject(opened.id, opened.config, opened.projects, emptyList())
                         preparedModZip = null; modImportSession = null; modZipReview = null
@@ -1799,6 +1799,17 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         requireSupportedChartSchema(value)
         return autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java) ?: error("El proyecto está vacío.")
     }
+    /** Merge the loaded document with model edits; unknown fields remain untouched. */
+    private fun projectSnapshot(id: String, value: ModConfig): com.google.gson.JsonObject {
+        val raw = migrateCharacterLibrary(projectStore.load(id).config)
+        val baseline = configJson(parseConfig(raw))
+        return com.fnfmodmaker.project.mergeProjectSnapshot(raw, baseline, configJson(value))
+    }
+    private fun saveProjectSnapshot(id: String, value: ModConfig): com.google.gson.JsonObject {
+        val result = projectSnapshot(id, value)
+        if (projectStore.load(id).config != result) projectStore.save(id, result)
+        return result
+    }
 
     private fun beginProjects() {
         viewModelScope.launch {
@@ -1852,7 +1863,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             val result = projectMutex.withLock {
                 if (currentProjectId != id || projectRevision != revision) return@launch
                 withContext(Dispatchers.IO) { runCatching {
-                    projectStore.save(id, configJson(snapshot)); projectStore.list()
+                    saveProjectSnapshot(id, snapshot); projectStore.list()
                 } }
             }
             result.onSuccess { list ->
@@ -1888,7 +1899,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
                 // Switching the target must not discard a pending save of the active project.
-                if (active != null) projectStore.save(active, configJson(snapshot))
+                if (active != null) saveProjectSnapshot(active, snapshot)
                 val record = projectStore.load(id)
                 val validated = portableConfig(record.config)
                 check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear el archivo temporal." }
@@ -2001,10 +2012,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(NonCancellable) {
                     projectMutex.withLock {
                         val (project, list, missing) = withContext(Dispatchers.IO) {
-                            if (oldId != null) projectStore.save(oldId, configJson(oldConfig))
+                            val oldSnapshot = oldId?.let { saveProjectSnapshot(it, oldConfig) }
                             val id = target ?: projectStore.newId()
                             val missing = if (target == null) {
-                                val source = if (duplicate) configJson(oldConfig).also {
+                                val source = if (duplicate) requireNotNull(oldSnapshot).deepCopy().also {
                                     val name = oldConfig.modTitle.ifBlank { "Proyecto sin nombre" }
                                     it.addProperty("modTitle", "$name (copia)")
                                 } else configJson(ModConfig())

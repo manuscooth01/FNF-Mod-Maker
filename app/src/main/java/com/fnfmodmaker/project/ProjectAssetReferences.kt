@@ -1,0 +1,68 @@
+package com.fnfmodmaker.project
+
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+
+/**
+ * Schema locations of PickedImage and PickedAudio in the v1 project model.
+ * Never descend into unknown fields: an arbitrary object with path/displayName/uri
+ * is not evidence that it references an app-owned file.
+ */
+internal fun visitProjectAssets(root: JsonObject, action: (JsonObject) -> Unit) {
+    fun obj(node: JsonElement, label: String): JsonObject {
+        require(node.isJsonObject) { "$label debe ser un objeto." }
+        return node.asJsonObject
+    }
+    fun field(parent: JsonObject, key: String, required: Boolean = false) {
+        val value = parent.get(key)
+        if (value == null || value.isJsonNull) {
+            require(!required) { "Falta el recurso $key." }
+            return
+        }
+        val asset = obj(value, "Recurso $key")
+        val path = asset.get("path"); val name = asset.get("displayName"); val uri = asset.get("uri")
+        require(path?.isJsonPrimitive == true && path.asJsonPrimitive.isString && path.asString.isNotEmpty() &&
+            name?.isJsonPrimitive == true && name.asJsonPrimitive.isString &&
+            (uri == null || uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString))) {
+            "Referencia de recurso $key inválida."
+        }
+        action(asset)
+    }
+    fun objectField(parent: JsonObject, key: String, action: (JsonObject) -> Unit) {
+        val value = parent.get(key) ?: return
+        if (!value.isJsonNull) action(obj(value, key))
+    }
+    fun arrayField(parent: JsonObject, key: String, action: (JsonObject) -> Unit) {
+        val value = parent.get(key) ?: return
+        if (value.isJsonNull) return
+        require(value.isJsonArray) { "$key debe ser una lista." }
+        value.asJsonArray.forEach { action(obj(it, key)) }
+    }
+    fun character(character: JsonObject) {
+        listOf("sheet", "icon", "atlasSheet", "atlasXml").forEach { field(character, it) }
+        arrayField(character, "variations") { variation ->
+            field(variation, "sheet"); field(variation, "icon")
+        }
+        objectField(character, "animationFrames") { frames ->
+            frames.entrySet().forEach { (animation, entries) ->
+                require(entries.isJsonArray) { "Frames de $animation inválidos." }
+                entries.asJsonArray.forEach { frame -> field(obj(frame, "Frame"), "image", required = true) }
+            }
+        }
+    }
+    field(root, "icon")
+    arrayField(root, "songs") { song ->
+        listOf("instrumental", "vocalsPlayer", "vocalsOpponent").forEach { field(song, it) }
+    }
+    objectField(root, "character", ::character) // pre-library projects
+    arrayField(root, "characterLibrary") { entry ->
+        val draft = entry.get("draft")
+        require(draft != null && !draft.isJsonNull) { "Falta el personaje de la biblioteca." }
+        character(obj(draft, "Personaje"))
+    }
+    objectField(root, "stageDraft") { stage ->
+        field(stage, "backgroundImage")
+        arrayField(stage, "sprites") { field(it, "image") }
+    }
+    arrayField(root, "importedModResources") { field(it, "asset") }
+}

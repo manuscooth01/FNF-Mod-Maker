@@ -15,8 +15,17 @@ class ModImportPathTest {
         addProperty("path", path); addProperty("displayName", name); addProperty("uri", "content://old")
     }
     private fun document(vararg resources: Pair<String, JsonObject>) = JsonObject().apply {
-        resources.forEach { (key, value) -> add(key, value) }
+        val song = JsonObject(); val character = JsonObject()
+        resources.forEach { (key, value) ->
+            if (key == "audio" || key == "instrumental") song.add("instrumental", value)
+            else character.add(key, value)
+        }
+        add("songs", com.google.gson.JsonArray().apply { add(song) })
+        add("character", character)
     }
+    private fun assetAt(config: JsonObject, key: String): JsonObject =
+        if (key == "audio" || key == "instrumental") config.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("instrumental")
+        else config.getAsJsonObject("character").getAsJsonObject(key)
     private fun aliasedStore(): ProjectStore {
         val real = File(temp.root, "real").apply { mkdirs() }
         val alias = File(temp.root, "android-data-user-alias")
@@ -41,14 +50,14 @@ class ModImportPathTest {
         assertFalse(stage.exists())
         val loaded = store.load(id).config
         listOf("instrumental" to "audio", "atlasSheet" to "png", "atlasXml" to "xml").forEach { (key, expected) ->
-            val obj = loaded.getAsJsonObject(key)
+            val obj = assetAt(loaded, key)
             val file = File(obj.get("path").asString)
             assertTrue(file.isFile); assertEquals(expected, file.readText())
             assertTrue(file.canonicalFile.toPath().startsWith(store.assets(id).canonicalFile.toPath()))
             assertFalse(file.path.contains(stage.name)); assertEquals("", obj.get("uri").asString)
         }
         // Original source JSON is not mutated.
-        assertEquals(inst.absolutePath, data.getAsJsonObject("instrumental").get("path").asString)
+        assertEquals(inst.absolutePath, assetAt(data, "instrumental").get("path").asString)
     }
 
     @Test fun internalSymlinkUsesTheRealTargetAfterStageRename() {
@@ -57,7 +66,7 @@ class ModImportPathTest {
         val link = File(stage, "assets/imported/alias.ogg")
         Files.createSymbolicLink(link.toPath(), real.canonicalFile.toPath())
         val id = store.publishModImport(stage, document("audio" to asset(link.absolutePath, "alias.ogg"))) { }
-        val result = File(store.load(id).config.getAsJsonObject("audio").get("path").asString)
+        val result = File(assetAt(store.load(id).config, "audio").get("path").asString)
         assertEquals("real.ogg", result.name); assertEquals("original", result.readText())
     }
 
@@ -90,7 +99,7 @@ class ModImportPathTest {
         rejected(File(stage, "assets/../../outside.ogg").absolutePath, "traversal")
         rejected("imported/Inst.ogg", "absoluta")
         val id = store.publishModImport(stage, document("audio" to asset(legitimate.absolutePath, "Inst.ogg"))) { }
-        assertEquals(previous, store.activeId()); assertEquals("audio", File(store.load(id).config.getAsJsonObject("audio").get("path").asString).readText())
+        assertEquals(previous, store.activeId()); assertEquals("audio", File(assetAt(store.load(id).config, "audio").get("path").asString).readText())
     }
 
     @Test fun stageAndAssetsCannotBeSymlinksToOutside() {

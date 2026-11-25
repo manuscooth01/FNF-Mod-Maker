@@ -41,14 +41,16 @@ class ProjectStoreTest {
         val input = File(temp.root, "legacy.png").apply { writeText("original") }
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val id = store.newId()
-        val root = JsonParser.parseString("""{"character":{"sheet":{"uri":"content://x","displayName":"legacy.png","path":"${input.path}"},"frames":[{"image":{"uri":"content://x","displayName":"legacy.png","path":"${input.path}"}}]},"unknown":{"value":42},"icon":{"uri":"content://y","displayName":"lost.png","path":"${temp.root}/missing.png"}}""").asJsonObject
+        val root = JsonParser.parseString("""{"character":{"sheet":{"uri":"content://x","displayName":"legacy.png","path":"${input.path}"},"animationFrames":{"idle":[{"image":{"uri":"content://x","displayName":"legacy.png","path":"${input.path}"}}]}},"unknown":{"value":42},"icon":{"uri":"content://y","displayName":"lost.png","path":"${temp.root}/missing.png"}}""").asJsonObject
+        assertThrows(IllegalArgumentException::class.java) { store.copyAssets(root, id) }
+        root.remove("icon")
         val copy = store.copyAssets(root, id)
         val character = copy.config.getAsJsonObject("character")
         val newPath = character.getAsJsonObject("sheet").get("path").asString
         assertEquals("original", File(newPath).readText())
         assertNotEquals(input.path, newPath)
-        assertEquals(newPath, character.getAsJsonArray("frames")[0].asJsonObject.getAsJsonObject("image").get("path").asString)
-        assertEquals(listOf("lost.png"), copy.missing)
+        assertEquals(newPath, character.getAsJsonObject("animationFrames").getAsJsonArray("idle")[0].asJsonObject.getAsJsonObject("image").get("path").asString)
+        assertTrue(copy.missing.isEmpty())
         assertEquals(42, copy.config.getAsJsonObject("unknown").get("value").asInt)
         assertEquals(input.path, root.getAsJsonObject("character").getAsJsonObject("sheet").get("path").asString)
     }

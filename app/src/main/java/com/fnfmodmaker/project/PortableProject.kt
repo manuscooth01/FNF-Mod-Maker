@@ -38,29 +38,6 @@ internal class PortableProject(private val appRoot: File) {
     private fun hex(digest: ByteArray) = digest.joinToString("") { "%02x".format(it.toInt() and 255) }
     private fun sha(data: ByteArray) = hex(MessageDigest.getInstance("SHA-256").digest(data))
 
-    /** Finds the actual PickedImage/PickedAudio references in any nested project section. */
-    private fun refs(root: JsonElement, action: (JsonObject) -> Unit) {
-        fun visit(node: JsonElement, depth: Int, parentKey: String? = null) {
-            require(depth <= 64) { "El proyecto tiene una estructura demasiado profunda." }
-            if (node.isJsonArray) node.asJsonArray.forEach { visit(it, depth + 1, parentKey) }
-            else if (node.isJsonObject) {
-                val obj = node.asJsonObject
-                if (obj.has("path")) {
-                    require(obj.has("displayName") && obj.get("path").isJsonPrimitive && obj.get("path").asJsonPrimitive.isString && obj.get("displayName").isJsonPrimitive && obj.get("displayName").asJsonPrimitive.isString) { "Referencia de recurso inválida." }
-                    action(obj)
-                } else {
-                    val assetKeys = setOf("instrumental", "vocalsPlayer", "vocalsOpponent", "sheet", "atlasSheet", "atlasXml", "icon", "backgroundImage", "image")
-                    obj.entrySet().forEach { (key, value) ->
-                        if (key in assetKeys && !value.isJsonNull && !(parentKey == "chartAudioMix" && key == "instrumental")) {
-                            require(value.isJsonObject && value.asJsonObject.has("path") && value.asJsonObject.has("displayName")) { "Recurso $key inválido." }
-                        }
-                        visit(value, depth + 1, key)
-                    }
-                }
-            }
-        }
-        visit(root, 0)
-    }
     private fun json(bytes: ByteArray): JsonObject {
         require(bytes.size <= MAX_JSON) { "El JSON del proyecto es demasiado grande." }
         // Check nesting before Gson recursively parses untrusted JSON.
@@ -107,8 +84,10 @@ internal class PortableProject(private val appRoot: File) {
             }
         }
         if (base.exists()) { require(base.isDirectory && under(appRoot, base)); scan(base, "assets") }
-        refs(portable) { ref ->
-            val original = File(ref.get("path").asString).canonicalFile
+        visitProjectAssets(portable) { ref ->
+            val text = ref.get("path").asString
+            require(File(text).isAbsolute && '\u0000' !in text && '\\' !in text && text.split('/').none { it == "." || it == ".." }) { "Ruta de recurso inválida." }
+            val original = File(text).canonicalFile
             require(under(appRoot, original) && original.isFile) { "Falta el recurso ${ref.get("displayName").asString}; selecciónalo de nuevo." }
             val name = sourcePaths[original.path] ?: run {
                 val ext = original.extension.filter(Char::isLetterOrDigit).take(10)
@@ -181,7 +160,7 @@ internal class PortableProject(private val appRoot: File) {
                     total += size; require(total <= MAX_TOTAL) { "El contenido supera 1 GiB." }
                 }
                 require(entries.keys == described.keys + setOf("manifest.json", "project.json")) { "El paquete tiene recursos ausentes o inesperados." }
-                refs(config) { ref -> require(ref.get("path").asString in described) { "Falta el recurso ${ref.get("displayName").asString}." } }
+                visitProjectAssets(config) { ref -> require(ref.get("path").asString in described) { "Falta el recurso ${ref.get("displayName").asString}." } }
                 described.entries.forEachIndexed { index, (name, expected) ->
                     progress("Comprobando recurso ${index + 1}/${described.size}…")
                     val file = File(stage, name)
@@ -212,7 +191,7 @@ internal class PortableProject(private val appRoot: File) {
             require(actual == expected) { "Un recurso temporal está dañado." }
         }
         val output = prepared.config.deepCopy()
-        refs(output) { ref ->
+        visitProjectAssets(output) { ref ->
             val path = ref.get("path").asString
             require(path in prepared.checksums && validName(path)) { "Referencia inválida." }
             // Store the canonical destination so Android's data-directory aliases do not

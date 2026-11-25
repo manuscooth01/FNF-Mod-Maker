@@ -142,10 +142,10 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
             // external aliases. Reject an external path even if a symlink leads inside.
             require(isDescendant(absolute, absoluteAssets) || isDescendant(absolute, stagedAssets)) {
                 "Recurso '$name': ruta externa a los recursos temporales."
-        }
+            }
             val canonical = try { path.canonicalFile } catch (e: java.io.IOException) {
                 throw IllegalArgumentException("Recurso '$name': no se pudo resolver la ruta segura.", e)
-        }
+            }
             require(isDescendant(canonical, stagedAssets)) { "Recurso '$name': ruta insegura (un enlace sale de los recursos temporales)." }
             require(canonical.isFile) { "Recurso '$name': archivo ausente o no es un archivo regular." }
             // Relocate the resolved target, not an inner symlink that might break on rename.
@@ -189,7 +189,7 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
                 val destination = copied.getOrPut(source.path) {
                     if (source.parentFile == targetDir) source.path else {
                         val extension = source.extension.filter { it.isLetterOrDigit() }.take(10)
-                        val out = File.createTempFile("asset_", if (extension.isEmpty()) ".dat" else ".$extension, targetDir)
+                        val out = File.createTempFile("asset_", if (extension.isEmpty()) ".dat" else ".$extension", targetDir)
                         created.add(out)
                         source.inputStream().use { input -> out.outputStream().use { input.copyTo(it) } }
                         out.absolutePath

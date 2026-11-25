@@ -112,15 +112,18 @@ internal fun visitIndependentMedia(root: JsonObject, action: (JsonObject) -> Uni
                     listOf("instrumental", "vocalsPlayer", "vocalsOpponent").forEach { field(metadata.asJsonObject, it) }
                 }
             }
-            // originals: either an "asset" media reference or opaque "contentJson".
+            // originals: either an "asset" media reference (nested under "asset") or opaque "contentJson".
             variant.get("originals")?.let { originals ->
                 if (originals.isJsonArray) {
                     originals.asJsonArray.forEach { ref ->
                         if (!ref.isJsonObject) return@forEach
                         val obj = ref.asJsonObject
-                        val kind = obj.get("kind")?.asString
-                        if (kind in setOf("image", "audio")) {
-                            field(obj, "asset", required = true)
+                        val asset = obj.get("asset")
+                        if (asset != null && asset.isJsonObject) {
+                            val kind = asset.asJsonObject.get("kind")?.asString
+                            if (kind in setOf("image", "audio")) {
+                                field(asset.asJsonObject, "asset", required = true)
+                            }
                         } else {
                             obj.get("contentJson")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) {
                                 "Original sin medio ni documento opaco en $engineKey/$songId."

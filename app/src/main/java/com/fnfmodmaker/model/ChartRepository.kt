@@ -68,6 +68,29 @@ internal interface ChartRepository {
     /** History for one (song, engine, difficulty). */
     fun history(key: IndependentChartKey): ChartPersistentHistory?
 
-    /** Save and replace the history stack for one (song, engine, difficulty). */
+    /** V-Slice events for a variant (stored in variant metadata). */
+    fun getVSliceEvents(songId: String, engine: ChartEngine): String?
+
+    /** Save V-Slice events for a variant with history. */
+    fun saveVSliceEvents(songId: String, engine: ChartEngine, events: String): ModConfig
+
+    /** Undo last V-Slice events change. */
+    fun undoVSliceEvents(songId: String, engine: ChartEngine): ModConfig
+
+    /** Redo last undone V-Slice events change. */
+    fun redoVSliceEvents(songId: String, engine: ChartEngine): ModConfig
+
+    /** V-Slice tempo for a variant (stored in variant metadata). */
+    fun getVSliceTempo(songId: String, engine: ChartEngine): String?
+
+    /** Save V-Slice tempo for a variant with history. */
+    fun saveVSliceTempo(songId: String, engine: ChartEngine, tempo: String): ModConfig
+
+    /** Undo last V-Slice tempo change. */
+    fun undoVSliceTempo(songId: String, engine: ChartEngine): ModConfig
+
+    /** Redo last undone V-Slice tempo change. */
+    fun redoVSliceTempo(songId: String, engine: ChartEngine): ModConfig
+
     fun saveHistory(key: IndependentChartKey, history: ChartPersistentHistory): ModConfig
 }

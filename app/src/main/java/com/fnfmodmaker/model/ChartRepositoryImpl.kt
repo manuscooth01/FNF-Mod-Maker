@@ -146,5 +146,120 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val revisedVariant = variant.copy(histories = variant.histories + (key.difficulty to history))
         val updated = collection.withVariant(key.engine, key.songId, revisedVariant)
         return _config.copy(independentCharts = updated)
+    override fun getVSliceEvents(songId: String, engine: ChartEngine): String? {
+        return _config.independentCharts?.songs[songId]?.variant(engine)?.metadata?.vSliceEventsJson
+    }
+
+    override fun saveVSliceEvents(songId: String, engine: ChartEngine, events: String): ModConfig {
+        val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
+        val song = collection.songs[songId] ?: error("Canción no encontrada.")
+        val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
+        val before = variant.metadata.vSliceEventsJson ?: ""
+        val edited = com.fnfmodmaker.mod.validateVSliceEvents(events)
+        if (before == edited) return _config
+        val metadata = variant.metadata.copy(
+            vSliceEventsJson = edited,
+            vSliceEventsUndo = (variant.metadata.vSliceEventsUndo + before).takeLast(10),
+            vSliceEventsRedo = emptyList()
+        )
+        val revised = variant.copy(metadata = metadata)
+        val updated = collection.withVariant(engine, songId, revised)
+        return _config.copy(independentCharts = updated)
+    }
+
+    override fun undoVSliceEvents(songId: String, engine: ChartEngine): ModConfig {
+        val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
+        val song = collection.songs[songId] ?: error("Canción no encontrada.")
+        val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
+        val previous = variant.metadata.vSliceEventsUndo.lastOrNull() ?: error("No hay cambios de eventos para deshacer.")
+        com.fnfmodmaker.mod.validateVSliceEvents(previous)
+        val metadata = variant.metadata.copy(
+            vSliceEventsJson = previous,
+            vSliceEventsUndo = variant.metadata.vSliceEventsUndo.dropLast(1),
+            vSliceEventsRedo = (variant.metadata.vSliceEventsRedo + variant.metadata.vSliceEventsJson).takeLast(10)
+        )
+        val revised = variant.copy(metadata = metadata)
+        val updated = collection.withVariant(engine, songId, revised)
+        return _config.copy(independentCharts = updated)
+    }
+
+    override fun redoVSliceEvents(songId: String, engine: ChartEngine): ModConfig {
+        val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
+        val song = collection.songs[songId] ?: error("Canción no encontrada.")
+        val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
+        val next = variant.metadata.vSliceEventsRedo.lastOrNull() ?: error("No hay cambios de eventos para rehacer.")
+        com.fnfmodmaker.mod.validateVSliceEvents(next)
+        val metadata = variant.metadata.copy(
+            vSliceEventsJson = next,
+            vSliceEventsRedo = variant.metadata.vSliceEventsRedo.dropLast(1),
+            vSliceEventsUndo = (variant.metadata.vSliceEventsUndo + variant.metadata.vSliceEventsJson).takeLast(10)
+        )
+        val revised = variant.copy(metadata = metadata)
+        val updated = collection.withVariant(engine, songId, revised)
+        return _config.copy(independentCharts = updated)
+    }
+
+    override fun getVSliceTempo(songId: String, engine: ChartEngine): String? {
+        return _config.independentCharts?.songs[songId]?.variant(engine)?.metadata?.vSliceTempoJson
+    }
+
+    override fun saveVSliceTempo(songId: String, engine: ChartEngine, tempo: String): ModConfig {
+        val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
+        val song = collection.songs[songId] ?: error("Canción no encontrada.")
+        val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
+        val before = variant.metadata.vSliceTempoJson ?: ""
+        val edited = com.fnfmodmaker.mod.validateVSliceTempo(tempo)
+        if (before == edited) return _config
+        val bpm = com.google.gson.JsonParser.parseString(edited).asJsonArray[0].asJsonObject.get("bpm").asString
+        val metadata = variant.metadata.copy(
+            bpm = bpm.toString(),
+            vSliceIndependentInitialBpm = true,
+            vSliceTempoJson = edited,
+            vSliceTempoUndo = (variant.metadata.vSliceTempoUndo + (variant.metadata.vSliceTempoJson ?: "")).takeLast(10),
+            vSliceTempoRedo = emptyList()
+        )
+        val revised = variant.copy(metadata = metadata)
+        val updated = collection.withVariant(engine, songId, revised)
+        return _config.copy(independentCharts = updated)
+    }
+
+    override fun undoVSliceTempo(songId: String, engine: ChartEngine): ModConfig {
+        val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
+        val song = collection.songs[songId] ?: error("Canción no encontrada.")
+        val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
+        val previous = (variant.metadata.vSliceTempoUndo.lastOrNull() ?: error("No hay cambio de tempo que restaurar."))
+        val checked = com.fnfmodmaker.mod.validateVSliceTempo(previous)
+        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
+        val current = variant.metadata.vSliceTempoJson ?: ""
+        val metadata = variant.metadata.copy(
+            bpm = if (variant.metadata.vSliceIndependentInitialBpm) variant.metadata.bpm else bpm.toString(),
+            vSliceIndependentInitialBpm = variant.metadata.vSliceIndependentInitialBpm,
+            vSliceTempoJson = checked,
+            vSliceTempoUndo = variant.metadata.vSliceTempoUndo.dropLast(1),
+            vSliceTempoRedo = (variant.metadata.vSliceTempoRedo + current).takeLast(10)
+        )
+        val revised = variant.copy(metadata = metadata)
+        val updated = collection.withVariant(engine, songId, revised)
+        return _config.copy(independentCharts = updated)
+    }
+
+    override fun redoVSliceTempo(songId: String, engine: ChartEngine): ModConfig {
+        val collection = _config.independentCharts ?: error("Falta la colección de charts independientes.")
+        val song = collection.songs[songId] ?: error("Canción no encontrada.")
+        val variant = song.variant(engine) ?: error("Variante de motor no encontrada.")
+        val next = variant.metadata.vSliceTempoRedo.lastOrNull() ?: error("No hay cambio de tempo que restaurar.")
+        val checked = com.fnfmodmaker.mod.validateVSliceTempo(next)
+        val bpm = com.google.gson.JsonParser.parseString(checked).asJsonArray[0].asJsonObject.get("bpm").asString
+        val current = variant.metadata.vSliceTempoJson ?: ""
+        val metadata = variant.metadata.copy(
+            bpm = if (variant.metadata.vSliceIndependentInitialBpm) variant.metadata.bpm else bpm.toString(),
+            vSliceIndependentInitialBpm = variant.metadata.vSliceIndependentInitialBpm,
+            vSliceTempoJson = checked,
+            vSliceTempoRedo = variant.metadata.vSliceTempoRedo.dropLast(1),
+            vSliceTempoUndo = (variant.metadata.vSliceTempoUndo + current).takeLast(10)
+        )
+        val revised = variant.copy(metadata = metadata)
+        val updated = collection.withVariant(engine, songId, revised)
+        return _config.copy(independentCharts = updated)
     }
 }

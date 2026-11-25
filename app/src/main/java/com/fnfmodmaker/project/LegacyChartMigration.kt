@@ -50,8 +50,8 @@ internal object LegacyChartMigration {
             val songId = songConfig.songFolder
             require(songId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "ID de canción inválido: $songId." }
 
-            val psychVariant = buildPsychVariant(songConfig, songObj, charts, histories, gson, both)
-            val vsliceVariant = buildVSliceVariant(songConfig, songObj, charts, histories, gson, both)
+            val psychVariant = buildPsychVariant(songConfig, songObj, charts, histories, gson, targetEngine, both)
+            val vsliceVariant = buildVSliceVariant(songConfig, songObj, charts, histories, gson, targetEngine, both)
 
             if (psychVariant == null && vsliceVariant == null) {
                 legacyPreserved = true
@@ -60,12 +60,32 @@ internal object LegacyChartMigration {
                 vsliceVariant?.let { engineAttributedCount++ }
             }
 
-            collectionBuilder[songId] = IndependentSong(songId, psychVariant, vsliceVariant)
+            if (collectionBuilder.containsKey(songId)) {
+                // Duplicate song ID - attempt to merge variants
+                val existing = collectionBuilder[songId]!!
+                val mergedPsych = if (existing.psych != null && psychVariant != null) {
+                    // Check if variants are compatible (same charts/histories)
+                    if (existing.psych?.charts == psychVariant?.charts && existing.psych?.histories == psychVariant?.histories) {
+                        existing.psych
+                    } else {
+                        // Incompatible - preserve both in legacy
+                        legacyPreserved = true
+                        existing.psych
+                    }
+                } else existing.psych ?: psychVariant
+                val mergedVslice = if (existing.vSlice != null && vsliceVariant != null) {
+                    if (existing.vSlice?.charts == vsliceVariant?.charts && existing.vSlice?.histories == vsliceVariant?.histories) {
+                        existing.vSlice
+                    } else {
+                        legacyPreserved = true
+                        existing.vSlice
+                    }
+                } else existing.vSlice ?: vsliceVariant
+                collectionBuilder[songId] = IndependentSong(songId, mergedPsych, mergedVslice)
+            } else {
+                collectionBuilder[songId] = IndependentSong(songId, psychVariant, vsliceVariant)
+            }
         }
-
-        val collection = IndependentChartCollection(songs = collectionBuilder.build(),
-            legacyDocumentJson = config.toString())
-        return MigrationResult(collection, legacyPreserved, engineAttributedCount)
     }
 
     /**
@@ -97,38 +117,46 @@ internal object LegacyChartMigration {
      * Decide whether to attribute legacy charts to Psych.
      *
      * Evidence rules:
-     *  - Project targets Psych only (not BOTH): the shared charts may be attributed to Psych.
+     *  - Project targets Psych only: the shared charts may be attributed to Psych.
+     *  - Project targets V-Slice only: charts CANNOT be attributed to Psych.
      *  - Project targets BOTH: require explicit Psych evidence (importedPsychFolder or
      *    Psych-specific layout/extras). Presence in the shared charts map alone is NOT evidence.
      *  - Never duplicate the same chart into both engines.
      */
-    private fun psychEvidence(song: SongConfig, songObj: JsonObject, both: Boolean): Boolean {
-        if (!both) return true // Single-engine Psych project: charts belong to Psych.
-        return song.importedPsychFolder.isNotEmpty() ||
-            songObj.get("psychLayout")?.isJsonArray == true ||
-            songObj.get("psychSongExtras")?.isJsonPrimitive == true
+    private fun psychEvidence(song: SongConfig, songObj: JsonObject, targetEngine: TargetEngine, both: Boolean): Boolean {
+        when (targetEngine) {
+            TargetEngine.PSYCH -> return true // Single-engine Psych project: charts belong to Psych.
+            TargetEngine.VSLICE -> return false // V-Slice only project: charts cannot be Psych.
+            TargetEngine.BOTH -> return song.importedPsychFolder.isNotEmpty() ||
+                songObj.get("psychLayout")?.isJsonArray == true ||
+                songObj.get("psychSongExtras")?.isJsonPrimitive == true
+        }
     }
 
     /**
      * Decide whether to attribute legacy charts to V-Slice.
      *
      * Evidence rules:
-     *  - Project targets V-Slice only (not BOTH): the shared charts may be attributed to V-Slice.
+     *  - Project targets V-Slice only: the shared charts may be attributed to V-Slice.
+     *  - Project targets Psych only: charts CANNOT be attributed to V-Slice.
      *  - Project targets BOTH: require explicit V-Slice evidence (vSliceOrigin,
      *    vSliceEventsJson, or vSliceTempoJson). Presence in the shared charts map alone
      *    is NOT evidence.
      *  - Never duplicate the same chart into both engines.
      */
-    private fun vsliceEvidence(song: SongConfig, songObj: JsonObject, both: Boolean): Boolean {
-        if (!both) return true // Single-engine V-Slice project: charts belong to V-Slice.
-        return song.vSliceOrigin != null ||
-            songObj.get("vSliceEventsJson")?.isJsonPrimitive == true ||
-            songObj.get("vSliceTempoJson")?.isJsonPrimitive == true
+    private fun vsliceEvidence(song: SongConfig, songObj: JsonObject, targetEngine: TargetEngine, both: Boolean): Boolean {
+        when (targetEngine) {
+            TargetEngine.VSLICE -> return true // Single-engine V-Slice project: charts belong to V-Slice.
+            TargetEngine.PSYCH -> return false // Psych only project: charts cannot be V-Slice.
+            TargetEngine.BOTH -> return song.vSliceOrigin != null ||
+                songObj.get("vSliceEventsJson")?.isJsonPrimitive == true ||
+                songObj.get("vSliceTempoJson")?.isJsonPrimitive == true
+        }
     }
 
     private fun buildPsychVariant(song: SongConfig, songObj: JsonObject, charts: JsonObject?,
-        histories: JsonObject?, gson: Gson, both: Boolean): IndependentVariant? {
-        if (!psychEvidence(song, songObj, both)) return null
+        histories: JsonObject?, gson: Gson, targetEngine: TargetEngine, both: Boolean): IndependentVariant? {
+        if (!psychEvidence(song, songObj, targetEngine, both)) return null
 
         val songCharts = charts?.get(song.songFolder)?.asJsonObject ?: JsonObject()
         val songHistories = histories?.get(song.songFolder)?.asJsonObject ?: JsonObject()
@@ -168,8 +196,8 @@ internal object LegacyChartMigration {
     }
 
     private fun buildVSliceVariant(song: SongConfig, songObj: JsonObject, charts: JsonObject?,
-        histories: JsonObject?, gson: Gson, both: Boolean): IndependentVariant? {
-        if (!vsliceEvidence(song, songObj, both)) return null
+        histories: JsonObject?, gson: Gson, targetEngine: TargetEngine, both: Boolean): IndependentVariant? {
+        if (!vsliceEvidence(song, songObj, targetEngine, both)) return null
 
         val songCharts = charts?.get(song.songFolder)?.asJsonObject ?: JsonObject()
         val songHistories = histories?.get(song.songFolder)?.asJsonObject ?: JsonObject()

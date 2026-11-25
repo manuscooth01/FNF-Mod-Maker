@@ -281,6 +281,13 @@ class ModZipConfirmationTest {
             val result = com.google.gson.JsonParser.parseString(z.getInputStream(z.getEntry("project.json")).reader().readText()).asJsonObject
             assertEquals(custom, result.getAsJsonObject("unknownDocument"))
         }
+        val known = projects.list().map { it.id }.toSet()
+        vm.preparePortableImport(Uri.fromFile(output)); await { !vm.busy }
+        assertNotNull(vm.portableMessage, vm.portableImportSummary)
+        vm.confirmPortableImport(); await { !vm.busy }
+        val imported = projects.list().single { it.id !in known }.id
+        assertEquals(custom, projects.load(imported).config.getAsJsonObject("unknownDocument"))
+        assertEquals(custom, projects.load(imported).config.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("unknownDocument"))
     }
 
     @Test fun futureChartSchemaIsNotOpenedOrOverwrittenByAutosave() {

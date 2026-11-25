@@ -20,6 +20,18 @@ class ProjectAssetReferencesTest {
         val fake = File(temp.root, "not-an-asset.ogg").apply { writeText("not copied") }
         val custom = JsonParser.parseString("""{"a":{"path":"../relative"},"b":{"path":"x","displayName":"a"},"c":${ref(fake.path)},"nested":[{"image":${ref(fake.path)},"instrumental":${ref(fake.path)}}],"psych":{"sectionNotes":[[1,2,3]],"path":"charts/special.json"},"vs":{"events":[{"t":100.125,"v":{"path":"../not-resource"}}]}}""").asJsonObject
         val config = JsonParser.parseString("""{"modTitle":"Prueba","songs":[{"songName":"Test","instrumental":${ref(audio.path)},"custom":${custom}}],"charts":{"test":{"normal":{"unknown":${custom}}}},"character":{"sheet":${ref(image.path)},"variations":[{"sheet":${ref(image.path)}}],"animationFrames":{"idle":[{"image":${ref(image.path)},"width":1,"height":1}]}},"stageDraft":{"sprites":[{"image":${ref(image.path)}}]},"importedModResources":[{"asset":${ref(image.path)}}],"custom":${custom}}""").asJsonObject
+        val events = """[{"t":100.125,"e":"FocusCamera","v":{"path":"relative","displayName":"data","uri":"not-a-resource"},"custom":[{"path":"x"}]}]"""
+        val psychExtra = """{"custom":{"path":"chart/path","displayName":"not a file","uri":"unknown"}}"""
+        config.getAsJsonArray("songs")[0].asJsonObject.addProperty("vSliceEventsJson", events)
+        val chart = config.getAsJsonObject("charts").getAsJsonObject("test").getAsJsonObject("normal")
+        chart.addProperty("psychSongExtras", psychExtra)
+        chart.add("psychLayout", com.google.gson.Gson().toJsonTree(listOf(com.fnfmodmaker.model.PsychSectionData(sourceJson = """{"future":{"path":"section/path"}}"""))))
+        val validator = ProjectConfigValidator(com.google.gson.GsonBuilder().registerTypeAdapter(android.net.Uri::class.java,
+            object : com.google.gson.TypeAdapter<android.net.Uri>() {
+                override fun write(out: com.google.gson.stream.JsonWriter, value: android.net.Uri?) { out.nullValue() }
+                override fun read(input: com.google.gson.stream.JsonReader): android.net.Uri? { input.skipValue(); return null }
+            }.nullSafe()).create())
+        validator.validate(config)
         store.save(id, config); store.setActive(id)
         val original = config.deepCopy()
         val portable = PortableProject(temp.root); val archive = File(temp.root, "test.fnfproject")
@@ -34,8 +46,10 @@ class ProjectAssetReferencesTest {
             assertEquals(custom.toString(), packaged.getAsJsonObject("charts").getAsJsonObject("test").getAsJsonObject("normal").getAsJsonObject("unknown").toString())
         }
         val prepared = portable.prepare(archive, store.newImportStage())
-        val imported = store.publishImport(prepared, portable) { }
+        val imported = store.publishImport(prepared, portable, validator::validate)
         val restored = store.load(imported).config
+        assertEquals(events, restored.getAsJsonArray("songs")[0].asJsonObject.get("vSliceEventsJson").asString)
+        assertEquals(psychExtra, restored.getAsJsonObject("charts").getAsJsonObject("test").getAsJsonObject("normal").get("psychSongExtras").asString)
         assertEquals(custom.toString(), restored.getAsJsonObject("custom").toString())
         assertEquals(custom.toString(), restored.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("custom").toString())
         val restoredAudio = File(restored.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("instrumental").get("path").asString)

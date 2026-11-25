@@ -87,23 +87,23 @@ private fun parseVariant(node: JsonObject, gson: Gson): IndependentVariant {
     } ?: emptySet()
     val charts = node.get("charts")?.let {
         require(it.isJsonObject) { "charts debe ser un objeto." }
-        it.asJsonObject.mapValues { (_, chartNode) ->
-            require(chartNode.isJsonObject) { "Chart inválido." }
-            gson.fromJson(chartNode, ChartDraft::class.java)
-                ?: error("Chart inválido.")
+        it.asJsonObject.entrySet().associate { entry ->
+            require(entry.value.isJsonObject) { "Chart inválido." }
+            entry.key to (gson.fromJson(entry.value, ChartDraft::class.java)
+                ?: error("Chart inválido."))
         }
     } ?: emptyMap()
     val histories = node.get("histories")?.let {
         require(it.isJsonObject) { "histories debe ser un objeto." }
-        it.asJsonObject.mapValues { (_, histNode) ->
-            require(histNode.isJsonObject) { "Historial inválido." }
-            gson.fromJson(histNode, ChartPersistentHistory::class.java)
-                ?: error("Historial inválido.")
+        it.asJsonObject.entrySet().associate { entry ->
+            require(entry.value.isJsonObject) { "Historial inválido." }
+            entry.key to (gson.fromJson(entry.value, ChartPersistentHistory::class.java)
+                ?: error("Historial inválido."))
         }
     } ?: emptyMap()
     val uneditable = node.get("uneditableDifficulties")?.let {
         require(it.isJsonObject) { "uneditableDifficulties debe ser un objeto." }
-        it.asJsonObject.mapValues { (_, v) -> v.asString }.toMap()
+        it.asJsonObject.entrySet().associate { entry -> entry.key to entry.value.asString }
     } ?: emptyMap()
     val originals = node.get("originals")?.let {
         require(it.isJsonArray) { "originals debe ser una lista." }

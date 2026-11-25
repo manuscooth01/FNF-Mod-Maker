@@ -27,14 +27,14 @@ class IndependentChartsV2Test {
 
     private fun psychVariant(chart: ChartDraft): IndependentVariant =
         IndependentVariant(
-            metadata = SongConfig(songName = "Test", bpm = "120", difficulties = setOf(chart.difficulty), songFolder = chart.songFolder),
+            metadata = SongConfig(songName = chart.songFolder, bpm = "120", difficulties = setOf(chart.difficulty)),
             difficulties = setOf(chart.difficulty),
             charts = mapOf(chart.difficulty to chart)
         )
 
     private fun vsliceVariant(chart: ChartDraft): IndependentVariant =
         IndependentVariant(
-            metadata = SongConfig(songName = "Test", bpm = "170", difficulties = setOf(chart.difficulty), songFolder = chart.songFolder),
+            metadata = SongConfig(songName = chart.songFolder, bpm = "170", difficulties = setOf(chart.difficulty)),
             difficulties = setOf(chart.difficulty),
             charts = mapOf(chart.difficulty to chart)
         )

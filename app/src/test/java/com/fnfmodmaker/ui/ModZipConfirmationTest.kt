@@ -161,6 +161,8 @@ class ModZipConfirmationTest {
             add("independentCharts", com.google.gson.JsonParser.parseString("""{"psych":{"normal":[1]}}"""))
         }
         projects.save(futureId, future); projects.setActive(futureId)
+        val activeFile = File(app.filesDir, "projects/active.txt")
+        val activeBefore = activeFile.readBytes()
         val futureDir = File(app.filesDir, "projects/$futureId")
         fun files() = futureDir.walkTopDown().filter { it.isFile }.associate { it.relativeTo(futureDir).path to it.readBytes().toList() }
         val before = files()
@@ -182,6 +184,7 @@ class ModZipConfirmationTest {
         assertNull(vm.portableExportName)
         assertTrue(vm.portableMessage.orEmpty().contains("No se pudo exportar"))
         assertEquals(before, files()); assertEquals(futureId, projects.activeId())
+        assertArrayEquals(activeBefore, activeFile.readBytes())
         vm.preparePortableExport(compatible); await { !vm.busy }
         assertNotNull(vm.portableMessage, vm.portableExportName)
         val output = File(app.cacheDir, "recovery-copy.fnfproject")
@@ -192,6 +195,7 @@ class ModZipConfirmationTest {
         assertEquals(compatibleConfig.get("charts"), prepared.config.get("charts"))
         projects.discardImportStage(prepared.directory)
         assertEquals(futureId, projects.activeId())
+        assertArrayEquals(activeBefore, activeFile.readBytes())
 
         val known = projects.list().map { it.id }.toSet()
         vm.preparePortableImport(Uri.fromFile(input)); await { !vm.busy }
@@ -199,6 +203,7 @@ class ModZipConfirmationTest {
         vm.confirmPortableImport(); await { !vm.busy }
         assertEquals(1, projects.list().count { it.id !in known })
         assertNull(vm.currentProjectId); assertEquals(futureId, projects.activeId())
+        assertArrayEquals(activeBefore, activeFile.readBytes())
         assertEquals(before, files())
         vm.switchProject(compatible); await { !vm.busy }
         assertEquals(compatible, vm.currentProjectId); assertEquals(compatible, projects.activeId())

@@ -167,12 +167,12 @@ class IndependentChartsV2Test {
             IndependentVariant(metadata = psychMetadata, difficulties = setOf("normal"), charts = mapOf("normal" to psychChart)),
             IndependentVariant(metadata = vsliceMetadata, difficulties = setOf("normal"), charts = mapOf("normal" to vsliceChart))
         )))
-        val p = col.chart(IndependentChartKey("song", ChartEngine.PSYCH, "normal"))!!
-        val v = col.chart(IndependentChartKey("song", ChartEngine.VSLICE, "normal"))!!
-        assertEquals("120", p.metadata.bpm)
-        assertEquals("170", v.metadata.bpm)
-        assertEquals("""[{"t":12.25,"e":"Camera"}]""", v.metadata.vSliceEventsJson)
-        assertNull(p.metadata.vSliceEventsJson)
+        val pVariant = col.songs["song"]?.variant(ChartEngine.PSYCH)!!
+        val vVariant = col.songs["song"]?.variant(ChartEngine.VSLICE)!!
+        assertEquals("120", pVariant.metadata.bpm)
+        assertEquals("170", vVariant.metadata.bpm)
+        assertEquals("""[{"t":12.25,"e":"Camera"}]""", vVariant.metadata.vSliceEventsJson)
+        assertNull(pVariant.metadata.vSliceEventsJson)
     }
 
     @Test fun repositoryKeepsNullVsliceEventSnapshotsAsStrings() {

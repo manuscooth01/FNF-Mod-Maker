@@ -33,6 +33,7 @@ import com.fnfmodmaker.model.PickedImage
 import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.TargetEngine
 import com.fnfmodmaker.model.ChartEngine
+import com.fnfmodmaker.model.ChartRepositoryImpl
 import com.fnfmodmaker.model.WizardIssue
 import com.fnfmodmaker.model.validateWizard
 import com.fnfmodmaker.model.characterInputProblems

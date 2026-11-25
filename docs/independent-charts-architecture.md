@@ -1,6 +1,6 @@
 # Arquitectura propuesta: charts independientes por motor
 
-**Estado: diseño; aún no está implementado.** La importación de ZIP BOTH sigue deshabilitada. Esta propuesta no altera el formato existente hasta implementar y probar juntas las rutas que lo consumen.
+**Estado: estructura experimental aislada; no integrada en proyectos.** La importación de ZIP BOTH sigue deshabilitada. El formato existente no se altera hasta implementar y probar juntas las rutas que lo consumen.
 
 ## Inventario y fronteras
 
@@ -42,4 +42,8 @@ La versión 1 explícita se conserva en el modelo y el autoguardado. En el lecto
 
 Inicio muestra los proyectos con versión de charts incompatible como tales, sin acciones de apertura ni exportación. El rechazo también se verifica en el ViewModel para llamadas directas. En recuperación se puede abrir un proyecto compatible, crear uno nuevo o preparar un `.fnfproject` de un proyecto compatible tras validarlo y verificar sus recursos. La importación portable crea una copia independiente y no cambia el proyecto activo; el usuario puede abrirla después. Una importación o exportación fallida no debe modificar `active.txt` ni el proyecto incompatible.
 
-El modelo independiente, la migración y la persistencia del esquema nuevo aún no están implementados. Las referencias del esquema actual ya se identifican por ubicaciones tipadas; véase `project-resource-references.md`. Antes de aceptar el esquema independiente es necesario ampliar y validar ese registro para sus nuevas ubicaciones y documentos legacy, sin presumir que cualquier objeto con `path` sea un recurso. La validación y el autoguardado antiguos deben seguir rechazando el esquema nuevo hasta que existan pruebas de preservación completa.
+Existe una estructura experimental interna `IndependentChartCollection`, pero no hay migración ni persistencia del esquema nuevo en proyectos reales. Las referencias del esquema actual ya se identifican por ubicaciones tipadas; véase `project-resource-references.md`. Antes de aceptar el esquema independiente es necesario ampliar y validar ese registro para sus nuevas ubicaciones y documentos legacy, sin presumir que cualquier objeto con `path` sea un recurso. La validación y el autoguardado antiguos deben seguir rechazando el esquema nuevo hasta que existan pruebas de preservación completa.
+
+## Prototipo de estructura, no habilitado
+
+`IndependentCharts.kt` introduce una clave explícita `(songId, ChartEngine, difficulty)` donde `ChartEngine` solo admite Psych o V-Slice. Cada variante tiene su propio `SongConfig`, conjunto de dificultades, charts, historiales, originales y datos opacos; el documento legacy se conserva como texto sin asignación automática. Una prueba comprueba edición aislada, historiales y serialización Gson básica. Esto no es una migración ni una función disponible: no valida todos los datos externos, no reubica recursos del esquema futuro y no se integra con `ModConfig`, autoguardado, portable, exportadores o UI. Las protecciones actuales siguen rechazando proyectos que intenten publicar `independentCharts`.

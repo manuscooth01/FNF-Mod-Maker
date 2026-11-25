@@ -8,7 +8,11 @@ data class WizardIssue(val step: Int, val message: String, val songIndex: Int? =
 
 fun characterInputProblems(draft: CharacterDraft, fileExists: (String) -> Boolean = { File(it).isFile }): List<String> = buildList {
     addAll(draft.problems)
-    val images = when { … }
+    val images = when {
+        draft.useAtlas && draft.atlasXml != null -> listOf(draft.atlasXml!!)
+        draft.sheet != null -> listOf(draft.sheet!!)
+        else -> emptyList<PickedImage>()
+    }
     if (images.any { !fileExists(it.path) }) add("Vuelve a elegir las imágenes que ya no están disponibles.")
     if (draft.useAtlas && draft.atlasXml != null && !fileExists(draft.atlasXml.path)) add("Vuelve a elegir el XML del atlas.")
     if (draft.icon != null && !fileExists(draft.icon.path)) add("Vuelve a elegir el icono de vida.")
@@ -159,7 +163,8 @@ private fun validateV2(config: ModConfig, fileExists: (String) -> Boolean): List
             }
             // Originals preserved.
             variant.originals.forEach { original ->
-                if (!original.asset.path.isNotEmpty()) {
+                val asset = original.asset
+                if (asset != null && !asset.path.isNotEmpty()) {
                     add(WizardIssue(1, "Canción $songId ($engine): original sin ruta."))
                 }
             }
@@ -167,4 +172,7 @@ private fun validateV2(config: ModConfig, fileExists: (String) -> Boolean): List
     }
     if (config.modTitle.isBlank()) add(WizardIssue(0, "Escribe el nombre del mod."))
     if (config.songs.isEmpty()) add(WizardIssue(1, "Añade al menos una canción."))
-}
+/** Scripts are confined to mods/<mod>/scripts/<name>.lua on export. */
+fun isValidPsychScript(name: String, code: String): Boolean =
+    name.matches(Regex("[a-z0-9_-]{1,48}")) && code.isNotBlank() && code.length <= 16000 && !code.contains('\u0000')
+

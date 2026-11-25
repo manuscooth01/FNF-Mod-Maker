@@ -5,10 +5,10 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 
 /** Individual chart identity: BOTH is a project destination, never a chart engine. */
-internal enum class ChartEngine { PSYCH, VSLICE }
+enum class ChartEngine { PSYCH, VSLICE }
 
 /** Stable identity of one editable chart: song + engine + difficulty. */
-internal data class IndependentChartKey(
+data class IndependentChartKey(
     val songId: String,
     val engine: ChartEngine,
     val difficulty: String
@@ -25,7 +25,7 @@ internal data class IndependentChartKey(
  * Paths are archive paths within the project, never local file paths.
  * The `kind` field distinguishes image vs audio without guessing from property names.
  */
-internal data class ProjectMediaReference(
+data class ProjectMediaReference(
     val uri: String,
     val displayName: String,
     val path: String,
@@ -46,7 +46,7 @@ internal data class ProjectMediaReference(
  * (an opaque JSON document such as V-Slice metadata or chart JSON). Never both.
  * Documents are never classified as media and never interpreted as paths.
  */
-internal data class IndependentOriginal(
+data class IndependentOriginal(
     val originalPath: String,
     val asset: ProjectMediaReference? = null,
     val contentJson: String = "",
@@ -67,7 +67,7 @@ internal data class IndependentOriginal(
  * to this variant; Psych sections and events belong to its individual ChartDrafts.
  * Raw source JSON is opaque and must not be interpreted as local resource paths.
  */
-internal data class IndependentVariant(
+data class IndependentVariant(
     val metadata: SongConfig,
     val difficulties: Set<String> = emptySet(),
     val charts: Map<String, ChartDraft> = emptyMap(),
@@ -77,7 +77,7 @@ internal data class IndependentVariant(
     val unknownMetadataJson: String = ""
 )
 
-internal data class IndependentSong(
+data class IndependentSong(
     val id: String,
     val psych: IndependentVariant? = null,
     val vSlice: IndependentVariant? = null
@@ -92,7 +92,7 @@ internal data class IndependentSong(
  * for projects with [ModConfig.chartSchemaVersion] == 2. Legacy JSON is retained as an
  * opaque document until a lossless, validated migration has been implemented.
  */
-internal data class IndependentChartCollection(
+data class IndependentChartCollection(
     val songs: Map<String, IndependentSong> = emptyMap(),
     val legacyDocumentJson: String = ""
 ) {

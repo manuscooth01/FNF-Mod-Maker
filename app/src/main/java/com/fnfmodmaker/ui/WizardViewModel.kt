@@ -596,3 +596,4 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
         scheduleAutoSave(); forceAutoSave()
     }
+}

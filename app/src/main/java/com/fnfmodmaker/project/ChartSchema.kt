@@ -18,7 +18,6 @@ import com.google.gson.JsonParser
 internal const val CHART_SCHEMA_LEGACY: Int? = null
 internal const val CHART_SCHEMA_V1 = 1
 internal const val CHART_SCHEMA_V2 = 2
-
 /** Reject unknown schema markers and the v2 payload until the app can read it safely. */
 internal fun requireSupportedChartSchema(config: JsonObject) {
     val version = config.get("chartSchemaVersion")

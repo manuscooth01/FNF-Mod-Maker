@@ -224,7 +224,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
         val independent = source.getAsJsonObject("independentCharts")
 
         // Visit media references: songs metadata audio/images plus variant originals.
-        visitProjectAssets(source) { }
+        visitIndependentMedia(source) { }
 
         val songIds = mutableSetOf<String>()
         independent.entrySet().forEach { (songId, songNode) ->

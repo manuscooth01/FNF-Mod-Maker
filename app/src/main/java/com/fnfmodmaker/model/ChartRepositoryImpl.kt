@@ -146,6 +146,7 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
         val revisedVariant = variant.copy(histories = variant.histories + (key.difficulty to history))
         val updated = collection.withVariant(key.engine, key.songId, revisedVariant)
         return _config.copy(independentCharts = updated)
+    }
     override fun getVSliceEvents(songId: String, engine: ChartEngine): String? {
         return _config.independentCharts?.songs[songId]?.variant(engine)?.metadata?.vSliceEventsJson
     }

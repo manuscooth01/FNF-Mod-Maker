@@ -122,7 +122,14 @@ internal fun visitIndependentMedia(root: JsonObject, action: (JsonObject) -> Uni
                         if (asset != null && asset.isJsonObject) {
                             val kind = asset.asJsonObject.get("kind")?.asString
                             if (kind in setOf("image", "audio")) {
-                                field(asset.asJsonObject, "asset", required = true)
+                                field(asset.asJsonObject, "path", required = true)
+                                field(asset.asJsonObject, "displayName", required = true)
+                                asset.asJsonObject.get("uri")?.let { uri ->
+                                    require(uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString)) {
+                                        "URI inválida en original de $engineKey/$songId."
+                                    }
+                                }
+                                action(asset.asJsonObject)
                             }
                         } else {
                             obj.get("contentJson")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) {

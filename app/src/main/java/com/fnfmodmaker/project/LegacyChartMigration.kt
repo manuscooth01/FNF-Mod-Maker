@@ -86,8 +86,10 @@ internal object LegacyChartMigration {
                 collectionBuilder[songId] = IndependentSong(songId, psychVariant, vsliceVariant)
             }
         }
+        val collection = IndependentChartCollection(songs = collectionBuilder.build(),
+            legacyDocumentJson = config.toString())
+        return MigrationResult(collection, legacyPreserved, engineAttributedCount)
     }
-
     /**
      * Apply a migration result to a project config without touching the original.
      * Returns the migrated JsonObject ready for validation and save.

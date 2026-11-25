@@ -248,14 +248,30 @@ class IndependentChartsV2Test {
         assertTrue(result.collection.legacyDocumentJson.isNotEmpty())
     }
 
-    @Test fun migrationDoesNotDuplicateSameChartIntoBothEngines() {
+    @Test fun migrationDoesNotDuplicateSharedChartIntoBothEngines() {
         val gson = Gson()
+        // Single song with BOTH engine but no explicit evidence for either engine
+        // The shared chart should remain in legacy deposit, not be duplicated
         val legacy = JsonObject().apply {
             addProperty("engine", TargetEngine.BOTH.name)
             addProperty("chartSchemaVersion", 1)
             val songs = JsonArray()
-            songs.add(legacyPsychSong())
-            songs.add(legacyVSliceSong())
+            songs.add(JsonObject().apply {
+                addProperty("songName", "Test")
+                addProperty("artist", "A")
+                addProperty("bpm", "120")
+                addProperty("speed", "2.0")
+                addProperty("player", "bf")
+                addProperty("girlfriend", "gf")
+                addProperty("opponent", "dad")
+                addProperty("stageVSlice", "mainStage")
+                addProperty("stagePsych", "stage")
+                addProperty("weekColor", "#C24B99")
+                add("difficulties", JsonArray().apply { add("normal") })
+                addProperty("practiceNotes", true)
+                addProperty("offsetMs", "0")
+                // No importedPsychFolder, no vSliceOrigin - no explicit evidence
+            })
             add("songs", songs)
             val charts = JsonObject()
             charts.add("test", JsonObject().apply {
@@ -266,13 +282,14 @@ class IndependentChartsV2Test {
         }
         val result = LegacyChartMigration.migrateToV2(legacy, gson)
         val song = result.collection.songs.getValue("test")
-        // Psych attributed (importedPsychFolder), V-Slice attributed (vSliceOrigin)
-        assertNotNull(song.psych)
-        assertNotNull(song.vSlice)
-        // Each has its own chart, not duplicated from a shared source incorrectly
-        assertEquals(1, song.psych!!.charts.size)
-        assertEquals(1, song.vSlice!!.charts.size)
+        // No explicit evidence for either engine -> both null, chart stays in legacy
+        assertNull(song.psych)
+        assertNull(song.vSlice)
+        assertTrue(result.legacyPreserved)
+        // Original chart preserved in legacy deposit
+        assertTrue(result.collection.legacyDocumentJson.isNotEmpty())
     }
+
 
     @Test fun migrationIsIdempotent() {
         val gson = Gson()

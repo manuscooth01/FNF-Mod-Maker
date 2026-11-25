@@ -17,6 +17,15 @@ class ProjectSnapshotMergeTest {
         assertEquals(raw.get("songs"), result.get("songs"))
         assertEquals("old", raw.get("title").asString)
     }
+    @Test fun rejectsDeletingOrReplacingAnObjectWithUnknownData() {
+        val raw = json("""{"charts":{"song":{"normal":{"notes":[],"custom":{"path":"keep"}}}}}""")
+        val base = json("""{"charts":{"song":{"normal":{"notes":[]}}}}""")
+        val before = raw.deepCopy()
+        for (edit in listOf("""{"charts":{}}""", """{"charts":{"song":{"normal":null}}}""")) {
+            assertThrows(IllegalArgumentException::class.java) { mergeProjectSnapshot(raw, base, json(edit)) }
+            assertEquals(before, raw)
+        }
+    }
     @Test fun rejectsChangedArraysWithUnknownDataRatherThanReassigningIt() {
         val raw = json("""{"songs":[{"name":"a","unknown":{"path":"x"}},{"name":"b"}]}""")
         val base = json("""{"songs":[{"name":"a"},{"name":"b"}]}""")

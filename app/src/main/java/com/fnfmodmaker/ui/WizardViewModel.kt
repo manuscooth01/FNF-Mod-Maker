@@ -1898,16 +1898,21 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val token = ++portableOperation
         viewModelScope.launch {
             val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
-                // Switching the target must not discard a pending save of the active project.
-                if (active != null) saveProjectSnapshot(active, snapshot)
+                // Validate and build the package before committing any pending active edits.
+                // A failed export must not rewrite an existing project or active.txt.
+                val pending = active?.let { projectSnapshot(it, snapshot) }
                 val record = projectStore.load(id)
-                val validated = portableConfig(record.config)
+                val target = if (id == active) requireNotNull(pending) else record.config
+                val validated = portableConfig(target)
+                val title = target.get("modTitle")?.asString.orEmpty()
                 check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear el archivo temporal." }
                 val output = File.createTempFile("export_", ".fnfproject", portableCache)
-                try { portable.export(validated, projectStore.assets(id), output) { reportPortableProgress(token, it) } }
-                catch (e: Exception) { output.delete(); throw e }
-                val title = record.config.get("modTitle")?.asString.orEmpty()
-                Triple(output, slugify(title).ifBlank { "proyecto" } + ".fnfproject", output.length())
+                try {
+                    portable.export(validated, projectStore.assetsLocation(id), output) { reportPortableProgress(token, it) }
+                    val result = Triple(output, slugify(title).ifBlank { "proyecto" } + ".fnfproject", output.length())
+                    if (active != null && pending != null && projectStore.load(active).config != pending) projectStore.save(active, pending)
+                    result
+                } catch (e: Exception) { output.delete(); throw e }
             } } }
             result.onSuccess { (file, name, size) ->
                 preparedExport?.delete(); preparedExport = file; portableExportName = name; portableExportSize = size
@@ -2012,7 +2017,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 withContext(NonCancellable) {
                     projectMutex.withLock {
                         val (project, list, missing) = withContext(Dispatchers.IO) {
-                            val oldSnapshot = oldId?.let { saveProjectSnapshot(it, oldConfig) }
+                            val oldSnapshot = oldId?.let { projectSnapshot(it, oldConfig) }
                             val id = target ?: projectStore.newId()
                             val missing = if (target == null) {
                                 val source = if (duplicate) requireNotNull(oldSnapshot).deepCopy().also {
@@ -2027,6 +2032,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                             val loaded = projectStore.load(id)
                             val validated = parseConfig(loaded.config)
                             val projects = projectStore.list()
+                            if (oldId != null && oldSnapshot != null && projectStore.load(oldId).config != oldSnapshot) projectStore.save(oldId, oldSnapshot)
                             projectStore.setActive(id)
                             Triple(loaded.id to validated, projects, missing)
                         }

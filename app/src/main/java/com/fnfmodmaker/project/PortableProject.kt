@@ -83,7 +83,10 @@ internal class PortableProject(private val appRoot: File) {
                 if (f.isDirectory) scan(f, name) else add(name, f)
             }
         }
-        if (base.exists()) { require(base.isDirectory && under(appRoot, base)); scan(base, "assets") }
+        if (base.exists()) {
+            require(base.isDirectory && under(appRoot, base) && base.parentFile == assetsDir.parentFile.canonicalFile && base.name == assetsDir.name) { "Carpeta de recursos insegura." }
+            scan(base, "assets")
+        }
         visitProjectAssets(portable) { ref ->
             val text = ref.get("path").asString
             require(File(text).isAbsolute && '\u0000' !in text && '\\' !in text && text.split('/').none { it == "." || it == ".." }) { "Ruta de recurso inválida." }

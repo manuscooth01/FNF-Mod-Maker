@@ -102,6 +102,20 @@ class ModImportPathTest {
         assertEquals(previous, store.activeId()); assertEquals("audio", File(assetAt(store.load(id).config, "audio").get("path").asString).readText())
     }
 
+    @Test fun publicationRebasesRealReferencesButNotCustomJsonLookalikes() {
+        val store = aliasedStore(); val stage = stage(store)
+        val inst = write(stage, "inst.ogg", "audio")
+        val data = document("audio" to asset(inst.absolutePath, "inst.ogg"))
+        val custom = asset(inst.absolutePath, "custom").apply { addProperty("other", "keep") }
+        data.add("custom", custom.deepCopy())
+        data.getAsJsonArray("songs")[0].asJsonObject.add("custom", custom.deepCopy())
+        val id = store.publishModImport(stage, data) { }
+        val loaded = store.load(id).config
+        assertEquals(custom, loaded.getAsJsonObject("custom"))
+        assertEquals(custom, loaded.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("custom"))
+        assertEquals("audio", File(assetAt(loaded, "audio").get("path").asString).readText())
+    }
+
     @Test fun stageAndAssetsCannotBeSymlinksToOutside() {
         val store = aliasedStore()
         val stage = stage(store)

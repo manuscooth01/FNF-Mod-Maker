@@ -54,6 +54,8 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         return File(root, id)
     }
     fun assets(id: String): File = File(dir(id), "assets").also { check(it.isDirectory || it.mkdirs()) { "No se pudo crear la carpeta de recursos." } }
+    /** Read-only asset location, without creating directories during validation/export. */
+    fun assetsLocation(id: String): File = File(dir(id), "assets")
     private fun projectFile(id: String) = SafeFile(File(dir(id), "project.json"))
     private fun activeFile() = SafeFile(File(root, "active.txt"))
     fun activeId(): String? = if (activeFile().exists()) activeFile().read { text -> text.trim().also { require(idPattern.matches(it)) } } else null
@@ -181,7 +183,10 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
             }
             source
         }
+        val projectDir = dir(id).canonicalFile
+        require(projectDir.parentFile == root.canonicalFile && projectDir.name == id) { "Carpeta de proyecto insegura." }
         val targetDir = assets(id).canonicalFile
+        require(targetDir.parentFile == projectDir && targetDir.name == "assets") { "Carpeta de recursos insegura." }
         val copied = mutableMapOf<String, String>()
         val created = mutableListOf<File>()
         try {

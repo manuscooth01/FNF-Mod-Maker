@@ -231,6 +231,25 @@ class ModZipConfirmationTest {
         assertArrayEquals(bytes, file.readBytes())
     }
 
+    @Test fun failedExportOrSwitchDoesNotSavePendingEditsOrChangeActive() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val current = vm.currentProjectId!!
+        val incompatible = projects.newId()
+        projects.save(incompatible, projects.load(current).config.deepCopy().apply { addProperty("chartSchemaVersion", 99) })
+        val currentFile = File(app.filesDir, "projects/$current/project.json")
+        val activeFile = File(app.filesDir, "projects/active.txt")
+        val oldCurrent = currentFile.readBytes(); val oldActive = activeFile.readBytes()
+        vm.setModTitle("Pendiente de guardar")
+        vm.preparePortableExport(incompatible); await { !vm.busy }
+        assertTrue(vm.portableMessage.orEmpty().contains("No se pudo exportar"))
+        assertArrayEquals(oldCurrent, currentFile.readBytes()); assertArrayEquals(oldActive, activeFile.readBytes())
+        vm.switchProject(incompatible); await { !vm.busy }
+        assertTrue(vm.projectMessage.orEmpty().contains("No se pudo abrir"))
+        assertArrayEquals(oldCurrent, currentFile.readBytes()); assertArrayEquals(oldActive, activeFile.readBytes())
+        assertEquals(current, vm.currentProjectId)
+        assertEquals("Pendiente de guardar", vm.config.modTitle)
+    }
+
     @Test fun unknownJsonSurvivesAutosaveDuplicationAndPortableExport() {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val first = vm.currentProjectId!!

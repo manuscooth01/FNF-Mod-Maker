@@ -18,12 +18,13 @@ internal class ModImportSession(private val stage: File, private val source: Jso
         validate: (JsonObject) -> Unit,
         parse: (JsonObject) -> T
     ): Opened<T> {
-        store.save(oldId, oldConfig)
         val id = publishedId ?: store.publishModImport(stage, source, validate).also { publishedId = it }
         val record = store.load(id)
         validate(record.config)
         val config = parse(record.config)
         val projects = store.list()
+        // Do not alter the old snapshot if validation or opening the import fails.
+        if (store.load(oldId).config != oldConfig) store.save(oldId, oldConfig)
         // This must be the final disk operation that can fail before applying the opened project.
         store.setActive(id)
         return Opened(id, config, projects)

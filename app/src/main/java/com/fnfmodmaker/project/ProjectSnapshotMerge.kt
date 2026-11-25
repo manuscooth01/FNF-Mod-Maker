@@ -18,24 +18,28 @@ internal fun mergeProjectSnapshot(original: JsonObject, baseline: JsonObject, ed
             val a = raw.asJsonArray; val b = base.asJsonArray
             return a.size() != b.size() || (0 until a.size()).any { hasUnknown(a[it], b[it]) }
         }
-        return false
+        return (raw.isJsonObject && !base.isJsonObject) || (raw.isJsonArray && !base.isJsonArray)
     }
     fun merge(raw: JsonElement, base: JsonElement, next: JsonElement): JsonElement {
         if (base == next) return raw.deepCopy()
         if (raw.isJsonObject && base.isJsonObject && next.isJsonObject) {
             val out = raw.asJsonObject.deepCopy()
             val previous = base.asJsonObject; val editedObject = next.asJsonObject
-            previous.keySet().filter { !editedObject.has(it) }.forEach { out.remove(it) }
+            previous.keySet().filter { !editedObject.has(it) }.forEach { key ->
+                val stored = raw.asJsonObject.get(key)
+                require(stored == null || !hasUnknown(stored, previous.get(key))) {
+                    "El elemento eliminado contiene datos desconocidos; no se puede guardar sin riesgo de pérdida."
+                }
+                out.remove(key)
+            }
             editedObject.entrySet().forEach { (key, value) ->
                 val old = previous.get(key); val stored = raw.asJsonObject.get(key)
                 out.add(key, if (old != null && stored != null) merge(stored, old, value) else value.deepCopy())
             }
             return out
         }
-        if (raw.isJsonArray && base.isJsonArray && next.isJsonArray) {
-            require(!hasUnknown(raw, base)) {
-                "La lista modificada contiene datos desconocidos; no se puede guardar sin riesgo de pérdida."
-            }
+        require(!hasUnknown(raw, base)) {
+            "El elemento modificado contiene datos desconocidos; no se puede guardar sin riesgo de pérdida."
         }
         return next.deepCopy()
     }

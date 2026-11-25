@@ -622,6 +622,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun saveLivePsychEvents(text: String) {
         check((chartRepository.isV2() && activeChartEngine == ChartEngine.PSYCH)
             || (!chartRepository.isV2() && config.engine.includesPsych && !livePlaying && !liveLoading && !busy && liveChartAvailable)) { "Pausa el editor y selecciona un chart Psych editable." }
+        val chart = liveChart ?: error("No hay chart Psych para editar.")
         val edited = com.fnfmodmaker.mod.validatePsychEvents(text).let { if (it == "[]") "" else it }
         if (chart.psychEventsJson == edited) return
         storeLiveChartTransition(chart, chart.copy(psychEventsJson = edited))
@@ -1808,6 +1809,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Repository for per-engine chart operations (v2 independent-chart schema). */
+    private val autoSaveGson = GsonBuilder().registerTypeAdapter(Uri::class.java, object : TypeAdapter<Uri>() {
+        override fun write(out: JsonWriter, value: Uri) = out.value(value.toString()).let { Unit }
+        override fun read(input: JsonReader): Uri = if (input.peek() == JsonToken.STRING) Uri.parse(input.nextString()) else {
+            input.skipValue(); Uri.EMPTY
+        }
+    }.nullSafe()).create()
     private val chartRepository = ChartRepositoryImpl(autoSaveGson)
 
     var config by mutableStateOf(ModConfig())
@@ -1816,24 +1823,6 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     // Project snapshots are serialized through one mutex; disk work runs off the UI thread.
     private var autoSaveJob: kotlinx.coroutines.Job? = null
-    private var pendingAutoSaveJob: kotlinx.coroutines.Job? = null
-    private val projectMutex = Mutex()
-    private val projectStore = ProjectStore(File(application.filesDir, "projects"), application.applicationInfo.dataDir.let(::File))
-    var currentProjectId by mutableStateOf<String?>(null)
-        private set
-    internal var projects by mutableStateOf<List<ProjectSummary>>(emptyList())
-        private set
-    var projectMessage by mutableStateOf<String?>(null)
-        private set
-    var projectSaveStatus by mutableStateOf("Abriendo proyecto…")
-        private set
-    private var projectRevision = 0L
-    private val autoSaveGson = GsonBuilder().registerTypeAdapter(Uri::class.java, object : TypeAdapter<Uri>() {
-        override fun write(out: JsonWriter, value: Uri) = out.value(value.toString()).let { Unit }
-        override fun read(input: JsonReader): Uri = if (input.peek() == JsonToken.STRING) Uri.parse(input.nextString()) else {
-            input.skipValue(); Uri.EMPTY
-        }
-    }.nullSafe()).create()
     private val autoSaveFile: File get() = File(getApplication<Application>().filesDir, "autosave_modconfig.json")
     private var modIdEdited = false
     private val portable = PortableProject(File(application.applicationInfo.dataDir))

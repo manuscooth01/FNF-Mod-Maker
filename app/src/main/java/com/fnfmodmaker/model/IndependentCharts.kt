@@ -3,6 +3,7 @@ package com.fnfmodmaker.model
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.google.gson.annotations.SerializedName
 
 /** Individual chart identity: BOTH is a project destination, never a chart engine. */
 enum class ChartEngine { PSYCH, VSLICE }
@@ -80,7 +81,7 @@ data class IndependentVariant(
 data class IndependentSong(
     val id: String,
     val psych: IndependentVariant? = null,
-    val vSlice: IndependentVariant? = null
+    @SerializedName("vslice") val vSlice: IndependentVariant? = null
 ) {
     fun variant(engine: ChartEngine): IndependentVariant? = if (engine == ChartEngine.PSYCH) psych else vSlice
     fun withVariant(engine: ChartEngine, value: IndependentVariant): IndependentSong =

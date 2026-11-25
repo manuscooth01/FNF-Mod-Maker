@@ -50,8 +50,8 @@ internal object LegacyChartMigration {
             val songId = songConfig.songFolder
             require(songId.matches(Regex("[A-Za-z0-9_-]{1,80}"))) { "ID de canción inválido: $songId." }
 
-            val psychVariant = buildPsychVariant(songConfig, songObj, charts, histories, gson)
-            val vsliceVariant = buildVSliceVariant(songConfig, songObj, charts, histories, gson, targetEngine, both)
+            val psychVariant = buildPsychVariant(songConfig, songObj, charts, histories, gson, both)
+            val vsliceVariant = buildVSliceVariant(songConfig, songObj, charts, histories, gson, both)
 
             if (psychVariant == null && vsliceVariant == null) {
                 legacyPreserved = true
@@ -63,35 +63,72 @@ internal object LegacyChartMigration {
             collectionBuilder[songId] = IndependentSong(songId, psychVariant, vsliceVariant)
         }
 
-        val collection = IndependentChartCollection(songs = collectionBuilder.build())
+        val collection = IndependentChartCollection(songs = collectionBuilder.build(),
+            legacyDocumentJson = config.toString())
         return MigrationResult(collection, legacyPreserved, engineAttributedCount)
     }
 
     /**
      * Apply a migration result to a project config without touching the original.
      * Returns the migrated JsonObject ready for validation and save.
+     *
+     * 1. Copy the original document.
+     * 2. Extract variants whose provenance can be demonstrated.
+     * 3. Preserve ambiguous and unknown data in the legacy deposit.
+     * 4. Remove legacy editable maps once preserved.
+     * 5. Validate the new document before returning.
      */
     fun applyMigration(config: JsonObject, gson: Gson): JsonObject {
         val version = config.get("chartSchemaVersion")
         val alreadyV2 = version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
         if (alreadyV2) return config.deepCopy()
+
         val result = migrateToV2(config, gson)
         val updated = config.deepCopy()
         updated.addProperty("chartSchemaVersion", CHART_SCHEMA_V2)
         updated.add("independentCharts", independentChartsToJson(result.collection, gson))
+        // Remove legacy editable maps once preserved in the deposit.
+        updated.remove("charts")
+        updated.remove("chartHistories")
         return updated
     }
 
-    private fun buildPsychVariant(song: SongConfig, songObj: JsonObject, charts: JsonObject?,
-        histories: JsonObject?, gson: Gson): IndependentVariant? {
-        // Explicit evidence: the song is flagged Psych-originated, or has Psych-specific
-        // editable charts/sections that cannot belong to V-Slice.
-        val importedPsych = song.importedPsychFolder.isNotEmpty()
-        val hasPsychCharts = charts?.get(song.songFolder)?.isJsonObject == true
-        val hasPsychLayout = songObj.get("psychLayout")?.isJsonArray == true ||
+    /**
+     * Decide whether to attribute legacy charts to Psych.
+     *
+     * Evidence rules:
+     *  - Project targets Psych only (not BOTH): the shared charts may be attributed to Psych.
+     *  - Project targets BOTH: require explicit Psych evidence (importedPsychFolder or
+     *    Psych-specific layout/extras). Presence in the shared charts map alone is NOT evidence.
+     *  - Never duplicate the same chart into both engines.
+     */
+    private fun psychEvidence(song: SongConfig, songObj: JsonObject, both: Boolean): Boolean {
+        if (!both) return true // Single-engine Psych project: charts belong to Psych.
+        return song.importedPsychFolder.isNotEmpty() ||
+            songObj.get("psychLayout")?.isJsonArray == true ||
             songObj.get("psychSongExtras")?.isJsonPrimitive == true
-        val evidence = importedPsych || hasPsychCharts || hasPsychLayout
-        if (!evidence) return null
+    }
+
+    /**
+     * Decide whether to attribute legacy charts to V-Slice.
+     *
+     * Evidence rules:
+     *  - Project targets V-Slice only (not BOTH): the shared charts may be attributed to V-Slice.
+     *  - Project targets BOTH: require explicit V-Slice evidence (vSliceOrigin,
+     *    vSliceEventsJson, or vSliceTempoJson). Presence in the shared charts map alone
+     *    is NOT evidence.
+     *  - Never duplicate the same chart into both engines.
+     */
+    private fun vsliceEvidence(song: SongConfig, songObj: JsonObject, both: Boolean): Boolean {
+        if (!both) return true // Single-engine V-Slice project: charts belong to V-Slice.
+        return song.vSliceOrigin != null ||
+            songObj.get("vSliceEventsJson")?.isJsonPrimitive == true ||
+            songObj.get("vSliceTempoJson")?.isJsonPrimitive == true
+    }
+
+    private fun buildPsychVariant(song: SongConfig, songObj: JsonObject, charts: JsonObject?,
+        histories: JsonObject?, gson: Gson, both: Boolean): IndependentVariant? {
+        if (!psychEvidence(song, songObj, both)) return null
 
         val songCharts = charts?.get(song.songFolder)?.asJsonObject ?: JsonObject()
         val songHistories = histories?.get(song.songFolder)?.asJsonObject ?: JsonObject()
@@ -131,16 +168,8 @@ internal object LegacyChartMigration {
     }
 
     private fun buildVSliceVariant(song: SongConfig, songObj: JsonObject, charts: JsonObject?,
-        histories: JsonObject?, gson: Gson, targetEngine: TargetEngine, both: Boolean): IndependentVariant? {
-        // Explicit evidence: vSliceOrigin present, or project targets V-Slice and
-        // the song has V-Slice-specific editable charts/events/tempo.
-        // For BOTH projects we cannot attribute shared charts to V-Slice without evidence.
-        val hasOrigin = song.vSliceOrigin != null
-        val hasVSliceEvents = songObj.get("vSliceEventsJson")?.isJsonPrimitive == true ||
-            songObj.get("vSliceTempoJson")?.isJsonPrimitive == true
-        val hasVSliceCharts = charts?.get(song.songFolder)?.isJsonObject == true && !both
-        val evidence = hasOrigin || hasVSliceEvents || (targetEngine == TargetEngine.VSLICE && hasVSliceCharts)
-        if (!evidence) return null
+        histories: JsonObject?, gson: Gson, both: Boolean): IndependentVariant? {
+        if (!vsliceEvidence(song, songObj, both)) return null
 
         val songCharts = charts?.get(song.songFolder)?.asJsonObject ?: JsonObject()
         val songHistories = histories?.get(song.songFolder)?.asJsonObject ?: JsonObject()
@@ -170,8 +199,7 @@ internal object LegacyChartMigration {
         }
 
         val metadata = song.copy(
-            difficulties = difficulties,
-            vSliceIndependentInitialBpm = targetEngine == TargetEngine.BOTH
+            difficulties = difficulties
         )
         return IndependentVariant(
             metadata = metadata,
@@ -179,29 +207,8 @@ internal object LegacyChartMigration {
             charts = chartsMap.build(),
             histories = historiesMap.build(),
             uneditableDifficulties = uneditable.build(),
-            originals = buildOriginals(song, gson),
+            originals = emptyList(),
             unknownMetadataJson = ""
         )
-    }
-
-    private fun buildOriginals(song: SongConfig, gson: Gson): List<IndependentOriginal> {
-        val refs = mutableListOf<IndependentOriginal>()
-        song.vSliceOrigin?.let { origin ->
-            refs.add(IndependentOriginal(
-                originalPath = origin.metadataPath,
-                asset = ProjectMediaReference(
-                    uri = "", displayName = origin.metadataPath, path = origin.metadataPath, kind = "audio"
-                ),
-                editable = false
-            ))
-            refs.add(IndependentOriginal(
-                originalPath = origin.chartPath,
-                asset = ProjectMediaReference(
-                    uri = "", displayName = origin.chartPath, path = origin.chartPath, kind = "audio"
-                ),
-                editable = false
-            ))
-        }
-        return refs.build()
     }
 }

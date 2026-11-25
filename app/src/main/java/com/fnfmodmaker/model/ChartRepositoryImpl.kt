@@ -21,16 +21,10 @@ internal class ChartRepositoryImpl(private val gson: com.google.gson.Gson) : Cha
     override fun isV2(): Boolean = _config.chartSchemaVersion == com.fnfmodmaker.project.CHART_SCHEMA_V2 &&
         _config.independentCharts != null
 
-    override fun songMetadata(songId: String): SongConfig? {
-        val variant = _config.independentCharts?.songs[songId]?.let { song ->
-            when {
-                song.psych != null -> song.psych!!.metadata
-                song.vSlice != null -> song.vSlice!!.metadata
-                else -> null
-            }
-        }
-        return variant
+    override fun songMetadata(songId: String, engine: ChartEngine): SongConfig? {
+        return _config.independentCharts?.songs[songId]?.variant(engine)?.metadata
     }
+
 
     override fun songIds(): List<String> = _config.independentCharts?.songs.keys.toList() ?: emptyList()
 

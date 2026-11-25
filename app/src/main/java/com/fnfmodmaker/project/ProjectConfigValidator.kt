@@ -308,20 +308,24 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
             }
         }
 
-        // Originals: typed media references only, never interpreted as app paths.
+        // Originals: either a typed media reference or an opaque document.
         variant.get("originals")?.let { originals ->
             require(originals.isJsonArray) { "originals debe ser una lista." }
             originals.asJsonArray.forEach { ref ->
                 require(ref.isJsonObject) { "Original inválido." }
                 val obj = ref.asJsonObject
-                require(obj.get("kind")?.isString == true && obj.get("kind").asString in setOf("image", "audio")) {
-                    "Tipo de medio inválido en original de $engine/$songId."
+                val kind = obj.get("kind")?.asString
+                if (kind in setOf("image", "audio")) {
+                    require(obj.get("path")?.isString == true && obj.get("path").asString.isNotEmpty() &&
+                        obj.get("path").asString.split('/').none { it == "." || it == ".." }) {
+                        "Ruta de original insegura en $engine/$songId."
+                    }
+                    require(obj.get("displayName")?.isString == true) { "Falta displayName en original de $engine/$songId." }
+                } else {
+                    obj.get("contentJson")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) {
+                        "Original sin medio ni documento opaco en $engine/$songId."
+                    } }
                 }
-                require(obj.get("path")?.isString == true && obj.get("path").asString.isNotEmpty() &&
-                    obj.get("path").asString.split('/').none { it == "." || it == ".." }) {
-                    "Ruta de original insegura en $engine/$songId."
-                }
-                require(obj.get("displayName")?.isString == true) { "Falta displayName en original de $engine/$songId." }
             }
         }
     }

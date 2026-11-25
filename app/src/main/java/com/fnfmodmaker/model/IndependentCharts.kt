@@ -39,12 +39,28 @@ internal data class ProjectMediaReference(
     }
 }
 
-/** Exact original files are project assets; paths here are archive paths, not local file paths. */
+/**
+ * An original file preserved from the legacy project.
+ *
+ * Either [asset] is set (a managed media file: image/audio) or [contentJson] is set
+ * (an opaque JSON document such as V-Slice metadata or chart JSON). Never both.
+ * Documents are never classified as media and never interpreted as paths.
+ */
 internal data class IndependentOriginal(
     val originalPath: String,
-    val asset: ProjectMediaReference,
+    val asset: ProjectMediaReference? = null,
+    val contentJson: String = "",
     val editable: Boolean = false
-)
+) {
+    init {
+        require((asset == null) xor contentJson.isNotEmpty()) {
+            "Un original debe ser medio o documento opaco, no ambos ni ninguno."
+        }
+        asset?.let { ref ->
+            require(ref.kind in setOf("image", "audio")) { "Tipo de medio inválido en original." }
+        }
+    }
+}
 
 /**
  * An explicit engine variant. Song metadata, audio, V-Slice events and tempo belong
@@ -127,8 +143,8 @@ internal data class IndependentChartCollection(
 }
 
 /**
- * Convert a [ProjectMediaReference] to a JSON object suitable for opaque storage in
- * [IndependentVariant.unknownMetadataJson]-adjacent structures. Never interpreted as a path.
+ * Convert a [ProjectMediaReference] to a JSON object suitable for opaque storage.
+ * Never interpreted as a path.
  */
 internal fun mediaReferenceToJson(ref: ProjectMediaReference): JsonObject =
     JsonObject().apply {

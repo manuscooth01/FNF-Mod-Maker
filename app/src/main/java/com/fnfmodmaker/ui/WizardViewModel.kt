@@ -457,7 +457,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     val liveSong: SongConfig? get() = config.songs.getOrNull(liveSongIndex)
-    val liveChart: ChartDraft? get() = liveSong?.let { config.getChart(it.songFolder, liveDifficulty) }
+    val liveChart: ChartDraft? get() {
+        val song = liveSong ?: return null
+        return if (chartRepository.isV2()) {
+            val engine = activeChartEngine ?: return null
+            chartRepository.getChart(com.fnfmodmaker.model.IndependentChartKey(
+                song.songFolder, engine, liveDifficulty))
+        } else {
+            config.getChart(song.songFolder, liveDifficulty)
+        }
+    }
     val liveChartAvailable: Boolean get() {
         val song = liveSong ?: return false
         val chart = liveChart
@@ -465,7 +474,6 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             liveDifficulty in song.difficulties && !(chart == null && liveDifficulty in (song.vSliceOrigin?.uneditableDifficulties ?: emptySet())) &&
             (chart == null || (chart.events.isEmpty() && chart.sections.isEmpty()))
     }
-    val liveCanPlay: Boolean get() = liveChartAvailable && liveSong?.instrumental?.let { File(it.path).isFile } == true
 
     /** V-Slice events belong to the song chart, not an individual difficulty. */
     internal fun liveVSliceEvents(): String {
@@ -480,7 +488,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         return com.fnfmodmaker.mod.validateVSliceEvents(events.toString())
     }
     internal fun saveLiveVSliceEvents(text: String) {
-        check(config.engine.includesVSlice && !livePlaying && !liveLoading && !busy) { "Pausa el editor antes de guardar." }
+        check(chartRepository.isV2() ? activeChartEngine == ChartEngine.VSLICE : config.engine.includesVSlice
+            && !livePlaying && !liveLoading && !busy) { "Pausa el editor antes de guardar." }
         val song = liveSong ?: error("Selecciona una canción.")
         val edited = com.fnfmodmaker.mod.validateVSliceEvents(text)
         val before = liveVSliceEvents()
@@ -525,7 +534,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             else com.fnfmodmaker.mod.tempoWithInitialBpm(stored, song.bpmValue)
     }
     internal fun saveLiveVSliceTempo(text: String) {
-        check(config.engine.includesVSlice && !livePlaying && !liveLoading && !busy) { "Pausa el editor y selecciona V-Slice." }
+        check(chartRepository.isV2() ? activeChartEngine == ChartEngine.VSLICE : config.engine.includesVSlice
+            && !livePlaying && !liveLoading && !busy) { "Pausa el editor y selecciona V-Slice." }
+
         val song = liveSong ?: error("Selecciona una canción.")
         val before = liveVSliceTempo()
         val edited = com.fnfmodmaker.mod.validateVSliceTempo(text)
@@ -551,8 +562,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Section edits are atomic chart history transitions for the selected difficulty. */
-    internal fun createLivePsychChart() {
-        check(config.engine.includesPsych && !busy && !livePlaying && !liveLoading && liveChartAvailable && liveChart == null) { "No se puede crear este chart." }
+        check((chartRepository.isV2() && activeChartEngine == ChartEngine.PSYCH)
+            || (!chartRepository.isV2() && config.engine.includesPsych && !busy && !livePlaying
+            && !liveLoading && liveChartAvailable && liveChart == null)) { "No se puede crear este chart." }
         val song = liveSong ?: error("Selecciona una canción.")
         val draft = ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
             scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
@@ -568,7 +580,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         saveLivePsychSections(copy.psychLayout, copy.notes)
     }
     internal fun saveLivePsychSections(layout: List<com.fnfmodmaker.model.PsychSectionData>, notes: List<ChartNote>? = null) {
-        check(config.engine.includesPsych && !busy && !livePlaying && !liveLoading && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
+        check(chartRepository.isV2() ? activeChartEngine == ChartEngine.PSYCH : config.engine.includesPsych
+            && !busy && !livePlaying && !liveLoading && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
+
         val song = liveSong ?: error("Selecciona una canción.")
         val current = liveChart ?: error("Crea primero un chart para esta dificultad.")
         val next = current.copy(psychLayout = layout, notes = notes ?: current.notes)
@@ -582,7 +596,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     internal fun livePsychEvents(): String = liveChart?.psychEventsJson?.ifBlank { "[]" } ?: "[]"
     internal fun saveLivePsychEvents(text: String) {
-        check(config.engine.includesPsych && !livePlaying && !liveLoading && !busy && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
+        check(chartRepository.isV2() ? activeChartEngine == ChartEngine.PSYCH : config.engine.includesPsych
+            && !livePlaying && !liveLoading && !busy && liveChartAvailable) { "Pausa el editor y selecciona un chart Psych editable." }
         val chart = liveChart ?: error("Crea primero un chart para esta dificultad; así no se sustituyen las notas de práctica.")
         val edited = com.fnfmodmaker.mod.validatePsychEvents(text).let { if (it == "[]") "" else it }
         if (chart.psychEventsJson == edited) return
@@ -597,12 +612,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val song = liveSong ?: return
         val result = com.fnfmodmaker.model.restoreChartHistory(currentGridHistory(), liveChart, redo)
         if (result == null) { liveNotice = "No se pudo deshacer: el chart cambió fuera del historial."; return }
-        val updated = if (result.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
+        val updated = if (chartRepository.isV2()) {
+            val engine = activeChartEngine ?: error("Selecciona un motor antes de restaurar.")
+            val key = com.fnfmodmaker.model.IndependentChartKey(song.songFolder, engine, liveDifficulty)
+            if (result.chart == null) chartRepository.removeChart(key)
+            else chartRepository.editChart(key, result.chart)
+        } else if (result.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
             else config.withChart(song.songFolder, liveDifficulty, result.chart)
         config = withHistory(updated, song.songFolder, liveDifficulty, result.history)
         liveUndo.clear(); liveUndoCount = 0
         scheduleAutoSave(); forceAutoSave()
     }
+
 
     internal fun openLiveChart() {
         closeLiveChart()
@@ -844,7 +865,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             liveNotice = "Añade secciones Psych para cubrir este momento antes de grabar."; return null
         }
         val note = ChartNote(timeMs = time, lane = direction + if (liveOpponent) 4 else 0)
-        val existing = config.getChart(song.songFolder, liveDifficulty)
+        val existing = liveChart
         val draft = existing ?: ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
             scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
             player1 = song.player, player2 = song.opponent, gfVersion = song.girlfriend, stage = song.stagePsych)
@@ -870,7 +891,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (hold.id != id) return
         liveHolds.remove(direction)
         val song = liveSong ?: return
-        val chart = config.getChart(song.songFolder, liveDifficulty) ?: return
+        val chart = liveChart ?: return
         val index = chart.notes.indexOf(hold.note)
         if (index < 0) return
         val length = com.fnfmodmaker.model.recordedHoldLength(hold.note, hold.pressedAt, position,
@@ -894,7 +915,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun editLiveNoteProperties(note: ChartNote, length: Long, kind: String, psychTypeJson: String = if (kind == note.kind) note.psychTypeJson else ""): Boolean {
         if (livePlaying || liveLoading || !liveChartAvailable || length < 0 || kind.length > 128 || kind.any(Char::isISOControl)) return false
         val song = liveSong ?: return false
-        val chart = config.getChart(song.songFolder, liveDifficulty) ?: return false
+        val chart = liveChart ?: return false
         val index = chart.notes.indexOf(note)
         if (index < 0 || com.fnfmodmaker.model.safeHoldLength(note, length, liveDurationMs, chart.notes) != length) return false
         val replacement = note.copy(lengthMs = length, kind = kind, psychTypeJson = psychTypeJson)
@@ -908,7 +929,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun undoLiveNote() {
         if (livePlaying || liveLoading || liveUndo.isEmpty()) return
         val song = liveSong ?: return
-        val chart = config.getChart(song.songFolder, liveDifficulty) ?: return
+        val chart = liveChart ?: return
         val action = liveUndo.last()
         val notes = com.fnfmodmaker.model.removeRecordedNote(chart.notes, action.note) ?: return
         liveUndo.removeAt(liveUndo.lastIndex); liveUndoCount = liveUndo.size
@@ -918,27 +939,46 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun deleteLiveNote(note: ChartNote) {
         if (livePlaying || liveLoading || !liveChartAvailable) return
         val song = liveSong ?: return
-        val chart = config.getChart(song.songFolder, liveDifficulty) ?: return
+        val chart = liveChart ?: return
         val notes = com.fnfmodmaker.model.removeRecordedNote(chart.notes, note) ?: return
         storeLiveChartTransition(chart, chart.copy(notes = notes))
         liveUndo.removeAll { it.note == note }; liveUndoCount = liveUndo.size
         liveNotice = "Nota eliminada."; scheduleAutoSave()
     }
+
     // Histories live inside the same atomic project snapshot as the charts.
     val gridUndoCount: Int get() = currentGridHistory().undo.size
     val gridRedoCount: Int get() = currentGridHistory().redo.size
     private var gridSessionKey: Pair<String, String>? = null
-    private fun currentGridHistory(): com.fnfmodmaker.model.ChartPersistentHistory =
-        config.chartHistories[liveSong?.songFolder]?.get(liveDifficulty) ?: com.fnfmodmaker.model.ChartPersistentHistory()
-    private fun withHistory(value: ModConfig, folder: String, difficulty: String, history: com.fnfmodmaker.model.ChartPersistentHistory): ModConfig =
-        value.copy(chartHistories = value.chartHistories + (folder to (value.chartHistories[folder].orEmpty() + (difficulty to history))))
+    private fun currentGridHistory(): com.fnfmodmaker.model.ChartPersistentHistory {
+        val song = liveSong ?: return com.fnfmodmaker.model.ChartPersistentHistory()
+        return if (chartRepository.isV2()) {
+            val engine = activeChartEngine ?: return com.fnfmodmaker.model.ChartPersistentHistory()
+            chartRepository.history(com.fnfmodmaker.model.IndependentChartKey(
+                song.songFolder, engine, liveDifficulty)) ?: com.fnfmodmaker.model.ChartPersistentHistory()
+        } else {
+            config.chartHistories[liveSong?.songFolder]?.get(liveDifficulty) ?: com.fnfmodmaker.model.ChartPersistentHistory()
+        }
+    }
+    private fun withHistory(value: ModConfig, folder: String, difficulty: String, history: com.fnfmodmaker.model.ChartPersistentHistory): ModConfig {
+        if (chartRepository.isV2()) {
+            val engine = activeChartEngine ?: error("Selecciona un motor antes de guardar el historial.")
+            return chartRepository.saveHistory(com.fnfmodmaker.model.IndependentChartKey(folder, engine, difficulty), history)
+        }
+        return value.copy(chartHistories = value.chartHistories + (folder to (value.chartHistories[folder].orEmpty() + (difficulty to history))))
+    }
     private fun storeLiveChartTransition(before: ChartDraft?, after: ChartDraft?) {
         val song = liveSong ?: return
         val history = com.fnfmodmaker.model.recordChartHistory(currentGridHistory(), before, after)
-        val updated = if (after == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
+        val updated = if (chartRepository.isV2()) {
+            val engine = activeChartEngine ?: error("Selecciona un motor antes de guardar el chart.")
+            val key = com.fnfmodmaker.model.IndependentChartKey(song.songFolder, engine, liveDifficulty)
+            if (after == null) chartRepository.removeChart(key) else chartRepository.editChart(key, after)
+        } else if (after == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
             else config.withChart(song.songFolder, liveDifficulty, after)
         config = withHistory(updated, song.songFolder, liveDifficulty, history)
     }
+
     internal fun beginGridSession() { gridSessionKey = liveSong?.songFolder?.let { it to liveDifficulty } }
     internal fun endGridSession() {
         if (livePlaying || liveLoading) pauseLivePlayback()
@@ -952,7 +992,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     internal fun applyGridChanges(originals: List<ChartNote>, replacements: List<ChartNote>): Boolean {
         if (!gridSessionMatches() || busy || liveRecording || liveLoading || !liveChartAvailable || !liveCanPlay || liveDurationMs <= 0L) return false
         val song = liveSong ?: return false
-        val existing = config.getChart(song.songFolder, liveDifficulty)
+        val existing = liveChart
         if (existing == null && originals.isNotEmpty()) return false
         val draft = existing ?: ChartDraft(songFolder = song.songFolder, difficulty = liveDifficulty, bpm = song.bpmValue,
             scrollSpeed = song.speedValue, offsetMs = song.offsetValue, needsVoices = song.hasVocals,
@@ -969,27 +1009,42 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         liveNotice = "Cambio en el borrador; guardando proyecto…"; scheduleAutoSave(); forceAutoSave()
         return true
     }
+
     internal fun undoGridEdit() = restoreGridHistory(redo = false)
     internal fun redoGridEdit() = restoreGridHistory(redo = true)
     private fun restoreGridHistory(redo: Boolean) {
         if (!gridSessionMatches() || busy || liveRecording || liveLoading || !liveChartAvailable) return
         val song = liveSong ?: return
-        val current = config.getChart(song.songFolder, liveDifficulty)
+        val current = liveChart
         val result = com.fnfmodmaker.model.restoreChartHistory(currentGridHistory(), current, redo)
         if (result == null) { liveNotice = "No se pudo restaurar: el chart cambió fuera de este historial."; return }
-        val updated = if (result.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
+        val updated = if (chartRepository.isV2()) {
+            val engine = activeChartEngine ?: error("Selecciona un motor antes de restaurar.")
+            val key = com.fnfmodmaker.model.IndependentChartKey(song.songFolder, engine, liveDifficulty)
+            if (result.chart == null) chartRepository.removeChart(key)
+            else chartRepository.editChart(key, result.chart)
+        } else if (result.chart == null) removeChartFromConfig(config, song.songFolder, liveDifficulty)
             else config.withChart(song.songFolder, liveDifficulty, result.chart)
         config = withHistory(updated, song.songFolder, liveDifficulty, result.history)
         liveNotice = if (redo) "Se rehízo el cambio." else "Se deshizo el cambio."
         scheduleAutoSave(); forceAutoSave()
     }
+
     internal fun deleteLiveCustomChart() {
         if (livePlaying || liveLoading) return
         val song = liveSong ?: return
-        config = com.fnfmodmaker.model.removeSongDifficulty(config, liveSongIndex, liveDifficulty)
+        if (chartRepository.isV2()) {
+            val engine = activeChartEngine ?: error("Selecciona un motor antes de eliminar.")
+            config = chartRepository.removeChart(com.fnfmodmaker.model.IndependentChartKey(
+                song.songFolder, engine, liveDifficulty))
+        } else {
+            config = com.fnfmodmaker.model.removeSongDifficulty(config, liveSongIndex, liveDifficulty)
+        }
         liveUndo.clear(); liveUndoCount = 0
         liveNotice = "Se eliminaron el chart y la dificultad de la canción."; scheduleAutoSave(); forceAutoSave()
     }
+
+
     private fun removeChartFromConfig(config: ModConfig, folder: String, difficulty: String): ModConfig {
         val remaining = config.charts[folder].orEmpty() - difficulty
         return config.copy(charts = if (remaining.isEmpty()) config.charts - folder else config.charts + (folder to remaining))
@@ -1682,13 +1737,15 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Sobrescribe saveChartDraft para no duplicar historial cuando se llama desde UI. */
     internal fun saveChartDraft(chart: com.fnfmodmaker.model.ChartDraft) {
         if (chartRepository.isV2()) {
+            val engine = activeChartEngine ?: error("Selecciona un motor antes de guardar el chart.")
             val key = com.fnfmodmaker.model.IndependentChartKey(
-                chart.songFolder, ChartEngine.PSYCH, chart.difficulty)
+                chart.songFolder, engine, chart.difficulty)
             config = chartRepository.editChart(key, chart)
         } else {
             config = config.withChart(chart.songFolder, chart.difficulty, chart)
         }
     }
+
 
 
 
@@ -1844,12 +1901,15 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             chartRepository.setConfig(config)
             return config
         }
-        requireSupportedChartSchema(value)
-        val config = autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java)
+        // Legacy v1/unversioned: migrate to v2 transactionally before editing.
+        val migrated = com.fnfmodmaker.project.LegacyChartMigration.applyMigration(value, autoSaveGson)
+        com.fnfmodmaker.project.ProjectConfigValidator(autoSaveGson).validate(migrated)
+        val config = autoSaveGson.fromJson(migrateCharacterLibrary(migrated), ModConfig::class.java)
             ?: error("El proyecto está vacío.")
         chartRepository.setConfig(config)
         return config
     }
+
 
     /** Merge the loaded document with model edits; unknown fields remain untouched. */
     private fun projectSnapshot(id: String, value: ModConfig): com.google.gson.JsonObject {

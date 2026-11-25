@@ -112,23 +112,20 @@ internal fun visitIndependentMedia(root: JsonObject, action: (JsonObject) -> Uni
                     listOf("instrumental", "vocalsPlayer", "vocalsOpponent").forEach { field(metadata.asJsonObject, it) }
                 }
             }
-            // originals are typed media references directly (not nested under "asset").
+            // originals: either an "asset" media reference or opaque "contentJson".
             variant.get("originals")?.let { originals ->
                 if (originals.isJsonArray) {
                     originals.asJsonArray.forEach { ref ->
                         if (!ref.isJsonObject) return@forEach
                         val obj = ref.asJsonObject
                         val kind = obj.get("kind")?.asString
-                        require(kind in setOf("image", "audio")) {
-                            "Tipo de medio inválido en original de $engineKey/$songId."
+                        if (kind in setOf("image", "audio")) {
+                            field(obj, "asset", required = true)
+                        } else {
+                            obj.get("contentJson")?.let { require(it.isJsonPrimitive && it.asJsonPrimitive.isString) {
+                                "Original sin medio ni documento opaco en $engineKey/$songId."
+                            } }
                         }
-                        val path = obj.get("path"); val name = obj.get("displayName"); val uri = obj.get("uri")
-                        require(path?.isJsonPrimitive == true && path.asJsonPrimitive.isString && path.asString.isNotEmpty() &&
-                            name?.isJsonPrimitive == true && name.asJsonPrimitive.isString &&
-                            (uri == null || uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString))) {
-                            "Referencia de original inválida en $engineKey/$songId."
-                        }
-                        action(obj)
                     }
                 }
             }

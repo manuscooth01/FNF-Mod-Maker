@@ -18,8 +18,9 @@ internal interface ChartRepository {
     /** Returns true when the project is using the v2 independent-chart schema. */
     fun isV2(): Boolean
 
-    /** Song metadata for a given song id, or null when unknown. */
-    fun songMetadata(songId: String): SongConfig?
+    /** Song metadata for a given song id and engine, or null when unknown. */
+    fun songMetadata(songId: String, engine: ChartEngine): SongConfig?
+
 
     /** All known song ids. */
     fun songIds(): List<String>

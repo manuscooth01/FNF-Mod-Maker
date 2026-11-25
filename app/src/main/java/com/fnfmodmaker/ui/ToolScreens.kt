@@ -199,7 +199,7 @@ internal fun HomeScreen(vm: WizardViewModel) {
                 Button(onClick = { vm.switchProject() }, enabled = !vm.busy) { Text("Nuevo proyecto") }
                 TextButton(onClick = { vm.switchProject(duplicate = true) }, enabled = !vm.busy && vm.currentProjectId != null) { Text("Duplicar actual") }
             }
-            OutlinedButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy && vm.currentProjectId != null, modifier = Modifier.fillMaxWidth()) { Text("Importar proyecto .fnfproject") }
+            OutlinedButton(onClick = { importProject.launch(arrayOf("*/*")) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Importar proyecto .fnfproject") }
             OutlinedButton(onClick = { inspectZip.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !vm.busy, modifier = Modifier.fillMaxWidth()) { Text("Importar mod ZIP para editar") }
             Text("Psych y V-Slice: subconjuntos compatibles. Los ZIP con ambos formatos aún no se importan.", style = MaterialTheme.typography.labelSmall)
             if (vm.modZipInspecting) TextButton(onClick = vm::cancelModZipInspection) { Text("Cancelar análisis ZIP") }
@@ -208,10 +208,10 @@ internal fun HomeScreen(vm: WizardViewModel) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {
                         Text(project.title, fontWeight = FontWeight.SemiBold)
                         Text(project.problem ?: if (project.id == vm.currentProjectId) "Proyecto actual" else "Guardado en el dispositivo", style = MaterialTheme.typography.labelSmall)
-                        Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        if (project.problem == null) Row(Modifier.horizontalScroll(rememberScrollState())) {
                             TextButton(onClick = { if (project.id == vm.currentProjectId) vm.openTool(Tool.MOD) else vm.switchProject(project.id) },
-                                enabled = !vm.busy && project.problem == null) { Text(if (project.id == vm.currentProjectId) "Continuar" else "Abrir") }
-                            TextButton(onClick = { vm.preparePortableExport(project.id) }, enabled = !vm.busy && project.problem == null) { Text("Exportar proyecto") }
+                                enabled = !vm.busy) { Text(if (project.id == vm.currentProjectId) "Continuar" else "Abrir") }
+                            TextButton(onClick = { vm.preparePortableExport(project.id) }, enabled = !vm.busy) { Text("Exportar proyecto") }
                         }
                     }
                 }

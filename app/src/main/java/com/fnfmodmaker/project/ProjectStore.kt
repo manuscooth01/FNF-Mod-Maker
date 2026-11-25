@@ -72,7 +72,10 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
     }
     fun list(): List<ProjectSummary> = root.listFiles().orEmpty().filter { it.isDirectory && idPattern.matches(it.name) && projectFile(it.name).exists() }.map { folder ->
         runCatching { load(folder.name) }.fold({ record ->
-            ProjectSummary(record.id, record.config.get("modTitle")?.asString?.takeIf { it.isNotBlank() } ?: "Proyecto sin nombre", record.updatedAt)
+            val problem = runCatching { requireSupportedChartSchema(record.config) }.exceptionOrNull()?.let {
+                "Charts incompatibles: ${it.message}"
+            }
+            ProjectSummary(record.id, record.config.get("modTitle")?.asString?.takeIf { it.isNotBlank() } ?: "Proyecto sin nombre", record.updatedAt, problem)
         }, { ProjectSummary(folder.name, "Proyecto no legible", folder.lastModified(), "No se pudo abrir; sus archivos se conservan.") })
     }.sortedByDescending { it.updatedAt }
 

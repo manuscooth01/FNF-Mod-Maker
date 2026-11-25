@@ -1878,9 +1878,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Create a verified local package before asking the user where to save it. */
     internal fun preparePortableExport(id: String) {
-        if (busy || currentProjectId == null || preparedImport != null) return
+        if (busy) return
+        if (preparedImport != null) { portableMessage = "Termina o cancela la importación antes de exportar."; return }
         val active = currentProjectId; val snapshot = config
         pendingAutoSaveJob?.cancel()
+        preparedExport?.delete(); preparedExport = null; portableExportName = null; portableExportSize = 0
         busy = true; portableMessage = null; portableProgress = "Preparando proyecto…"
         val token = ++portableOperation
         viewModelScope.launch {
@@ -1888,9 +1890,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 // Switching the target must not discard a pending save of the active project.
                 if (active != null) projectStore.save(active, configJson(snapshot))
                 val record = projectStore.load(id)
+                val validated = portableConfig(record.config)
                 check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear el archivo temporal." }
                 val output = File.createTempFile("export_", ".fnfproject", portableCache)
-                try { portable.export(portableConfig(record.config), projectStore.assets(id), output) { reportPortableProgress(token, it) } }
+                try { portable.export(validated, projectStore.assets(id), output) { reportPortableProgress(token, it) } }
                 catch (e: Exception) { output.delete(); throw e }
                 val title = record.config.get("modTitle")?.asString.orEmpty()
                 Triple(output, slugify(title).ifBlank { "proyecto" } + ".fnfproject", output.length())
@@ -1929,7 +1932,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     internal fun preparePortableImport(uri: Uri) {
-        if (busy || currentProjectId == null || preparedImport != null) return
+        if (busy || preparedImport != null) return
         val app = getApplication<Application>()
         busy = true; portableMessage = null; portableProgress = "Leyendo paquete…"
         val token = ++portableOperation

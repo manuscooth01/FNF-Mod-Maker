@@ -150,6 +150,82 @@ class ModZipConfirmationTest {
         assertArrayEquals(bytes, file.readBytes())
     }
 
+    @Test fun recoveryListsIncompatibleAndAllowsPortableOperationsWithoutActiveProject() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val compatible = vm.currentProjectId!!
+        val compatibleConfig = projects.load(compatible).config
+        val futureId = projects.newId()
+        val future = compatibleConfig.deepCopy().apply {
+            addProperty("modTitle", "Proyecto futuro")
+            addProperty("chartSchemaVersion", 99)
+            add("independentCharts", com.google.gson.JsonParser.parseString("""{"psych":{"normal":[1]}}"""))
+        }
+        projects.save(futureId, future); projects.setActive(futureId)
+        val futureDir = File(app.filesDir, "projects/$futureId")
+        fun files() = futureDir.walkTopDown().filter { it.isFile }.associate { it.relativeTo(futureDir).path to it.readBytes().toList() }
+        val before = files()
+        val input = File(app.cacheDir, "recovery-source.fnfproject")
+        com.fnfmodmaker.project.PortableProject(File(app.applicationInfo.dataDir)).export(compatibleConfig, projects.assets(compatible), input)
+        store.clear(); scheduler.runCurrent(); store = ViewModelStore()
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = WizardViewModel(app) as T
+        }
+        vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
+        await { !vm.busy }
+        assertNull(vm.currentProjectId)
+        assertTrue(vm.projects.single { it.id == futureId }.problem!!.contains("Charts incompatibles"))
+        assertNull(vm.projects.single { it.id == compatible }.problem)
+        assertEquals(futureId, projects.activeId())
+
+        vm.preparePortableExport(futureId); await { !vm.busy }
+        assertNull(vm.portableExportName)
+        assertTrue(vm.portableMessage.orEmpty().contains("No se pudo exportar"))
+        assertEquals(before, files()); assertEquals(futureId, projects.activeId())
+        vm.preparePortableExport(compatible); await { !vm.busy }
+        assertNotNull(vm.portableMessage, vm.portableExportName)
+        val output = File(app.cacheDir, "recovery-copy.fnfproject")
+        vm.savePortableExport(Uri.fromFile(output)); await { !vm.busy }
+        assertTrue(output.isFile)
+        val portable = com.fnfmodmaker.project.PortableProject(File(app.applicationInfo.dataDir))
+        val prepared = portable.prepare(output, projects.newImportStage())
+        assertEquals(compatibleConfig.get("charts"), prepared.config.get("charts"))
+        projects.discardImportStage(prepared.directory)
+        assertEquals(futureId, projects.activeId())
+
+        val known = projects.list().map { it.id }.toSet()
+        vm.preparePortableImport(Uri.fromFile(input)); await { !vm.busy }
+        assertNotNull(vm.portableMessage, vm.portableImportSummary)
+        vm.confirmPortableImport(); await { !vm.busy }
+        assertEquals(1, projects.list().count { it.id !in known })
+        assertNull(vm.currentProjectId); assertEquals(futureId, projects.activeId())
+        assertEquals(before, files())
+        vm.switchProject(compatible); await { !vm.busy }
+        assertEquals(compatible, vm.currentProjectId); assertEquals(compatible, projects.activeId())
+        assertEquals(before, files())
+    }
+
+    @Test fun recoveryCanCreateNewProjectWithoutChangingIncompatibleProject() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val futureId = projects.newId()
+        val future = projects.load(vm.currentProjectId!!).config.deepCopy().apply { addProperty("chartSchemaVersion", 99) }
+        projects.save(futureId, future); projects.setActive(futureId)
+        val file = File(app.filesDir, "projects/$futureId/project.json")
+        val bytes = file.readBytes()
+        store.clear(); scheduler.runCurrent(); store = ViewModelStore()
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T = WizardViewModel(app) as T
+        }
+        vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
+        await { !vm.busy }; assertNull(vm.currentProjectId)
+        assertEquals(futureId, projects.activeId())
+        vm.switchProject(); await { !vm.busy }
+        assertNotNull(vm.currentProjectId); assertNotEquals(futureId, vm.currentProjectId)
+        assertEquals(vm.currentProjectId, projects.activeId())
+        assertArrayEquals(bytes, file.readBytes())
+    }
+
     @Test fun futureChartSchemaIsNotOpenedOrOverwrittenByAutosave() {
         val previous = vm.currentProjectId!!
         val before = vm.config

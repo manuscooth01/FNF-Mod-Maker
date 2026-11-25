@@ -97,6 +97,26 @@ class ModZipConfirmationTest {
         }
         return Uri.fromFile(file)
     }
+    @Test fun futureChartSchemaIsNotOpenedOrOverwrittenByAutosave() {
+        val previous = vm.currentProjectId!!
+        val before = vm.config
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val futureId = projects.newId()
+        val future = projects.load(previous).config.deepCopy().apply {
+            addProperty("chartSchemaVersion", 2)
+            add("independentCharts", com.google.gson.JsonParser.parseString("""{"psych":{"normal":{"notes":[1]}},"vslice":{"normal":{"notes":[2]}}}"""))
+        }
+        projects.save(futureId, future)
+        vm.switchProject(futureId); await { !vm.busy }
+        assertEquals(previous, vm.currentProjectId)
+        assertEquals(before, vm.config)
+        assertTrue(vm.projectMessage.orEmpty().contains("versión de charts"))
+        assertEquals(previous, projects.activeId())
+        assertEquals(future, projects.load(futureId).config)
+        vm.forceAutoSave(); scheduler.runCurrent()
+        assertEquals(future, projects.load(futureId).config)
+    }
+
     @Test fun mixedZipWithoutPackDoesNotChangeOrPublishProject() {
         val previous = vm.currentProjectId!!
         val before = vm.config

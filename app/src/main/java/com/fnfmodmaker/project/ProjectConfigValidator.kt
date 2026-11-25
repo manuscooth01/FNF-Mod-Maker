@@ -10,6 +10,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
         autoSaveGson.fromJson(value, ModConfig::class.java) ?: error("El proyecto está vacío.")
     /** Reject malformed model shapes before they can reach screens or be published. */
     fun validate(source: com.google.gson.JsonObject) {
+        requireSupportedChartSchema(source)
         val value = migrateCharacterLibrary(source)
         fun compare(input: com.google.gson.JsonObject, template: com.google.gson.JsonObject) {
             template.entrySet().forEach { (key, sample) ->

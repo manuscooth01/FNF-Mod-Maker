@@ -59,6 +59,7 @@ import kotlinx.coroutines.sync.withLock
 import com.fnfmodmaker.project.ModImportSession
 import com.fnfmodmaker.project.ProjectConfigValidator
 import com.fnfmodmaker.project.migrateCharacterLibrary
+import com.fnfmodmaker.project.requireSupportedChartSchema
 import com.fnfmodmaker.project.ProjectStore
 import com.fnfmodmaker.project.ProjectSummary
 import com.fnfmodmaker.project.PortableProject
@@ -1794,8 +1795,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         validatePortableConfig(target)
         return target
     }
-    private fun parseConfig(value: com.google.gson.JsonObject): ModConfig =
-        autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java) ?: error("El proyecto está vacío.")
+    private fun parseConfig(value: com.google.gson.JsonObject): ModConfig {
+        requireSupportedChartSchema(value)
+        return autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java) ?: error("El proyecto está vacío.")
+    }
 
     private fun beginProjects() {
         viewModelScope.launch {
@@ -1808,8 +1811,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 val id = active ?: existing.firstOrNull()?.id
                 if (id != null) {
                     val record = projectStore.load(id)
+                    val opened = parseConfig(record.config)
                     projectStore.setActive(id)
-                    Triple(record.id to parseConfig(record.config), projectStore.list(), emptyList<String>())
+                    Triple(record.id to opened, projectStore.list(), emptyList<String>())
                 } else {
                     val oldCache = File(app.cacheDir, "autosave_modconfig.json")
                     val source = if (autoSaveFile.exists()) autoSaveFile else oldCache

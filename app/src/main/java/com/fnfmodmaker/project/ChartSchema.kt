@@ -141,7 +141,7 @@ internal fun independentChartsToJson(collection: IndependentChartCollection, gso
 private fun variantToJson(v: IndependentVariant, gson: Gson): JsonObject {
     val obj = JsonObject()
     obj.add("metadata", gson.toJsonTree(v.metadata).asJsonObject)
-    obj.add("difficulties", JsonArray().apply { v.difficulties.sorted().forEach { addProperty(it) } })
+    obj.add("difficulties", JsonArray().apply { v.difficulties.sorted().forEach { add(it) } })
     val charts = JsonObject()
     v.charts.forEach { (d, c) -> charts.add(d, gson.toJsonTree(c).asJsonObject) }
     obj.add("charts", charts)

@@ -290,9 +290,9 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 ?: error("Chart inválido para $difficulty.")
             require(draft.songFolder == metadata.songFolder) { "El chart no pertenece a la canción $songId." }
             require(draft.difficulty == difficulty) { "El chart no corresponde a la dificultad $difficulty." }
-            validateChartContent(draft.asJsonObject() ?: chartNode.asJsonObject)
+            validateChartContent(autoSaveGson.toJsonTree(draft).asJsonObject)
         }
-        histories.keys.forEach { difficulty ->
+        histories.keySet().forEach { difficulty ->
             require(difficulty in difficulties) { "Historial para dificultad no declarada $difficulty en $engine/$songId." }
         }
         uneditable.entrySet().forEach { (difficulty, path) ->
@@ -317,14 +317,14 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 if (assetNode != null && !assetNode.isJsonNull) {
                     require(assetNode.isJsonObject) { "Recurso original inválido en $engine/$songId." }
                     val asset = assetNode.asJsonObject
-                    require(asset.get("kind")?.isString == true && asset.get("kind").asString in setOf("image", "audio")) {
+                    require(asset.get("kind")?.isJsonPrimitive == true && asset.get("kind").asJsonPrimitive.isString && asset.get("kind").asString in setOf("image", "audio")) {
                         "Tipo de medio inválido en original de $engine/$songId."
                     }
-                    require(asset.get("path")?.isString == true && asset.get("path").asString.isNotEmpty() &&
+                    require(asset.get("path")?.isJsonPrimitive == true && asset.get("path").asJsonPrimitive.isString && asset.get("path").asString.isNotEmpty() &&
                         asset.get("path").asString.split('/').none { it == "." || it == ".." }) {
                         "Ruta de original insegura en $engine/$songId."
                     }
-                    require(asset.get("displayName")?.isString == true) { "Falta displayName en original de $engine/$songId." }
+                    require(asset.get("displayName")?.isJsonPrimitive == true && asset.get("displayName").asJsonPrimitive.isString) { "Falta displayName en original de $engine/$songId." }
                     asset.get("uri")?.let { uri ->
                         require(uri.isJsonNull || (uri.isJsonPrimitive && uri.asJsonPrimitive.isString)) {
                             "URI inválida en original de $engine/$songId."

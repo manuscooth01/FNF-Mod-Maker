@@ -2647,25 +2647,31 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } }
             result.onSuccess { imported ->
-                val used = config.characterLibrary.map { it.draft.charFolder.lowercase() }.toMutableSet()
-                val entries = imported.map { (candidateId, preview, draft) ->
-                    var charId = draft.charId.ifBlank { candidateId }
-                    var folder = draft.copy(charId = charId).charFolder.lowercase()
-                    var n = 2
-                    while (folder in used) { charId = "${draft.charId}-$n"; folder = draft.copy(charId = charId).charFolder.lowercase(); n++ }
-                    used.add(folder)
-                    val entry = com.fnfmodmaker.model.CharacterEntry(java.util.UUID.randomUUID().toString(), draft.copy(charId = charId))
-                    Pair(entry, preview)
+                runCatching {
+                    val used = config.characterLibrary.map { it.draft.charFolder.lowercase() }.toMutableSet()
+                    val entries = imported.map { (candidateId, preview, draft) ->
+                        var charId = draft.charId.ifBlank { candidateId }
+                        var folder = draft.copy(charId = charId).charFolder.lowercase()
+                        var n = 2
+                        while (folder in used) { charId = "${draft.charId}-$n"; folder = draft.copy(charId = charId).charFolder.lowercase(); n++ }
+                        used.add(folder)
+                        val entry = com.fnfmodmaker.model.CharacterEntry(java.util.UUID.randomUUID().toString(), draft.copy(charId = charId))
+                        Pair(entry, preview)
+                    }
+                    pushCharacterUndo()
+                    config = config.copy(characterLibrary = config.characterLibrary + entries.map { it.first },
+                        selectedCharacterId = entries.first().first.id, characterAssignments = config.resolvedAssignments())
+                    warnings = warnings + entries.flatMap { it.second.warnings }.distinct() +
+                        "Importados ${entries.size} personaje(s) desde ZIP; revisa su lado (jugador o rival) y sus animaciones."
+                    characterZipAnalysis = null
+                    error = null
+                    status = "¡Personajes importados!"
+                    forceAutoSave()
+                }.onFailure {
+                    // La confirmación nunca muere en silencio: el motivo queda en error.
+                    error = it.message ?: it.toString()
+                    status = ""
                 }
-                pushCharacterUndo()
-                config = config.copy(characterLibrary = config.characterLibrary + entries.map { it.first },
-                    selectedCharacterId = entries.first().first.id, characterAssignments = config.resolvedAssignments())
-                warnings = warnings + entries.flatMap { it.second.warnings }.distinct() +
-                    "Importados ${entries.size} personaje(s) desde ZIP; revisa su lado (jugador o rival) y sus animaciones."
-                characterZipAnalysis = null
-                error = null
-                status = "¡Personajes importados!"
-                forceAutoSave()
             }.onFailure {
                 error = it.message ?: "No se pudo importar el ZIP."
                 status = ""

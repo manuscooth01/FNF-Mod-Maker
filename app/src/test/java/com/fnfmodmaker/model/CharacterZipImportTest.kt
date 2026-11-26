@@ -71,7 +71,9 @@ class CharacterZipImportTest {
             entry("images/characters/hero.png", ""),
             entry("images/characters/hero.xml", xml)))
         assertTrue(analysis.problems.any { it.contains("incomplete.json") && it.contains("PNG") })
-        assertEquals(listOf("hero"), analysis.candidates.map { it.id })
+        // El identificador viene del nombre del JSON: complete.json → "complete".
+        assertEquals(listOf("complete"), analysis.candidates.map { it.id })
+        assertTrue(analysis.candidates.single().sheet.name.endsWith("hero.png"))
     }
 
     @Test fun ambiguousJsonAndZipWithoutCharactersAreNotImportable() {

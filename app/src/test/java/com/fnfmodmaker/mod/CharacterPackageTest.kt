@@ -26,8 +26,16 @@ import java.io.File
 class CharacterPackageTest {
     @get:Rule val temp = TemporaryFolder()
 
-    private fun fixturePng(): File = File(temp.root, "dad.png").apply {
-        if (!exists()) javaClass.getResourceAsStream("/psych-fixture/dad.png")!!.use { it.copyTo(outputStream()) }
+    private fun fixturePng(): File {
+        val target = File(temp.root, "dad.png")
+        if (!target.exists()) {
+            // javaClass fuera del apply: dentro de apply se ligaría a java.io.File y el
+            // classloader de Robolectric no vería los recursos de test.
+            javaClass.getResourceAsStream("/psych-fixture/dad.png")!!.use { input ->
+                target.outputStream().use { input.copyTo(it) }
+            }
+        }
+        return target
     }
 
     /** Grid draft over the 2×2 fixture; only idle+singLEFT so every frame fits. */

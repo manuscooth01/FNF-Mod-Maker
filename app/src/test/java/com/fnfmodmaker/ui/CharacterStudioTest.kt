@@ -45,7 +45,7 @@ class CharacterStudioTest {
             override fun <T : ViewModel> create(modelClass: Class<T>): T = WizardViewModel(app) as T
         }
         vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
-        await { !vm.busy && vm.currentProjectId != null }
+        await("setup") { !vm.busy && vm.currentProjectId != null }
     }
 
     @After fun teardown() {
@@ -54,14 +54,14 @@ class CharacterStudioTest {
         Dispatchers.resetMain()
     }
 
-    private fun await(condition: () -> Boolean) {
+    private fun await(label: String, condition: () -> Boolean) {
         val end = System.nanoTime() + 30_000_000_000L
         while (System.nanoTime() < end) {
             scheduler.runCurrent()
             if (condition()) return
             Thread.sleep(10)
         }
-        fail("Timeout: busy=${vm.busy}, error=${vm.error}")
+        fail("Timeout [$label]: busy=${vm.busy}, error=${vm.error}, library=${vm.config.characterLibrary.size}")
     }
 
     private fun characterZip(): Uri {
@@ -99,20 +99,20 @@ class CharacterStudioTest {
 
     @Test fun undoRedoEditsOnlyTheSelectedCharacterDraft() {
         vm.createLibraryCharacter()
-        await { vm.config.selectedCharacterId != "legacy" && !vm.busy }
+        await("crear-personaje") { vm.config.selectedCharacterId != "legacy" && !vm.busy }
         val previousName = vm.config.character.displayName
         vm.setCharName("Nuevo nombre")
-        await { vm.config.character.displayName == "Nuevo nombre" }
+        await("setCharName") { vm.config.character.displayName == "Nuevo nombre" }
         assertTrue(vm.characterUndoAvailable)
         assertFalse(vm.characterRedoAvailable)
         vm.undoCharacterEdit()
-        await { vm.config.character.displayName == previousName }
+        await("undo") { vm.config.character.displayName == previousName }
         assertTrue(vm.characterRedoAvailable)
         vm.redoCharacterEdit()
-        await { vm.config.character.displayName == "Nuevo nombre" }
+        await("redo") { vm.config.character.displayName == "Nuevo nombre" }
         // Cambiar de identidad invalida las pilas: nunca se restaura otro personaje.
         vm.selectLibraryCharacter("legacy")
-        await { !vm.busy }
+        await("seleccion-legacy") { !vm.busy }
         assertFalse(vm.characterUndoAvailable)
         assertFalse(vm.characterRedoAvailable)
     }
@@ -120,13 +120,13 @@ class CharacterStudioTest {
     @Test fun zipImportAddsLibraryIdentityAndUndoRevertsIt() {
         assertEquals(1, vm.config.characterLibrary.size)
         vm.prepareCharacterZipImport(characterZip())
-        await { vm.characterZipAnalysis != null || vm.error != null }
+        await("analizar-zip") { vm.characterZipAnalysis != null || vm.error != null }
         assertNull(vm.error)
         val analysis = vm.characterZipAnalysis!!
         assertEquals(listOf("hero"), analysis.candidates.map { it.id })
         assertTrue(analysis.importable)
         vm.applyCharacterZipImport(setOf("hero"))
-        await { vm.config.characterLibrary.size == 2 && vm.characterZipAnalysis == null }
+        await("aplicar-zip") { vm.config.characterLibrary.size == 2 && vm.characterZipAnalysis == null }
         val draft = vm.config.character
         assertEquals("hero", draft.charId)
         assertTrue(draft.useAtlas)
@@ -137,16 +137,16 @@ class CharacterStudioTest {
         assertEquals(1, draft.scaleValue.toInt())
         // La importación es deshacible como cualquier edición del personaje.
         vm.undoCharacterEdit()
-        await { vm.config.characterLibrary.size == 1 }
+        await("undo-importacion") { vm.config.characterLibrary.size == 1 }
     }
 
     @Test fun renameCustomAnimationMovesFramesSettingsAndPrefix() {
         assertTrue(vm.addCustomAnimation("hey"))
-        await { "hey" in vm.config.character.customAnimations }
+        await("add-animacion") { "hey" in vm.config.character.customAnimations }
         vm.updateCharacterAnimation("hey") { it.copy(fps = "12", offsetX = "3") }
         vm.setAtlasPrefix("hey", "Hey ")
         assertTrue(vm.renameCustomAnimation("hey", "wave"))
-        await { "wave" in vm.config.character.customAnimations }
+        await("renombrar") { "wave" in vm.config.character.customAnimations }
         assertEquals("12", vm.config.character.settingsFor("wave").fps)
         assertEquals("3", vm.config.character.settingsFor("wave").offsetX)
         assertEquals("Hey ", vm.config.character.prefixFor("wave"))
@@ -164,19 +164,19 @@ class CharacterStudioTest {
         vm.setCharIdleFrames("1"); vm.setCharLeftFrames("1")
         vm.setCharDownFrames("0"); vm.setCharUpFrames("0"); vm.setCharRightFrames("0")
         vm.pickCharacterSheet(Uri.fromFile(png))
-        await { !vm.busy }
+        await("pick-sheet") { !vm.busy }
         assertNull(vm.error)
         vm.setCharacterExportTarget(WizardViewModel.CharacterExportTarget.BOTH)
         val psychZip = File(app.filesDir, "out-psych.zip")
         vm.exportCharacter(Uri.fromFile(psychZip))
-        await { vm.pendingCharacterPackage != null || vm.error != null }
+        await("export-psych") { vm.pendingCharacterPackage != null || vm.error != null }
         assertNull(vm.error)
         val names1 = zipNames(psychZip)
         assertTrue("characters/hero.json" in names1)
         assertFalse(names1.any { it.startsWith("data/characters/") })
         val vsliceZip = File(app.filesDir, "out-vslice.zip")
         vm.exportPendingCharacterPackage(Uri.fromFile(vsliceZip))
-        await { vm.characterSaved != null || vm.error != null }
+        await("export-vslice") { vm.characterSaved != null || vm.error != null }
         assertNull(vm.error)
         assertNull(vm.pendingCharacterPackage)
         val names2 = zipNames(vsliceZip)

@@ -104,6 +104,7 @@ class AssetLibraryViewModelTest {
         // Autoguardado: el catálogo quedó en el proyecto del disco.
         await("autoguardado") { !vm.busy }
         vm.forceAutoSave()
+        await("guardado") { vm.projectSaveStatus == "Guardado en este dispositivo" }
         val saved = File(app.filesDir, "projects/${vm.currentProjectId}/project.json").readText()
         assertTrue(saved.contains("\"assetPacks\""))
         assertTrue(saved.contains(pack.id))
@@ -139,6 +140,7 @@ class AssetLibraryViewModelTest {
         await("fondo") { vm.config.stageDraft.backgroundImage != null && !vm.busy }
         // Persistencia y recuperación de las asignaciones.
         vm.forceAutoSave()
+        await("guardado") { vm.projectSaveStatus == "Guardado en este dispositivo" }
         val saved = File(app.filesDir, "projects/${vm.currentProjectId}/project.json").readText()
         assertTrue(saved.contains(png.file!!.path))
     }

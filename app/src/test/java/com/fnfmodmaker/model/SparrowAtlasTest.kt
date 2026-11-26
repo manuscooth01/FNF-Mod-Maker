@@ -48,8 +48,8 @@ class SparrowAtlasTest {
         // Upright drawing swaps the stored region: 30×12 stored → 12×30 drawn.
         assertEquals(12, rotated[0].drawnWidth)
         assertEquals(30, rotated[0].drawnHeight)
-        assertTrue(atlasFramesFit(rotated, 34, 18))
-        assertFalse(atlasFramesFit(rotated, 33, 18))
+        assertTrue(atlasFramesFit(rotated, 34, 20))
+        assertFalse(atlasFramesFit(rotated, 34, 19))
         // Rewriting the image reference keeps the rotated attribute verbatim.
         val rewritten = rewriteSparrowImagePath(
             """<TextureAtlas imagePath="old.png"><SubTexture name="Turn 0000" x="4" y="6" width="30" height="12" rotated="true"/></TextureAtlas>""",

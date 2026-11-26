@@ -108,7 +108,7 @@ class AssetLibraryPersistenceTest {
 
     @Test fun validatorRejectsBrokenCatalogs() {
         val validator = ProjectConfigValidator(gson)
-        val base = """{"modTitle":"x","songs":[],"assetPacks":[%s]}"""
+        val base = """{"modTitle":"x","songs":[],"charts":{},"stageDraft":{},"characterLibrary":[{"id":"legacy","draft":{"enabled":false}}],"assetPacks":[%s]}"""
         val pack = """{"id":"11111111-2222-3333-4444-555555555555","sourceName":"a.zip","importedAt":1,"assets":[]}"""
         validator.validate(JsonParser.parseString(base.format(pack)).asJsonObject)
         assertThrows(IllegalArgumentException::class.java) {

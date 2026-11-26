@@ -62,7 +62,7 @@ data class IndependentOriginal(
     val editable: Boolean = false
 ) {
     init {
-        require((asset == null) xor contentJson.isNotEmpty()) {
+        require((asset != null) xor contentJson.isNotEmpty()) {
             "Un original debe ser medio o documento opaco, no ambos ni ninguno."
         }
         asset?.let { ref ->

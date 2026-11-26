@@ -553,8 +553,8 @@ class IndependentChartsV2Test {
         assertEquals(CHART_SCHEMA_V2, restored.chartSchemaVersion)
         val restoredPsych = restored.independentCharts!!.songs.getValue("test").psych!!
         val restoredVslice = restored.independentCharts!!.songs.getValue("test").vSlice!!
-        assertEquals(psych.bpm, restoredPsych.charts.getValue("normal").bpm)
-        assertEquals(vslice.bpm, restoredVslice.charts.getValue("normal").bpm)
+        assertEquals(psych.bpm, restoredPsych.charts.getValue("normal").bpm, 1e-9)
+        assertEquals(vslice.bpm, restoredVslice.charts.getValue("normal").bpm, 1e-9)
         assertEquals("""[{"t":12.25,"e":"Camera"}]""", restoredVslice.metadata.vSliceEventsJson)
     }
 }

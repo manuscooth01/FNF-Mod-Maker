@@ -99,6 +99,9 @@ internal fun visitIndependentMedia(root: JsonObject, action: (JsonObject) -> Uni
         reference(asset, key)
     }
     val independent = root.get("independentCharts") ?: return
+    // A legacy document serialized with serializeNulls carries the absent collection
+    // as an explicit null; that is the legal legacy shape, not malformed v2 data.
+    if (independent.isJsonNull) return
     require(independent.isJsonObject) { "independentCharts debe ser un objeto." }
     independent.asJsonObject.entrySet().forEach songLoop@{ (songId, songNode) ->
         if (songId == "legacyDocumentJson" || !songNode.isJsonObject) return@songLoop

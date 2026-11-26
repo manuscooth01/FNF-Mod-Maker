@@ -32,6 +32,34 @@ jobs:
         with:
           gradle-version: "8.9"
 
+      - name: Precargar SDK jars de Robolectric
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$HOME/.m2/repository/org/robolectric/android-all-instrumented"
+          # Versiones que Robolectric 4.14.1 resuelve para este proyecto:
+          # API 35 (sandbox por defecto del runner), API 28 (@Config(sdk=[28]))
+          # y API 34 (targetSdk), todas instrumentadas (i7).
+          for v in 15-robolectric-12650502-i7 9-robolectric-4913185-2-i7 14-robolectric-10818077-i7; do
+            dir="$base/$v"
+            mkdir -p "$dir"
+            for f in "android-all-instrumented-$v.pom" "android-all-instrumented-$v.pom.sha1" "android-all-instrumented-$v.jar" "android-all-instrumented-$v.jar.sha1"; do
+              if [ -s "$dir/$f" ]; then continue; fi
+              ok=0
+              for host in "https://repo.maven.apache.org/maven2" "https://maven-central.storage-download.googleapis.com/maven2"; do
+                if curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o "$dir/$f" "$host/org/robolectric/android-all-instrumented/$v/$f"; then
+                  ok=1
+                  break
+                fi
+              done
+              if [ "$ok" != "1" ]; then
+                echo "No se pudo precargar $f ni desde el mirror; los tests de Robolectric fallarían al descargarlo en runtime."
+                exit 1
+              fi
+            done
+          done
+          echo "Jars de Robolectric precargados en $base."
+
       - name: Compilar
         shell: bash
         run: |

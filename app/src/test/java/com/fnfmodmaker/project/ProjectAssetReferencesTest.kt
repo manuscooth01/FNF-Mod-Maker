@@ -92,6 +92,13 @@ class ProjectAssetReferencesTest {
     }
 
     @Test fun v2MetadataAndNestedOriginalAssetsAreVisitedAndValidated() {
+        // The validator parses PickedImage/PickedAudio (uri: Uri) through the caller's
+        // Gson; production always passes a Uri-capable one and so do the sibling tests.
+        val gson = com.google.gson.GsonBuilder().registerTypeAdapter(android.net.Uri::class.java,
+            object : com.google.gson.TypeAdapter<android.net.Uri>() {
+                override fun write(out: com.google.gson.stream.JsonWriter, value: android.net.Uri?) { out.nullValue() }
+                override fun read(input: com.google.gson.stream.JsonReader): android.net.Uri? { input.skipValue(); return null }
+            }.nullSafe()).create()
         val variant = IndependentVariant(
             metadata = SongConfig(songName = "Test"),
             originals = listOf(
@@ -102,7 +109,7 @@ class ProjectAssetReferencesTest {
                 IndependentOriginal(originalPath = "metadata.json", contentJson = """{"unknown":{"path":"not-a-resource"}}""")
             )
         )
-        val config = com.google.gson.Gson().toJsonTree(ModConfig(
+        val config = gson.toJsonTree(ModConfig(
             chartSchemaVersion = CHART_SCHEMA_V2,
             modTitle = "Test",
             independentCharts = IndependentChartCollection(
@@ -116,14 +123,14 @@ class ProjectAssetReferencesTest {
         val references = mutableListOf<String>()
         visitProjectAssets(config) { references.add(it.get("path").asString) }
         assertEquals(setOf(File(temp.root, "Inst.ogg").path, "assets/Inst.ogg"), references.toSet())
-        ProjectConfigValidator(com.google.gson.Gson()).validate(config)
+        ProjectConfigValidator(gson).validate(config)
 
         val malformed = config.deepCopy()
         malformed.getAsJsonObject("independentCharts").getAsJsonObject("test")
             .getAsJsonObject("vslice").getAsJsonArray("originals")[0].asJsonObject
             .getAsJsonObject("asset").addProperty("path", "../escape")
         assertThrows(IllegalArgumentException::class.java) {
-            ProjectConfigValidator(com.google.gson.Gson()).validate(malformed)
+            ProjectConfigValidator(gson).validate(malformed)
         }
     }
 }

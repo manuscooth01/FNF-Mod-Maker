@@ -44,7 +44,7 @@ object CharacterZipImport {
      * entries, backslashes, duplicate paths and unreadable JSON never reach the
      * project. Missing resources reject only their own candidate character.
      */
-    fun analyze(entries: List<Entry>): Analysis {
+    internal fun analyze(entries: List<Entry>): Analysis {
         val problems = mutableListOf<String>()
         if (entries.size > MAX_ENTRIES) problems.add("El ZIP supera $MAX_ENTRIES entradas.")
         val seen = mutableSetOf<String>()

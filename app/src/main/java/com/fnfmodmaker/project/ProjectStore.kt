@@ -205,13 +205,22 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
                     // under assets/library/<packId>/): keep it in place with its structure.
                     if (source.canonicalPath.startsWith(targetDir.canonicalPath + File.separator)) source.path else {
                         val extension = source.extension.filter { it.isLetterOrDigit() }.take(10)
-                        val out = relativeTarget(source)
-                            ?: File.createTempFile("asset_", if (extension.isEmpty()) ".dat" else ".$extension", targetDir)
-                        created.add(out)
-                        check(out.parentFile.isDirectory || out.parentFile.mkdirs()) { "No se pudo crear la carpeta de recursos." }
-                        require(!out.exists()) { "Colisión al copiar el recurso ${source.name}." }
-                        source.inputStream().use { input -> out.outputStream().use { input.copyTo(it) } }
-                        out.absolutePath
+                        val relative = relativeTarget(source)
+                        if (relative != null) {
+                            // Library layout: copy to the same relative path and reject a
+                            // genuine collision instead of silently overwriting it.
+                            require(!relative.exists()) { "Colisión al copiar el recurso ${source.name}." }
+                            created.add(relative)
+                            check(relative.parentFile.isDirectory || relative.parentFile.mkdirs()) { "No se pudo crear la carpeta de recursos." }
+                            source.inputStream().use { input -> relative.outputStream().use { input.copyTo(it) } }
+                            relative.absolutePath
+                        } else {
+                            // Legacy flat copy: createTempFile already creates the empty file.
+                            val out = File.createTempFile("asset_", if (extension.isEmpty()) ".dat" else ".$extension", targetDir)
+                            created.add(out)
+                            source.inputStream().use { input -> out.outputStream().use { input.copyTo(it) } }
+                            out.absolutePath
+                        }
                     }
                 }
                 obj.addProperty("path", destination)

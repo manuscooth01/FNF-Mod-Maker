@@ -122,11 +122,12 @@ class AssetLibraryPersistenceTest {
 
     @Test fun oldProjectsWithoutLibraryOpenWithEmptyCatalog() {
         val validator = ProjectConfigValidator(gson)
-        val old = """{"modTitle":"Viejo","songs":[],"character":{"enabled":false}}"""
+        // Proyecto antiguo completo pero sin assetPacks: abre con biblioteca vacía.
+        val old = """{"modTitle":"Viejo","songs":[],"charts":{},"stageDraft":{},"characterLibrary":[{"id":"legacy","draft":{"enabled":false}}],"character":{"enabled":false}}"""
         validator.validate(JsonParser.parseString(old).asJsonObject)
         val config = gson.fromJson(old, com.fnfmodmaker.model.ModConfig::class.java)
         assertTrue(config.assetPacks.isEmpty())
-        // Un paquete antiguo con categoría desconocida no rompe la apertura.
+        // Una categoría desconocida de un proyecto futuro no rompe la apertura.
         val legacy = """{"modTitle":"Viejo","assetPacks":[{"id":"x","assets":[{"id":"a","category":"CATEGORIA-FUTURA"}]}]}"""
         val parsed = gson.fromJson(legacy, com.fnfmodmaker.model.ModConfig::class.java)
         assertEquals(com.fnfmodmaker.model.AssetCategory.UNCLASSIFIED, parsed.assetPacks.single().assets.single().type)

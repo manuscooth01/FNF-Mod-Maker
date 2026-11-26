@@ -211,7 +211,15 @@ data class CharacterDraft(
     val importedSourceFormat: String = "",
     // Exact identifier of an editable character imported as part of a V-Slice mod.
     val importedVSliceCharacterId: String = "",
-    val importedPsychCharacterId: String = ""
+    val importedPsychCharacterId: String = "",
+    // Engine-specific properties. "danceEvery" and "isPixel" exist only in the V-Slice
+    // schema; "singTime" maps to Psych "sing_duration". "startingAnimation" is only
+    // exported to V-Slice because Psych always dances "idle". Nothing here invents a
+    // field: unsupported values stay in the project and are reported on export.
+    val danceEvery: String = "1",
+    val singTime: String = "4",
+    val startingAnimation: String = "idle",
+    val isPixel: Boolean = false
 ) {
     /** Carpeta/ID del personaje (minúsculas y guiones). */
     val charFolder: String
@@ -227,6 +235,13 @@ data class CharacterDraft(
     val frameWidthValue: Int get() = frameWidth.toIntOrNull() ?: 0
     val frameHeightValue: Int get() = frameHeight.toIntOrNull() ?: 0
     val scaleValue: Float get() = scale.toFloatOrNull() ?: 1f
+
+    /** V-Slice beats between dance loops; 0 disables the dance loop. */
+    val danceEveryValue: Float
+        get() = danceEvery.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0f && it <= 64f } ?: 1f
+    /** Seconds a sing pose holds before returning to dance (V-Slice singTime / Psych sing_duration). */
+    val singTimeValue: Double
+        get() = singTime.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 && it <= 32.0 } ?: 4.0
 
     val animationNames: List<String>
         get() = CHARACTER_ANIMATIONS + customAnimations.filter { it !in CHARACTER_ANIMATIONS }.distinct()
@@ -296,6 +311,18 @@ data class CharacterDraft(
                 if (settings.offsetX.toIntOrNull() == null || settings.offsetY.toIntOrNull() == null) {
                     add("Los offsets de $animation deben ser números enteros.")
                 }
+            }
+            if (useAtlas && atlasFrames.any { it.rotated }) {
+                add("El XML tiene frames rotados: Psych y V-Slice los dibujarían mal; elige un atlas sin frames rotados.")
+            }
+            if (danceEvery.toFloatOrNull()?.takeIf { it.isFinite() && it >= 0f && it <= 64f } == null) {
+                add("danceEvery debe ser un número entre 0 y 64 (batidos entre bailes, V-Slice).")
+            }
+            if (singTime.toDoubleOrNull()?.takeIf { it.isFinite() && it >= 0.0 && it <= 32.0 } == null) {
+                add("singTime debe ser un número entre 0 y 32 (segundos manteniendo la pose de canto).")
+            }
+            if (startingAnimation !in animationNames) {
+                add("La animación inicial \"$startingAnimation\" no existe; elige una animación del personaje.")
             }
         }
 

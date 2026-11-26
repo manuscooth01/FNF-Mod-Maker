@@ -26,15 +26,36 @@ class SparrowAtlasTest {
         assertEquals(parseSparrowAtlas(xml), parseSparrowAtlas(rewritten))
     }
 
-    @Test fun rejectsDoctypesRotatedAndInvalidFrames() {
+    @Test fun rejectsDoctypesInvalidRotatedAttributeAndInvalidFrames() {
         val bad = listOf(
             """<!DOCTYPE TextureAtlas [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><TextureAtlas><SubTexture name="&xxe;" x="0" y="0" width="1" height="1"/></TextureAtlas>""",
-            """<TextureAtlas><SubTexture name="x" x="0" y="0" width="1" height="1" rotated="true"/></TextureAtlas>""",
-            """<TextureAtlas><SubTexture name="x" x="0" y="0" width="1" height="1" rotated="1"/></TextureAtlas>""",
+            """<TextureAtlas><SubTexture name="x" x="0" y="0" width="1" height="1" rotated="maybe"/></TextureAtlas>""",
+            """<TextureAtlas><SubTexture name="x" x="0" y="0" width="0" height="1"/></TextureAtlas>""",
             """<TextureAtlas><SubTexture name="x" x="-1" y="0" width="1" height="1"/></TextureAtlas>""",
+            """<TextureAtlas><SubTexture name="x" x="0" y="0" width="1" height="1" frameWidth="0"/></TextureAtlas>""",
             """<TextureAtlas><SubTexture name="x" x="0" y="0" width="1" height="1"/><SubTexture name="x" x="1" y="0" width="1" height="1"/></TextureAtlas>"""
         )
         bad.forEach { value -> assertTrue(runCatching { parseSparrowAtlas(value) }.isFailure) }
+    }
+
+    @Test fun rotatedFramesAreReadFlaggedAndDrawnSwapped() {
+        val rotated = parseSparrowAtlas("""<TextureAtlas imagePath="a.png">
+            <SubTexture name="Turn 0000" x="4" y="6" width="30" height="12" rotated="true"/>
+            <SubTexture name="Flat 0000" x="0" y="0" width="10" height="20" rotated="0"/>
+        </TextureAtlas>""")
+        assertTrue(rotated[0].rotated)
+        assertFalse(rotated[1].rotated)
+        // Upright drawing swaps the stored region: 30×12 stored → 12×30 drawn.
+        assertEquals(12, rotated[0].drawnWidth)
+        assertEquals(30, rotated[0].drawnHeight)
+        assertTrue(atlasFramesFit(rotated, 34, 18))
+        assertFalse(atlasFramesFit(rotated, 33, 18))
+        // Rewriting the image reference keeps the rotated attribute verbatim.
+        val rewritten = rewriteSparrowImagePath(
+            """<TextureAtlas imagePath="old.png"><SubTexture name="Turn 0000" x="4" y="6" width="30" height="12" rotated="true"/></TextureAtlas>""",
+            "new.png")
+        assertTrue(rewritten.contains("rotated=\"true\""))
+        assertEquals(12, parseSparrowAtlas(rewritten).single().drawnWidth)
     }
 
     @Test fun oldSavedDraftGetsDefaultsForNewFields() {

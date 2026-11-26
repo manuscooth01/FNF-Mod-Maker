@@ -7,7 +7,9 @@ internal data class CharacterJsonPreview(
     val format: String, val source: String, val id: String, val name: String, val assetPath: String,
     val scale: String, val flip: Boolean, val positionX: String, val positionY: String,
     val cameraX: String, val cameraY: String, val prefixes: Map<String, String>,
-    val settings: Map<String, CharacterAnimationSettings>, val warnings: List<String>
+    val settings: Map<String, CharacterAnimationSettings>, val warnings: List<String>,
+    val danceEvery: String = "1", val singTime: String = "4",
+    val startingAnimation: String = "idle", val isPixel: Boolean = false
 )
 
 /** Imports editable fields only. The original JSON remains in the project for later recovery. */
@@ -63,10 +65,25 @@ internal fun parseCharacterJson(text: String, fileName: String, side: CharacterS
         settings[name] = CharacterAnimationSettings(fps.toString(), offsets.first.toString(), offsets.second.toString(), anim.optBoolean(if (vSlice) "looped" else "loop", false))
     }
     require("idle" in prefixes && prefixes.keys.count { it !in CHARACTER_ANIMATIONS } <= 30) { "Se necesita idle y un máximo de 30 animaciones personalizadas." }
+    // Engine-specific properties captured for round-trip fidelity; each is validated
+    // against the range its engine schema actually accepts.
+    fun boundedNumber(field: String, fallback: Double, max: Double): String {
+        val value = if (json.has(field)) json.optDouble(field, fallback) else fallback
+        if (json.has(field)) require(value.isFinite() && value >= 0.0 && value <= max) { "$field inválido." }
+        return value.toString()
+    }
+    val danceEvery = if (vSlice) boundedNumber("danceEvery", 1.0, 64.0) else "1"
+    val singTime = if (vSlice) boundedNumber("singTime", 4.0, 32.0)
+    else boundedNumber("sing_duration", 4.0, 32.0)
+    val startingAnimation = if (vSlice) json.optString("startingAnimation", "idle").also {
+        if (json.has("startingAnimation")) require(it.matches(Regex("[A-Za-z0-9_-]{1,32}"))) { "startingAnimation inválido." }
+    } else "idle"
+    val isPixel = if (vSlice) json.optBoolean("isPixel", false) else false
     warnings.add("El PNG y el XML Sparrow deben elegirse por separado; verifica que coincidan con $asset.")
     warnings.add("Se regenerará el JSON al exportar: índices, propiedades no editables y comportamientos específicos no se trasladan. El original se conserva en el proyecto editable.")
     return CharacterJsonPreview(format, text, id, display, asset, scale.toString(), json.optBoolean(if (vSlice) "flipX" else "flip_x", false),
-        pos.first.toString(), pos.second.toString(), (if (psych && side == CharacterSide.PLAYER) -camera.first else camera.first).toString(), camera.second.toString(), prefixes, settings, warnings.distinct())
+        pos.first.toString(), pos.second.toString(), (if (psych && side == CharacterSide.PLAYER) -camera.first else camera.first).toString(), camera.second.toString(), prefixes, settings, warnings.distinct(),
+        danceEvery, singTime, startingAnimation, isPixel)
 }
 
 internal fun applyCharacterJson(current: CharacterDraft, data: CharacterJsonPreview): CharacterDraft = current.copy(
@@ -74,5 +91,8 @@ internal fun applyCharacterJson(current: CharacterDraft, data: CharacterJsonPrev
     scale = data.scale, flipX = data.flip, positionX = data.positionX, positionY = data.positionY,
     cameraX = data.cameraX, cameraY = data.cameraY, atlasPrefixes = data.prefixes,
     customAnimations = data.prefixes.keys.filter { it !in CHARACTER_ANIMATIONS },
-    animationSettings = data.settings, importedSourceJson = data.source, importedSourceFormat = data.format
+    animationSettings = data.settings, importedSourceJson = data.source, importedSourceFormat = data.format,
+    danceEvery = data.danceEvery, singTime = data.singTime,
+    startingAnimation = if (data.startingAnimation in data.prefixes.keys) data.startingAnimation else "idle",
+    isPixel = data.isPixel
 )

@@ -39,6 +39,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -65,16 +66,16 @@ import kotlin.math.roundToInt
 internal data class PreviewSource(
     val path: String, val left: Int, val top: Int, val width: Int, val height: Int,
     val isGrid: Boolean, val frameX: Int = 0, val frameY: Int = 0,
-    val frameWidth: Int = width, val frameHeight: Int = height
+    val frameWidth: Int = width, val frameHeight: Int = height, val rotated: Boolean = false
 )
 internal data class PreviewFrame(val image: ImageBitmap, val width: Int, val height: Int,
-    val frameX: Int, val frameY: Int, val frameWidth: Int, val frameHeight: Int)
+    val frameX: Int, val frameY: Int, val frameWidth: Int, val frameHeight: Int, val rotated: Boolean = false)
 
 internal fun previewSources(draft: CharacterDraft, animation: String): List<PreviewSource> {
     if (draft.useAtlas) {
         val path = draft.atlasSheet?.path ?: return emptyList()
         return atlasFramesForPrefix(draft.atlasFrames, draft.prefixFor(animation)).take(100).map {
-            PreviewSource(path, it.x, it.y, it.width, it.height, true, it.frameX, it.frameY, it.frameWidth, it.frameHeight)
+            PreviewSource(path, it.x, it.y, it.width, it.height, true, it.frameX, it.frameY, it.frameWidth, it.frameHeight, it.rotated)
         }
     }
     if (draft.useIndividualFrames) {
@@ -107,7 +108,7 @@ internal fun decodePreviewFrames(sources: List<PreviewSource>): List<PreviewFram
                     source.top + source.height), options)
             } else BitmapFactory.decodeFile(source.path, options)
             PreviewFrame((bitmap ?: throw IllegalStateException("No se pudo leer un frame.")).asImageBitmap(),
-                source.width, source.height, source.frameX, source.frameY, source.frameWidth, source.frameHeight)
+                source.width, source.height, source.frameX, source.frameY, source.frameWidth, source.frameHeight, source.rotated)
         }
     } catch (_: Exception) {
         null
@@ -236,12 +237,10 @@ internal fun CharacterPreviewPane(
                 clipRect {
                     if (draft.flipX) {
                         scale(scaleX = -1f, scaleY = 1f, pivot = Offset(logicalX + currentFrame.frameWidth * scaleValue * k / 2f, y + height / 2f)) {
-                            drawImage(currentFrame.image, dstOffset = IntOffset(x.roundToInt(), y.roundToInt()),
-                                dstSize = IntSize(width.roundToInt(), height.roundToInt()))
+                            drawUprightFrame(currentFrame, x, y, width, height)
                         }
                     } else {
-                        drawImage(currentFrame.image, dstOffset = IntOffset(x.roundToInt(), y.roundToInt()),
-                            dstSize = IntSize(width.roundToInt(), height.roundToInt()))
+                        drawUprightFrame(currentFrame, x, y, width, height)
                     }
                 }
             }
@@ -269,6 +268,24 @@ internal fun CharacterPreviewPane(
             Text("Vista previa limitada a los primeros 100 frames; la animación completa se exportará.", style = MaterialTheme.typography.labelSmall)
         }
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+/** Draws one preview frame upright; rotated atlas regions are turned back so the
+ *  preview shows the real sprite even though the engines cannot export them. */
+private fun DrawScope.drawUprightFrame(frame: PreviewFrame, x: Float, y: Float, width: Float, height: Float) {
+    if (!frame.rotated) {
+        drawImage(frame.image, dstOffset = IntOffset(x.roundToInt(), y.roundToInt()),
+            dstSize = IntSize(width.roundToInt(), height.roundToInt()))
+        return
+    }
+    // The stored region is the sprite turned 90° clockwise inside the sheet: pivot the
+    // region's center at the upright rect's center and counter-rotate it.
+    val centerX = x + height / 2f
+    val centerY = y + width / 2f
+    rotate(degrees = -90f, pivot = Offset(centerX, centerY)) {
+        drawImage(frame.image, dstOffset = IntOffset((centerX - width / 2f).roundToInt(), (centerY - height / 2f).roundToInt()),
+            dstSize = IntSize(width.roundToInt(), height.roundToInt()))
     }
 }
 

@@ -117,6 +117,11 @@ object CharacterBuilder {
             val size = MediaTools.imageSize(sheetFile) ?: throw IllegalStateException("No se pudo leer el PNG del atlas.")
             require(atlasFramesFit(parsed, size.first, size.second)) { "El XML contiene frames fuera del PNG." }
             require(parsed == charData.atlasFrames) { "El XML cambió; vuelve a seleccionarlo." }
+            // HaxeFlixel (Psych y V-Slice) ignora el atributo rotated de Sparrow y dibujaría
+            // esos frames mal: bloquear la exportación en lugar de producir un personaje roto.
+            val rotatedCount = parsed.count { it.rotated }
+            if (rotatedCount > 0) throw IllegalStateException(
+                "El XML contiene $rotatedCount frames rotados; Psych y V-Slice no los dibujan correctamente. Usa un atlas sin frames rotados.")
             onProgress("Copiando el atlas Sparrow…")
             sheetFile.copyTo(imageTarget, overwrite = true)
             // Mantener atributos Sparrow (recorte, tamaño original, etc.).
@@ -292,21 +297,29 @@ object CharacterBuilder {
         val scaleValue: Float
         val flipX: Boolean
         val colors: List<Int>
+        val singTime: Double
+        val disableAntialiasing: Boolean
         when (charData) {
             is CharacterDraft -> {
                 scaleValue = charData.scaleValue
                 flipX = charData.flipX
                 colors = hexToRgb(config.weekColor)
+                singTime = charData.singTimeValue
+                disableAntialiasing = charData.isPixel
             }
             is com.fnfmodmaker.model.CharacterVariation -> {
                 scaleValue = charData.scaleValue
                 flipX = charData.flipX
                 colors = hexToRgb(config.weekColor)
+                singTime = 4.0
+                disableAntialiasing = false
             }
             else -> {
                 scaleValue = 1.0f
                 flipX = false
                 colors = hexToRgb(config.weekColor)
+                singTime = 4.0
+                disableAntialiasing = false
             }
         }
         val placement = (charData as? CharacterDraft)?.placement()
@@ -315,12 +328,14 @@ object CharacterBuilder {
             .put("animations", animationArray)
             .put("image", "characters/$charId")
             .put("scale", scaleValue)
-            .put("sing_duration", 4)
+            // Psych 0.7.3 (Character.hx real): sing_duration en segundos; los personajes
+            // pixel-art del juego usan no_antialiasing=true, que es el equivalente directo.
+            .put("sing_duration", singTime)
             .put("healthicon", iconId)
             .put("position", JSONArray().put(placement?.x ?: 0).put(placement?.y ?: 0))
             .put("camera_position", JSONArray().put(psychCameraX).put(placement?.cameraY ?: 0))
             .put("flip_x", flipX)
-            .put("no_antialiasing", false)
+            .put("no_antialiasing", disableAntialiasing)
             .put(
                 "healthbar_colors",
                 JSONArray().put(colors[0]).put(colors[1]).put(colors[2])
@@ -355,6 +370,14 @@ object CharacterBuilder {
             )
         }
         val placement = (charData as? CharacterDraft)?.placement()
+        val singTime = (charData as? CharacterDraft)?.singTimeValue ?: 4.0
+        val danceEvery = (charData as? CharacterDraft)?.danceEveryValue ?: 1f
+        val isPixel = (charData as? CharacterDraft)?.isPixel ?: false
+        // startingAnimation solo existe en el esquema V-Slice; se escribe siempre que
+        // sea una animación conocida (el validador ya garantiza que exista en el draft).
+        val startingAnimation = (charData as? CharacterDraft)?.startingAnimation?.takeIf {
+            it.isNotBlank() && it.length <= 32
+        }
         return JSONObject()
             .put("version", "1.0.0")
             .put("name", displayName.trim().ifEmpty { charId })
@@ -368,104 +391,14 @@ object CharacterBuilder {
             .put("healthIcon", JSONObject().put("id", iconId))
             .put("offsets", JSONArray().put(placement?.x ?: 0).put(placement?.y ?: 0))
             .put("cameraOffsets", JSONArray().put(placement?.cameraX ?: 0).put(placement?.cameraY ?: 0))
-            .put("singTime", 4.0)
+            // Campos del CharacterData real de V-Slice (CharacterData.hx): opcionales pero
+            // con valores por defecto documentados; 0 en danceEvery desactiva el baile.
+            .put("danceEvery", danceEvery)
+            .put("singTime", singTime)
+            .put("isPixel", isPixel)
+            .put("startingAnimation", startingAnimation ?: "idle")
             .put("animations", animationArray)
-            .put("startingAnimation", "idle")
             .put("flipX", flipX)
-            .put("isPixel", false)
-            .toString(2)
-    }
-
-    private fun prepareIcon(
-        root: File,
-        draft: CharacterDraft,
-        id: String,
-        onProgress: (String) -> Unit,
-        warnings: MutableList<String>
-    ): String {
-        val icon = draft.icon
-        if (icon != null) {
-            onProgress("Preparando el icono de vida…")
-            val target = File(root, "images/icons/icon-$id.png")
-            if (MediaTools.prepareHealthIcon(File(icon.path), target)) {
-                return id
-            }
-            warnings.add("El icono de vida no se pudo procesar; se usará el icono del juego base.")
-        }
-        // Sin icono propio: usamos el del personaje base del lado elegido.
-        return if (draft.side == CharacterSide.PLAYER) "bf" else "dad"
-    }
-
-    private fun psychCharacterJson(
-        config: ModConfig,
-        draft: CharacterDraft,
-        id: String,
-        iconId: String,
-        animations: List<Pair<String, Int>>
-    ): String {
-        val animationArray = JSONArray()
-        for ((name, _) in animations) {
-            animationArray.put(
-                JSONObject()
-                    .put("anim", name)
-                    .put("name", "$id $name")
-                    .put("fps", 24)
-                    .put("loop", false)
-                    .put("indices", JSONArray())
-                    .put("offsets", JSONArray().put(0).put(0))
-            )
-        }
-        val colors = hexToRgb(config.weekColor)
-        return JSONObject()
-            .put("animations", animationArray)
-            .put("image", "characters/$id")
-            .put("scale", draft.scaleValue)
-            .put("sing_duration", 4)
-            .put("healthicon", iconId)
-            .put("position", JSONArray().put(0).put(0))
-            .put("camera_position", JSONArray().put(0).put(0))
-            .put("flip_x", draft.flipX)
-            .put("no_antialiasing", false)
-            .put(
-                "healthbar_colors",
-                JSONArray().put(colors[0]).put(colors[1]).put(colors[2])
-            )
-            .toString(2)
-    }
-
-    private fun vsliceCharacterJson(
-        config: ModConfig,
-        draft: CharacterDraft,
-        id: String,
-        iconId: String,
-        animations: List<Pair<String, Int>>
-    ): String {
-        val animationArray = JSONArray()
-        for ((name, _) in animations) {
-            animationArray.put(
-                JSONObject()
-                    .put("name", name)
-                    .put("prefix", "$id $name")
-                    .put("frameRate", 24)
-                    .put("looped", false)
-                    .put("frameIndices", JSONArray())
-                    .put("offsets", JSONArray().put(0).put(0))
-            )
-        }
-        return JSONObject()
-            .put("version", "1.0.0")
-            .put("name", draft.displayName.trim().ifEmpty { id })
-            .put("renderType", "sparrow")
-            .put("assetPath", "characters/$id")
-            .put("scale", draft.scaleValue)
-            .put("healthIcon", JSONObject().put("id", iconId))
-            .put("offsets", JSONArray().put(0).put(0))
-            .put("cameraOffsets", JSONArray().put(0).put(0))
-            .put("singTime", 4.0)
-            .put("animations", animationArray)
-            .put("startingAnimation", "idle")
-            .put("flipX", draft.flipX)
-            .put("isPixel", false)
             .toString(2)
     }
 }

@@ -171,7 +171,10 @@ internal fun freeVSliceMetadata(original: String, raw: SongConfig, effective: So
 internal fun patchVSliceCharacter(original: String, generated: String, hasIcon: Boolean): String {
     val source = readVSliceJson(original, "personaje original")
     val edit = readVSliceJson(generated, "personaje generado")
-    listOf("name", "assetPath", "scale", "flipX", "offsets", "cameraOffsets").forEach { if (edit.has(it)) source.put(it, edit.get(it)) }
+    // Editable fields plus the engine properties Character Studio now manages; any other
+    // source-only field (death, atlasSettings, unknown keys) stays verbatim.
+    listOf("name", "assetPath", "scale", "flipX", "offsets", "cameraOffsets",
+        "danceEvery", "singTime", "isPixel", "startingAnimation").forEach { if (edit.has(it)) source.put(it, edit.get(it)) }
     if (hasIcon && edit.optJSONObject("healthIcon") != null) {
         val icon = source.optJSONObject("healthIcon") ?: JSONObject()
         icon.put("id", edit.getJSONObject("healthIcon").optString("id")); source.put("healthIcon", icon)
@@ -199,7 +202,7 @@ internal fun patchPsychCharacter(original: String, generated: String, hasIcon: B
     rejectDuplicateJsonKeys(original)
     val source = com.google.gson.JsonParser.parseString(original).asJsonObject
     val edit = com.google.gson.JsonParser.parseString(generated).asJsonObject
-    listOf("image", "scale", "flip_x", "position", "camera_position").forEach { key ->
+    listOf("image", "scale", "flip_x", "position", "camera_position", "sing_duration", "no_antialiasing").forEach { key ->
         edit.get(key)?.let { source.add(key, it.deepCopy()) }
     }
     if (hasIcon) edit.get("healthicon")?.let { source.add("healthicon", it.deepCopy()) }

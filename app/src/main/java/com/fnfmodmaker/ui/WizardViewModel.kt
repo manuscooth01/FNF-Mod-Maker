@@ -323,7 +323,23 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     val characterOnlyReady: Boolean get() = characterIssues.isEmpty()
 
     val characterZipName: String
-        get() = "${config.character.charFolder}-personaje.zip"
+        get() = when (characterExportTarget) {
+            CharacterExportTarget.PSYCH -> "${config.character.charFolder}-psych.zip"
+            CharacterExportTarget.VSLICE -> "${config.character.charFolder}-vslice.zip"
+            CharacterExportTarget.BOTH -> "${config.character.charFolder}-psych.zip"
+        }
+
+    /** Destino de la herramienta suelta; BOTH nunca mezcla motores: son dos ZIP independientes. */
+    internal enum class CharacterExportTarget(val label: String) { PSYCH("Psych"), VSLICE("V-Slice"), BOTH("Ambos · 2 ZIP") }
+    internal var characterExportTarget by mutableStateOf(CharacterExportTarget.BOTH)
+        private set
+    internal fun setCharacterExportTarget(target: CharacterExportTarget) {
+        if (!busy) characterExportTarget = target
+    }
+
+    /** Paquete aún sin ZIP en BOTH (motor + carpeta lista en caché). */
+    internal var pendingCharacterPackage by mutableStateOf<Pair<TargetEngine, File>?>(null)
+        private set
 
     /** Canción que se está editando actualmente. */
     val activeSong: SongConfig
@@ -2996,41 +3012,79 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    /** Crea un ZIP solo con el personaje (XML, JSON de los dos motores e icono). */
+    /** Exporta el personaje al destino elegido; BOTH genera dos paquetes independientes. */
     fun exportCharacter(uri: Uri) {
         if ((busy) || !characterOnlyReady) return
         val app = getApplication<Application>()
+        val snapshot = config
+        val target = characterExportTarget
         busy = true
         error = null
         characterSaved = null
+        pendingCharacterPackage = null
         status = "Preparando el personaje…"
         viewModelScope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val draft = config.character.copy(enabled = true)
+                    val draft = snapshot.character.copy(enabled = true)
                     val workRoot = File(app.cacheDir, "chartool")
                     if (workRoot.exists()) workRoot.deleteRecursively()
-                    val root = File(workRoot, draft.charFolder)
-                    if (!root.mkdirs()) throw IllegalStateException("No se pudo crear la carpeta de trabajo.")
-                    val tempConfig = ModConfig(engine = TargetEngine.BOTH)
-                        .copy(character = draft)
+                    val appRoot = File(app.applicationInfo.dataDir)
+                    val engines = when (target) {
+                        CharacterExportTarget.PSYCH -> listOf(TargetEngine.PSYCH)
+                        CharacterExportTarget.VSLICE -> listOf(TargetEngine.VSLICE)
+                        CharacterExportTarget.BOTH -> listOf(TargetEngine.PSYCH, TargetEngine.VSLICE)
+                    }
                     val warningsList = mutableListOf<String>()
-                    com.fnfmodmaker.mod.CharacterBuilder.build(
-                        root = root,
-                        config = tempConfig,
-                        onProgress = { message -> status = message },
-                        warnings = warningsList
-                    )
-                    File(root, "LEEME.txt").writeText(characterReadme(draft.charFolder), Charsets.UTF_8)
+                    val roots = engines.associateWith { engine ->
+                        com.fnfmodmaker.mod.CharacterPackage.build(
+                            File(workRoot, "${draft.charFolder}-${engine.name.lowercase()}"),
+                            snapshot, engine, appRoot, { message -> status = message }, warningsList)
+                    }
+                    val (firstEngine, firstRoot) = roots.entries.first()
                     val stream = app.contentResolver.openOutputStream(uri)
                         ?: throw IllegalStateException("No se pudo abrir el destino elegido.")
                     // Sin carpeta contenedora: el ZIP se descomprime dentro del mod.
-                    stream.use { ModBuilder.zip(root, it, includeRoot = false) }
-                    MediaTools.displayName(app, uri).ifBlank { characterZipName } to warningsList
+                    stream.use { ModBuilder.zip(firstRoot, it, includeRoot = false) }
+                    val pending = roots.entries.drop(1).firstOrNull()?.let { it.key to it.value }
+                    MediaTools.displayName(app, uri).ifBlank { "${draft.charFolder}-${firstEngine.name.lowercase()}.zip" } to
+                        (warningsList to pending)
                 }
             }
-            result.onSuccess { (name, list) ->
+            result.onSuccess { (name, payload) ->
+                val (list, pending) = payload
                 warnings = list
+                pendingCharacterPackage = pending
+                characterSaved = if (pending == null) name else null
+                status = if (pending == null) "¡Personaje listo!"
+                else "ZIP de Psych guardado; elige dónde guardar el ZIP de V-Slice."
+            }.onFailure {
+                status = ""
+                error = it.message ?: it.toString()
+            }
+            busy = false
+        }
+    }
+
+    /** Escribe el paquete restante del destino BOTH al lugar que elija el usuario. */
+    fun exportPendingCharacterPackage(uri: Uri) {
+        val pending = pendingCharacterPackage ?: return
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Guardando el ZIP de ${pending.first.label}…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val stream = app.contentResolver.openOutputStream(uri)
+                        ?: throw IllegalStateException("No se pudo abrir el destino elegido.")
+                    stream.use { ModBuilder.zip(pending.second, it, includeRoot = false) }
+                    MediaTools.displayName(app, uri).ifBlank { "${config.character.charFolder}-vslice.zip" }
+                }
+            }
+            result.onSuccess { name ->
+                pendingCharacterPackage = null
                 characterSaved = name
                 status = "¡Personaje listo!"
             }.onFailure {
@@ -3039,6 +3093,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             }
             busy = false
         }
+    }
+
+    internal fun cancelPendingCharacterPackage() {
+        if (!busy) pendingCharacterPackage = null
     }
 
     // ---------------- Stage ----------------
@@ -3231,28 +3289,6 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     fun setStageCamBoundBottom(value: String) {
         val v = value.toFloatOrNull() ?: 500f
         config = config.copy(stageDraft = config.stageDraft.copy(cameraPosition = config.stageDraft.cameraPosition.copy(bounds = config.stageDraft.cameraPosition.bounds.copy(bottom = v))))
-    }
-
-    private fun characterReadme(id: String): String = buildString {
-        appendLine("PERSONAJE: $id")
-        appendLine()
-        appendLine("Este ZIP NO es un mod: son los archivos de un personaje para meterlos")
-        appendLine("dentro de un mod que ya tengas (o en el que crees con esta misma app).")
-        appendLine()
-        appendLine("CÓMO USARLO")
-        appendLine("1. Descomprime el ZIP dentro de la carpeta de tu mod")
-        appendLine("   (la que está dentro de mods/). Debe quedar así:")
-        appendLine("     characters/$id.json            (Psych)")
-        appendLine("     data/characters/$id.json       (V-Slice)")
-        appendLine("     images/characters/$id.png")
-        appendLine("     images/characters/$id.xml")
-        appendLine("     images/icons/icon-$id.png")
-        appendLine("2. Dile al chart que use el personaje \"$id\":")
-        appendLine("   - Psych: en el chart, player1 (si es el jugador) o player2 (si es el rival).")
-        appendLine("   - V-Slice: en la metadata, playData.characters.player u .opponent.")
-        appendLine()
-        appendLine("Si una animación sale mal, revisa el orden de los frames de tu hoja:")
-        appendLine("idle, singLEFT, singDOWN, singUP, singRIGHT.")
     }
 
     // ---------------- Exportar ----------------

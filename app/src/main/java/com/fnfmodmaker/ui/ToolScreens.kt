@@ -23,6 +23,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -370,16 +371,36 @@ internal fun CharacterToolScreen(vm: WizardViewModel) {
     val pickIcon = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.pickCharacterIcon(uri) }
     val pickFrames = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> vm.pickCharacterFrames(uris) }
     val saveZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> if (uri != null) vm.exportCharacter(uri) }
+    val saveSecondZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> if (uri != null) vm.exportPendingCharacterPackage(uri) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = { ToolTopBar("Personaje", draft.displayName.ifBlank { draft.charFolder }, vm::goHome) },
         bottomBar = {
             Surface(color = MaterialTheme.colorScheme.surface) {
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    if (vm.characterIssues.isNotEmpty()) Text("${vm.characterIssues.size} pendientes · consulta Revisar", style = MaterialTheme.typography.labelSmall)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        WizardViewModel.CharacterExportTarget.entries.forEach { target ->
+                            FilterChip(vm.characterExportTarget == target,
+                                { vm.setCharacterExportTarget(target) }, enabled = !vm.busy,
+                                label = { Text(target.label) })
+                        }
+                    }
+                    val pending = vm.pendingCharacterPackage
+                    if (pending != null) {
+                        Text("ZIP de Psych guardado. Falta el paquete de ${pending.first.label}; el proyecto editable no cambia.",
+                            style = MaterialTheme.typography.labelSmall)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { saveSecondZip.launch("${draft.charFolder}-vslice.zip") },
+                                modifier = Modifier.weight(1f), enabled = !vm.busy) { Text("Guardar ZIP de ${pending.first.label}") }
+                            TextButton(onClick = vm::cancelPendingCharacterPackage, enabled = !vm.busy) { Text("Descartar") }
+                        }
+                    }
+                    if (vm.characterIssues.isNotEmpty() && pending == null) Text("${vm.characterIssues.size} pendientes · consulta Revisar", style = MaterialTheme.typography.labelSmall)
                     if (vm.characterSaved != null) Text("ZIP guardado: ${vm.characterSaved}", style = MaterialTheme.typography.labelSmall)
-                    Button(onClick = { saveZip.launch(vm.characterZipName) }, modifier = Modifier.fillMaxWidth(),
-                        enabled = vm.characterOnlyReady && !vm.busy) { Text(if (vm.busy) "Procesando…" else "Guardar ZIP del personaje") }
+                    if (pending == null) Button(onClick = { saveZip.launch(vm.characterZipName) }, modifier = Modifier.fillMaxWidth(),
+                        enabled = vm.characterOnlyReady && !vm.busy) {
+                        Text(if (vm.busy) "Procesando…" else "Guardar ZIP (${vm.characterExportTarget.label})")
+                    }
                 }
             }
         }

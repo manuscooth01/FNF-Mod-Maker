@@ -165,8 +165,10 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         return id
     }
 
-    /** Copy known assets; reject malformed or missing references before publishing a copy. */
-    fun copyAssets(config: JsonObject, id: String): CopiedAssets {
+    /** Copy known assets; reject malformed or missing references before publishing a copy.
+     *  When [sourceAssets] is provided, files inside it keep their relative path in the copy
+     *  (Asset Library keeps library/<packId>/<jerarquía> instead of being flattened). */
+    fun copyAssets(config: JsonObject, id: String, sourceAssets: File? = null): CopiedAssets {
         val result = config.deepCopy()
         val refs = mutableListOf<JsonObject>()
         visitProjectAssets(result) { refs.add(it) }
@@ -189,13 +191,25 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         require(targetDir.parentFile == projectDir && targetDir.name == "assets") { "Carpeta de recursos insegura." }
         val copied = mutableMapOf<String, String>()
         val created = mutableListOf<File>()
+        val sourceRoot = sourceAssets?.canonicalFile?.takeIf { it.isDirectory }
+        fun relativeTarget(source: File): File? {
+            val root = sourceRoot ?: return null
+            val canonical = source.canonicalFile
+            if (!canonical.path.startsWith(root.path + File.separator)) return null
+            return File(targetDir, canonical.relativeTo(root).path)
+        }
         try {
             refs.zip(sources).forEach { (obj, source) ->
                 val destination = copied.getOrPut(source.path) {
-                    if (source.parentFile == targetDir) source.path else {
+                    // Already inside the target assets tree (e.g. Asset Library hierarchy
+                    // under assets/library/<packId>/): keep it in place with its structure.
+                    if (source.canonicalPath.startsWith(targetDir.canonicalPath + File.separator)) source.path else {
                         val extension = source.extension.filter { it.isLetterOrDigit() }.take(10)
-                        val out = File.createTempFile("asset_", if (extension.isEmpty()) ".dat" else ".$extension", targetDir)
+                        val out = relativeTarget(source)
+                            ?: File.createTempFile("asset_", if (extension.isEmpty()) ".dat" else ".$extension", targetDir)
                         created.add(out)
+                        check(out.parentFile.isDirectory || out.parentFile.mkdirs()) { "No se pudo crear la carpeta de recursos." }
+                        require(!out.exists()) { "Colisión al copiar el recurso ${source.name}." }
                         source.inputStream().use { input -> out.outputStream().use { input.copyTo(it) } }
                         out.absolutePath
                     }

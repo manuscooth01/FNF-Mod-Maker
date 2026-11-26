@@ -64,6 +64,61 @@ data class PickedImage(
 /** Original bytes kept as project assets; converted paths may be regenerated on ZIP export. */
 data class ImportedModResource(val originalPath: String = "", val asset: PickedImage? = null, val converted: Boolean = false)
 
+/** Asset Library 1.0: originales del juego conservados en el proyecto, sin mezclarse con
+ *  importedModResources ni entrar solos en el ZIP del mod. */
+enum class AssetCategory(val label: String) {
+    SPRITE("Personajes y spritesheets"),
+    ATLAS("Atlas Sparrow PNG/XML"),
+    STAGE("Escenarios y fondos"),
+    PROPS("Objetos y decoración"),
+    CHARACTER_ICON("Iconos de personajes"),
+    MENU_ICON("Iconos de menús"),
+    SONG_ART("Portadas e imágenes de canciones"),
+    UI("Interfaces y menús"),
+    AUDIO("Audio"),
+    FONT("Fuentes"),
+    JSON("JSON y metadata"),
+    SCRIPT("Scripts"),
+    OTHER("Otros recursos"),
+    UNCLASSIFIED("Sin clasificar");
+
+    companion object {
+        /** Nombre seguro para serializar; los valores desconocidos del proyecto viejo vuelven a UNCLASSIFIED. */
+        fun fromStored(value: String?): AssetCategory =
+            entries.firstOrNull { it.name == value || it.name == value?.uppercase() } ?: UNCLASSIFIED
+    }
+}
+
+/** Un recurso individual del catálogo. [file] es la referencia tipada al archivo almacenado.
+ *  [category] se persiste como texto: un valor futuro o antiguo nunca rompe el proyecto. */
+data class CatalogAsset(
+    val id: String = "",
+    val packId: String = "",
+    val sourcePath: String = "",
+    val displayName: String = "",
+    val category: String = "UNCLASSIFIED",
+    val extension: String = "",
+    val sizeBytes: Long = 0,
+    val sha256: String = "",
+    val width: Int = 0,
+    val height: Int = 0,
+    val relatedId: String = "",
+    val file: PickedImage? = null
+) {
+    val type: AssetCategory get() = AssetCategory.fromStored(category)
+}
+
+/** Paquete importado: conserva el nombre del ZIP, la fecha y una sugerencia de motor sin comprometerla. */
+data class AssetPack(
+    val id: String = "",
+    val sourceName: String = "",
+    val importedAt: Long = 0,
+    val engineHint: String = "",
+    val assets: List<CatalogAsset> = emptyList()
+) {
+    val totalBytes: Long get() = assets.sumOf { it.sizeBytes }
+}
+
 /** Provenance for a V-Slice chart. Noneditable metadata and unsupported difficulties stay in the original files. */
 data class VSliceSongOrigin(
     val folder: String = "", val metadataPath: String = "", val chartPath: String = "",
@@ -179,6 +234,8 @@ data class ModConfig(
     /** Scripts Lua de Psych aprobados por el usuario; nunca se ejecutan en la app. */
     val psychScripts: Map<String, String> = emptyMap(),
     val importedModResources: List<ImportedModResource> = emptyList(),
+    /** Asset Library 1.0: paquetes de recursos originales importados al proyecto activo. */
+    val assetPacks: List<AssetPack> = emptyList(),
     // Source song folders explicitly removed from this editable project; originals stay in assets.
     val deletedImportedSongFolders: Set<String> = emptySet(),
     val deletedImportedCharacterIds: Set<String> = emptySet()

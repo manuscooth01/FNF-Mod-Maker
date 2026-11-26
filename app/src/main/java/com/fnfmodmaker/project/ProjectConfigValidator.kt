@@ -20,6 +20,7 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
 
     /** Reject malformed model shapes before they can reach screens or be published. */
     fun validate(source: com.google.gson.JsonObject) {
+        validateAssetLibrary(source)
         val version = source.get("chartSchemaVersion")
         val isV2 = version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
         if (isV2) {
@@ -27,6 +28,35 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
         } else {
             requireSupportedChartSchema(source)
             validateV1(source)
+        }
+    }
+
+    /** Asset Library catalog: stable unique ids, sane sizes and checksums, bounded packs. */
+    private fun validateAssetLibrary(source: JsonObject) {
+        val packs = source.get("assetPacks") ?: return
+        if (packs.isJsonNull) return
+        require(packs.isJsonArray) { "La biblioteca de assets debe ser una lista." }
+        val packIds = mutableSetOf<String>()
+        val assetIds = mutableSetOf<String>()
+        packs.asJsonArray.forEach { node ->
+            require(node.isJsonObject) { "Paquete de assets inválido." }
+            val pack = node.asJsonObject
+            val id = pack.get("id")?.takeIf { it.isJsonPrimitive }?.asString ?: error("Paquete de assets sin identificador.")
+            require(id.matches(Regex("[0-9a-f-]{1,64}")) && packIds.add(id.lowercase())) { "Identificador de paquete inválido o repetido: $id." }
+            val assets = pack.get("assets") ?: return@forEach
+            require(assets.isJsonArray) { "La lista de recursos del paquete $id es inválida." }
+            require(assets.asJsonArray.size() <= 4096) { "Demasiados recursos en el paquete $id." }
+            assets.asJsonArray.forEach { item ->
+                require(item.isJsonObject) { "Recurso inválido en el paquete $id." }
+                val asset = item.asJsonObject
+                val assetId = asset.get("id")?.takeIf { it.isJsonPrimitive }?.asString ?: error("Recurso sin identificador en $id.")
+                require(assetId.isNotBlank() && assetId.length <= 64 && assetIds.add(assetId.lowercase())) { "Identificador de recurso inválido o repetido: $assetId." }
+                val sha = asset.get("sha256")?.takeIf { it.isJsonPrimitive }?.asString
+                require(sha == null || sha.matches(Regex("[0-9a-f]{64}"))) { "Checksum inválido en el recurso $assetId." }
+                val size = asset.get("sizeBytes")
+                require(size == null || (size.isJsonPrimitive && size.asJsonPrimitive.isNumber &&
+                    size.asLong >= 0 && size.asLong <= 1L shl 30)) { "Tamaño inválido en el recurso $assetId." }
+            }
         }
     }
 

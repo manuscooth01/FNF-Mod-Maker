@@ -67,6 +67,8 @@ import com.fnfmodmaker.project.ProjectSummary
 import com.fnfmodmaker.project.PortableProject
 import com.fnfmodmaker.project.PreparedPortable
 import com.fnfmodmaker.project.PortableSummary
+import com.fnfmodmaker.project.AssetPackCatalog
+import com.fnfmodmaker.project.visitProjectAssets
 import com.fnfmodmaker.model.DragState
 import com.fnfmodmaker.model.SelectedNote
 import java.io.File
@@ -2140,7 +2142,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                                     val name = oldConfig.modTitle.ifBlank { "Proyecto sin nombre" }
                                     it.addProperty("modTitle", "$name (copia)")
                                 } else configJson(ModConfig())
-                                val copied = projectStore.copyAssets(source, id)
+                                val copied = projectStore.copyAssets(source, id,
+                                    // Al duplicar, conserva la jerarquía de la biblioteca del proyecto origen.
+                                    if (duplicate && oldId != null) projectStore.assetsLocation(oldId) else null)
                                 if (duplicate && copied.missing.isNotEmpty()) error("No se puede duplicar: faltan ${copied.missing.joinToString()}. Vuelve a elegirlos.")
                                 projectStore.save(id, copied.config)
                                 copied.missing
@@ -2603,6 +2607,124 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     internal fun cancelCharacterZipImport() {
         if (!busy) characterZipAnalysis = null
+    }
+
+    // ---------------- Biblioteca de assets (Etapa 4A.1) ----------------
+
+    /** Revisión de un paquete; el proyecto no cambia hasta la confirmación. */
+    internal var assetPackReview by mutableStateOf<com.fnfmodmaker.mod.AssetPackReview?>(null)
+        private set
+    private var assetPackSource: Pair<Uri, String>? = null
+
+    /** Analiza el ZIP elegido sin tocar el proyecto; la confirmación lo publica. */
+    internal fun prepareAssetPackImport(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        assetPackReview = null
+        assetPackSource = null
+        status = "Analizando el ZIP de recursos…"
+        val displayName = runCatching { MediaTools.displayName(app, uri) }.getOrDefault("paquete.zip")
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val importer = com.fnfmodmaker.mod.AssetPackImporter(File(app.cacheDir, "packimport"))
+                    app.contentResolver.openInputStream(uri)?.use { stream ->
+                        importer.analyze(stream, displayName, ensureActive = { ensureActive() })
+                    } ?: error("No se pudo abrir el ZIP.")
+                }
+            }
+            result.onSuccess { review ->
+                assetPackSource = uri to displayName
+                assetPackReview = review
+            }.onFailure {
+                error = "No se pudo analizar el paquete: ${it.message}"
+            }
+            status = ""
+            busy = false
+        }
+    }
+
+    internal fun cancelAssetPackImport() {
+        if (!busy) {
+            assetPackReview = null
+            assetPackSource = null
+        }
+    }
+
+    /** Publica el paquete en el proyecto activo; fallo o cancelación no modifican nada. */
+    internal fun confirmAssetPackImport() {
+        val source = assetPackSource ?: return
+        if (busy || currentProjectId == null) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Importando paquete de recursos…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val importer = com.fnfmodmaker.mod.AssetPackImporter(
+                        File(app.cacheDir, "packimport"), dimensions = { file -> MediaTools.imageSize(file) })
+                    app.contentResolver.openInputStream(source.first)?.use { stream ->
+                        importer.publish(stream, source.second, projectAssetDirectory(),
+                            ensureActive = { ensureActive() }, onProgress = { message -> status = message })
+                    } ?: error("No se pudo abrir el ZIP.")
+                }
+            }
+            result.onSuccess { pack ->
+                config = config.copy(assetPacks = config.assetPacks + pack)
+                warnings = warnings + listOf(
+                    "Paquete \"${pack.sourceName}\" importado: ${pack.assets.size} recursos (${pack.totalBytes / (1024 * 1024) + 1} MB).",
+                    "Origen del paquete: ${pack.engineHint}. Los recursos no se añaden al ZIP del mod hasta asignarlos.")
+                assetPackReview = null
+                assetPackSource = null
+                status = "¡Paquete importado!"
+                forceAutoSave()
+            }.onFailure {
+                error = "No se pudo importar el paquete: ${it.message}"
+                status = ""
+            }
+            busy = false
+        }
+    }
+
+    /** Elimina un paquete solo si ningún recurso está asignado a otra propiedad del proyecto. */
+    internal fun removeAssetPack(packId: String) {
+        if (busy || currentProjectId == null) return
+        val pack = config.assetPacks.singleOrNull { it.id == packId } ?: return
+        busy = true
+        error = null
+        status = "Comprobando referencias del paquete…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    // Referencias activas fuera de la biblioteca: solo ubicaciones tipadas.
+                    val document = configJson(config)
+                    document.remove("assetPacks")
+                    val active = mutableSetOf<String>()
+                    visitProjectAssets(document) { reference ->
+                        reference.get("path")?.takeIf { it.isJsonPrimitive }?.asString?.let { active.add(File(it).canonicalPath) }
+                    }
+                    val conflicts = pack.assets.mapNotNull { it.file?.path }
+                        .map { File(it).canonicalPath }.filter { it in active }
+                    require(conflicts.isEmpty()) {
+                        "No se puede eliminar: ${conflicts.size} recurso(s) del paquete están asignados al proyecto. Libéralos primero."
+                    }
+                    AssetPackCatalog.packDirectory(projectAssetDirectory(), packId).deleteRecursively()
+                    packId
+                }
+            }
+            result.onSuccess { id ->
+                config = config.copy(assetPacks = config.assetPacks.filterNot { it.id == id })
+                status = "Paquete eliminado."
+                forceAutoSave()
+            }.onFailure {
+                error = it.message ?: "No se pudo eliminar el paquete."
+                status = ""
+            }
+            busy = false
+        }
     }
 
     /** Importa los personajes confirmados como identidades nuevas de la biblioteca. */

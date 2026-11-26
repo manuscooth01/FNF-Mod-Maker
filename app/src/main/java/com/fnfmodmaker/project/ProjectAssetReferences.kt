@@ -75,6 +75,10 @@ private fun visitV1Assets(root: JsonObject, action: (JsonObject) -> Unit) {
         arrayField(stage, "sprites") { field(it, "image") }
     }
     arrayField(root, "importedModResources") { field(it, "asset") }
+    // Asset Library 1.0: cada recurso conserva su archivo mediante la referencia tipada "file".
+    arrayField(root, "assetPacks") { pack ->
+        arrayField(pack, "assets") { asset -> field(asset, "file", required = true) }
+    }
 }
 
 /** Visit media references inside v2 independentCharts variants. Typed references only. */

@@ -56,7 +56,7 @@ class CharacterPackageTest {
         assertEquals(0, json.getJSONArray("camera_position").getInt(0)) // cámara 0 con PLAYER sigue siendo 0 tras el giro de Psych
         val anim = json.getJSONArray("animations").getJSONObject(0)
         assertEquals(listOf("anim", "fps", "indices", "loop", "name", "offsets"),
-            anim.keys().asSequence.toList().sorted())
+            anim.keys().asSequence().toList().sorted())
         assertEquals("idle", anim.getString("anim"))
         assertEquals("hero idle0000", anim.getString("name"))
         assertTrue(File(temp.root, "psych/LEEME.txt").readText().contains("Psych"))

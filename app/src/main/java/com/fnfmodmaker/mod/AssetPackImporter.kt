@@ -115,9 +115,10 @@ internal class AssetPackImporter(
         val ids = mutableSetOf<String>()
         pack.assets.forEach { asset ->
             require(ids.add(asset.id.lowercase())) { "Catálogo con identificadores repetidos." }
-            val file = asset.file ?: error("Recurso sin referencia: ${asset.sourcePath}")
-            require(file.path.startsWith(staging.absolutePath + File.separator)) { "Recurso fuera del área temporal: ${asset.sourcePath}" }
-            val (size, hash) = file.inputStream().use { AssetPackCatalog.sha256Of(it, limits.fileBytes) }
+            val stored = asset.file ?: error("Recurso sin referencia: ${asset.sourcePath}")
+            require(stored.path.startsWith(staging.absolutePath + File.separator)) { "Recurso fuera del área temporal: ${asset.sourcePath}" }
+            val target = File(stored.path)
+            val (size, hash) = target.inputStream().use { AssetPackCatalog.sha256Of(it, limits.fileBytes) }
             require(size == asset.sizeBytes && hash == asset.sha256) { "Checksum del recurso ${asset.sourcePath} no coincide." }
         }
     }

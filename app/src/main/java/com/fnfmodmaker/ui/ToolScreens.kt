@@ -81,6 +81,7 @@ fun FNFModMakerApp(vm: WizardViewModel = viewModel()) {
             Tool.IMPORT -> ImportScreen(vm)
             Tool.STAGE -> StageToolScreen(vm)
             Tool.ASSISTANT -> ModAiScreen(vm)
+            Tool.LIBRARY -> AssetLibraryScreen(vm)
         }
     }
 }

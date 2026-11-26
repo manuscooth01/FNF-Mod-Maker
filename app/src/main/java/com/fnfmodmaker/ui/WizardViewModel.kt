@@ -75,7 +75,7 @@ import java.io.File
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 /** Pantalla en la que está el usuario: inicio, asistente o una herramienta suelta. */
-enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT, STAGE, ASSISTANT }
+enum class Tool { HOME, MOD, CHARACTER, AUDIO, IMPORT, STAGE, ASSISTANT, LIBRARY }
 
 class WizardViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -2725,6 +2725,70 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             }
             busy = false
         }
+    }
+
+    /** Devuelve el archivo almacenado solo si el recurso es compatible con la función destino. */
+    private fun requireAssignable(asset: com.fnfmodmaker.model.CatalogAsset, pngOnly: Boolean): PickedImage {
+        val file = asset.file ?: error("El recurso no tiene archivo disponible.")
+        val lower = asset.extension.lowercase()
+        if (pngOnly) require(lower == "png") { "Esta función necesita un PNG y el recurso es \"${asset.extension}\"." }
+        else require(lower in setOf("png", "jpg", "jpeg", "webp")) { "El recurso \"${asset.extension}\" no es una imagen compatible." }
+        require(File(file.path).isFile) { "Falta el archivo del recurso en el proyecto; vuelve a importar el paquete." }
+        return file
+    }
+
+    /** Asignaciones desde la biblioteca: referencian el archivo almacenado sin copiarlo ni transformarlo. */
+    internal fun useLibraryAssetAsCharacterSheet(asset: com.fnfmodmaker.model.CatalogAsset) {
+        if (busy) return
+        error = null
+        val file = requireAssignable(asset, pngOnly = true)
+        val dims = MediaTools.imageSize(File(file.path)) ?: error("No se pudo leer la imagen del recurso.")
+        updateCharacter {
+            if (it.useAtlas) it.copy(atlasSheet = file.copy(uri = Uri.EMPTY), atlasSheetWidth = dims.first, atlasSheetHeight = dims.second)
+            else it.copy(sheet = file.copy(uri = Uri.EMPTY), sheetWidth = dims.first, sheetHeight = dims.second)
+        }
+    }
+
+    /** El XML Sparrow solo es utilizable junto a su PNG emparejado del mismo paquete. */
+    internal fun useLibraryAssetAsCharacterAtlas(asset: com.fnfmodmaker.model.CatalogAsset) {
+        if (busy) return
+        error = null
+        val file = requireAssignable(asset, pngOnly = false)
+        require(asset.extension.lowercase() == "xml") { "El atlas del personaje necesita el XML Sparrow; el recurso es \"${asset.extension}\"." }
+        val pack = config.assetPacks.singleOrNull { it.id == asset.packId }
+        val pairedPng = pack?.assets?.singleOrNull { it.id == asset.relatedId && it.file != null }?.file
+            ?: error("Este XML no tiene un PNG emparejado inequívoco en su paquete; usa el PNG por separado como hoja de sprites.")
+        val dims = MediaTools.imageSize(File(pairedPng.path)) ?: error("No se pudo leer el PNG emparejado.")
+        val frames = runCatching { parseSparrowAtlas(File(file.path).readText(Charsets.UTF_8)) }
+            .getOrElse { error("El XML del paquete no es un atlas Sparrow válido: ${it.message}") }
+        updateCharacter {
+            it.copy(useAtlas = true, useIndividualFrames = false,
+                atlasXml = file.copy(uri = Uri.EMPTY), atlasFrames = frames,
+                atlasSheet = pairedPng.copy(uri = Uri.EMPTY), atlasSheetWidth = dims.first, atlasSheetHeight = dims.second)
+        }
+    }
+
+    internal fun useLibraryAssetAsCharacterIcon(asset: com.fnfmodmaker.model.CatalogAsset) {
+        if (busy) return
+        error = null
+        val file = requireAssignable(asset, pngOnly = true)
+        updateCharacter { it.copy(icon = file.copy(uri = Uri.EMPTY)) }
+    }
+
+    internal fun useLibraryAssetAsModIcon(asset: com.fnfmodmaker.model.CatalogAsset) {
+        if (busy) return
+        error = null
+        val file = requireAssignable(asset, pngOnly = true)
+        config = config.copy(icon = file.copy(uri = Uri.EMPTY))
+        scheduleAutoSave()
+    }
+
+    internal fun useLibraryAssetAsStageBackground(asset: com.fnfmodmaker.model.CatalogAsset) {
+        if (busy) return
+        error = null
+        val file = requireAssignable(asset, pngOnly = false)
+        config = config.copy(stageDraft = config.stageDraft.copy(backgroundImage = file.copy(uri = Uri.EMPTY), enabled = true))
+        scheduleAutoSave()
     }
 
     /** Importa los personajes confirmados como identidades nuevas de la biblioteca. */

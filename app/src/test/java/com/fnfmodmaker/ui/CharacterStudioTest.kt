@@ -135,9 +135,12 @@ class CharacterStudioTest {
         assertNotNull(draft.atlasSheet)
         assertNotNull(draft.icon)
         assertEquals(1, draft.scaleValue.toInt())
-        // La importación es deshacible como cualquier edición del personaje.
+        // La importación es una operación de biblioteca: no es deshacible con el
+        // deshacer de ediciones del draft, y las pilas quedan limpias.
         vm.undoCharacterEdit()
-        await("undo-importacion") { vm.config.characterLibrary.size == 1 }
+        await("undo-tras-importacion") { !vm.busy }
+        assertEquals(2, vm.config.characterLibrary.size)
+        assertFalse(vm.characterUndoAvailable)
     }
 
     @Test fun renameCustomAnimationMovesFramesSettingsAndPrefix() {

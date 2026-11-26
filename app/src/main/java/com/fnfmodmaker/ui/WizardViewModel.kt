@@ -2658,7 +2658,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                         val entry = com.fnfmodmaker.model.CharacterEntry(java.util.UUID.randomUUID().toString(), draft.copy(charId = charId))
                         Pair(entry, preview)
                     }
-                    pushCharacterUndo()
+                    // La importación añade identidades de biblioteca: es una operación de
+                    // biblioteca, no de edición del draft; el deshacer de ediciones se resetea
+                    // para no restaurar el draft del personaje anterior sobre el nuevo.
+                    resetCharacterUndoStacks()
                     config = config.copy(characterLibrary = config.characterLibrary + entries.map { it.first },
                         selectedCharacterId = entries.first().first.id, characterAssignments = config.resolvedAssignments())
                     warnings = warnings + entries.flatMap { it.second.warnings }.distinct() +

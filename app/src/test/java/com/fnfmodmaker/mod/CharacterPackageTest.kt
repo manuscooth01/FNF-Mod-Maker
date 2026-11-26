@@ -101,8 +101,9 @@ class CharacterPackageTest {
         assertFalse(p.has("danceEvery") || p.has("startingAnimation") || p.has("healthIcon"))
         val v = JSONObject(File(temp.root, "b-vslice/data/characters/hero.json").readText())
         assertFalse(v.has("sing_duration") || v.has("healthbar_colors") || v.has("healthicon"))
-        // Cada paquete lleva sus propias copias de imagen y XML.
-        assertEquals(psych.filter { it != "LEEME.txt" }, vslice.filter { it != "LEEME.txt" })
+        // Cada paquete lleva sus propias copias de imagen y XML; los JSON difieren por diseño.
+        assertEquals(psych.filter { it.endsWith(".png") || it.endsWith(".xml") },
+            vslice.filter { it.endsWith(".png") || it.endsWith(".xml") })
         assertEquals(draft, config.character)
     }
 
@@ -112,7 +113,7 @@ class CharacterPackageTest {
         xml.writeText("""<?xml version="1.0"?><TextureAtlas imagePath="dad.png">
             <SubTexture name="Dad idle0000" x="0" y="0" width="1" height="1" frameX="-1" frameY="-2" frameWidth="2" frameHeight="2"/>
         </TextureAtlas>""")
-        val sourceJson = """{"version":"1.0.2","name":"Hero","assetPath":"characters/hero","renderType":"sparrow","scale":1,"singTime":6,"healthIcon":{"id":"hero","custom":true},"unknownCharacter":123,"animations":[{"name":"idle","prefix":"idle","frameRate":24,"looped":false,"frameIndices":[0],"offsets":[0,0],"extraAnim":"retained"}]}"""
+        val sourceJson = """{"version":"1.0.2","name":"Hero","assetPath":"characters/hero","renderType":"sparrow","scale":1,"singTime":6,"healthIcon":{"id":"hero","custom":true},"unknownCharacter":123,"animations":[{"name":"idle","prefix":"Dad idle","frameRate":24,"looped":false,"frameIndices":[0],"offsets":[0,0],"extraAnim":"retained"}]}"""
         val draft = applyCharacterJson(CharacterDraft(), parseCharacterJson(sourceJson, "hero.json", CharacterSide.OPPONENT)).copy(
             atlasSheet = PickedImage(Uri.fromFile(png), "dad.png", png.absolutePath),
             atlasSheetWidth = 2, atlasSheetHeight = 2,

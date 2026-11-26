@@ -34,7 +34,11 @@ class IndependentChartsV2Test {
 
     private fun vsliceVariant(chart: ChartDraft): IndependentVariant =
         IndependentVariant(
-            metadata = SongConfig(songName = chart.songFolder, bpm = "170", difficulties = setOf(chart.difficulty)),
+            // The variant carries V-Slice metadata (events) so the round-trip tests prove
+            // that events survive serialization instead of only inspecting chart notes.
+            metadata = SongConfig(songName = chart.songFolder, bpm = "170",
+                vSliceEventsJson = """[{"t":12.25,"e":"Camera"}]""",
+                difficulties = setOf(chart.difficulty)),
             difficulties = setOf(chart.difficulty),
             charts = mapOf(chart.difficulty to chart)
         )

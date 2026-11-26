@@ -21,7 +21,8 @@ internal object LegacyChartMigration {
     /** Migrate a legacy project config JsonObject to v2. Never mutates the input. */
     fun migrateToV2(config: JsonObject, gson: Gson): MigrationResult {
         val version = config.get("chartSchemaVersion")
-        val alreadyV2 = version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
+        val alreadyV2 = version != null && version.isJsonPrimitive &&
+            version.asJsonPrimitive.isNumber && version.asString == "2"
         if (alreadyV2) {
             val collection = requireIndependentChartSchema(config, gson)
             return MigrationResult(collection, legacyPreserved = false,
@@ -41,7 +42,6 @@ internal object LegacyChartMigration {
 
         val collectionBuilder = mutableMapOf<String, IndependentSong>()
         var legacyPreserved = false
-        var engineAttributedCount = 0
 
         songs.forEach { songNode ->
             require(songNode.isJsonObject) { "Canción inválida." }
@@ -52,46 +52,41 @@ internal object LegacyChartMigration {
 
             val psychVariant = buildPsychVariant(songConfig, songObj, charts, histories, gson, targetEngine, both)
             val vsliceVariant = buildVSliceVariant(songConfig, songObj, charts, histories, gson, targetEngine, both)
+            if (psychVariant == null && vsliceVariant == null) legacyPreserved = true
 
-            if (psychVariant == null && vsliceVariant == null) {
-                legacyPreserved = true
+            collectionBuilder[songId] = if (collectionBuilder.containsKey(songId)) {
+                // Duplicate song identity: merge without duplicating charts between engines.
+                val existing = collectionBuilder.getValue(songId)
+                val (psych, psychClash) = mergeVariant(existing.psych, psychVariant)
+                val (vSlice, vSliceClash) = mergeVariant(existing.vSlice, vsliceVariant)
+                if (psychClash || vSliceClash) legacyPreserved = true
+                IndependentSong(songId, psych, vSlice)
             } else {
-                psychVariant?.let { engineAttributedCount++ }
-                vsliceVariant?.let { engineAttributedCount++ }
-            }
-
-            // Only add songs that have at least one attributed variant.
-            if (psychVariant != null || vsliceVariant != null) {
-                if (collectionBuilder.containsKey(songId)) {
-                    // Duplicate song ID - attempt to merge variants
-                    val existing = collectionBuilder[songId]!!
-                    val mergedPsych = if (existing.psych != null && psychVariant != null) {
-                        // Check if variants are compatible (same charts/histories)
-                        if (existing.psych?.charts == psychVariant?.charts && existing.psych?.histories == psychVariant?.histories) {
-                            existing.psych
-                        } else {
-                            // Incompatible - preserve both in legacy
-                            legacyPreserved = true
-                            existing.psych
-                        }
-                    } else existing.psych ?: psychVariant
-                    val mergedVslice = if (existing.vSlice != null && vsliceVariant != null) {
-                        if (existing.vSlice?.charts == vsliceVariant?.charts && existing.vSlice?.histories == vsliceVariant?.histories) {
-                            existing.vSlice
-                        } else {
-                            legacyPreserved = true
-                            existing.vSlice
-                        }
-                    } else existing.vSlice ?: vsliceVariant
-                    collectionBuilder[songId] = IndependentSong(songId, mergedPsych, mergedVslice)
-                } else {
-                    collectionBuilder[songId] = IndependentSong(songId, psychVariant, vsliceVariant)
-                }
+                // Every song keeps its stable identity. A song whose charts cannot be
+                // attributed to an engine carries no variants at all: its data stays
+                // preserved verbatim in the legacy deposit. No empty variants are
+                // fabricated to pass the validator, and nothing is attributed by guess.
+                IndependentSong(songId, psychVariant, vsliceVariant)
             }
         }
         val collection = IndependentChartCollection(songs = collectionBuilder.toMap(),
             legacyDocumentJson = config.toString())
-        return MigrationResult(collection, legacyPreserved, engineAttributedCount)
+        return MigrationResult(collection, legacyPreserved,
+            engineAttributedCount = collection.songs.values.sumOf {
+                listOfNotNull(it.psych, it.vSlice).size
+            })
+    }
+
+    /**
+     * Merge a second occurrence of the same song identity without duplicating charts
+     * between engines: identical content keeps the first copy, conflicting content
+     * keeps the first copy and marks the project as carrying unresolved legacy data.
+     */
+    private fun mergeVariant(existing: IndependentVariant?, incoming: IndependentVariant?): Pair<IndependentVariant?, Boolean> = when {
+        existing == null -> incoming to false
+        incoming == null -> existing to false
+        existing.charts == incoming.charts && existing.histories == incoming.histories -> existing to false
+        else -> existing to true
     }
     /**
      * Apply a migration result to a project config without touching the original.
@@ -105,7 +100,8 @@ internal object LegacyChartMigration {
      */
     fun applyMigration(config: JsonObject, gson: Gson): JsonObject {
         val version = config.get("chartSchemaVersion")
-        val alreadyV2 = version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
+        val alreadyV2 = version != null && version.isJsonPrimitive &&
+            version.asJsonPrimitive.isNumber && version.asString == "2"
         if (alreadyV2) return config.deepCopy()
 
         val result = migrateToV2(config, gson)

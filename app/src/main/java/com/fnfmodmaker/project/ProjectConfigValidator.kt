@@ -220,44 +220,62 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
                 "chartSchemaVersion debe ser 2 para proyectos con charts independientes."
             }
         }
-        require(source.has("independentCharts")) { "Falta independentCharts en el esquema v2." }
-        val independent = source.getAsJsonObject("independentCharts")
+        val independentNode = source.get("independentCharts")
+        require(independentNode != null) {
+            "La versión de charts 2 requiere independentCharts; no se modificó el proyecto."
+        }
+        require(independentNode.isJsonObject) { "independentCharts debe ser un objeto." }
+        val independent = independentNode.asJsonObject
 
         // Visit media references: songs metadata audio/images plus variant originals.
         visitIndependentMedia(source) { }
 
         val songIds = mutableSetOf<String>()
         independent.entrySet().forEach { (songId, songNode) ->
+            // The legacy deposit is preserved verbatim inside independentCharts; it is
+            // opaque text, not a song, and it is validated only as a string below.
+            if (songId == "legacyDocumentJson") return@forEach
             require(songNode.isJsonObject) { "Canción inválida: $songId." }
             require(songId.matches(Regex("[A-Za-z0-9_-]{1,80}")) && songIds.add(songId)) {
                 "ID de canción inválido o duplicado: $songId."
             }
             val songObj = songNode.asJsonObject
+            // Song nodes carry only their identity and engine variants; any other key is
+            // a malformed v2 payload and is rejected before it can hide unknown data.
+            require(songObj.keySet().all { it == "id" || it == "psych" || it == "vslice" }) {
+                "Variante de canción inválida: $songId."
+            }
             val psychNode = songObj.get("psych")
             val vSliceNode = songObj.get("vslice")
             require((psychNode == null || psychNode.isJsonObject || psychNode.isJsonNull) &&
                 (vSliceNode == null || vSliceNode.isJsonObject || vSliceNode.isJsonNull)) {
                 "Variante de canción inválida: $songId."
             }
-            require(psychNode != null && !psychNode.isJsonNull || vSliceNode != null && !vSliceNode.isJsonNull) {
-                "Canción $songId debe tener al menos una variante."
+            // A song without attributed variants is legal: unattributable data stays
+            // preserved verbatim in the legacy deposit. No empty variants are fabricated
+            // to pass validation, and a missing variant never throws here.
+            if (psychNode != null && psychNode.isJsonObject) {
+                validateVariant(songId, ChartEngine.PSYCH, psychNode.asJsonObject)
             }
-            if (psychNode.isJsonObject) validateVariant(songId, ChartEngine.PSYCH, psychNode.asJsonObject)
-            if (vSliceNode.isJsonObject) validateVariant(songId, ChartEngine.VSLICE, vSliceNode.asJsonObject)
+            if (vSliceNode != null && vSliceNode.isJsonObject) {
+                validateVariant(songId, ChartEngine.VSLICE, vSliceNode.asJsonObject)
+            }
         }
 
         // Legacy charts/histories must not be the editable source in v2.
-        source.get("charts")?.let { require(it.isJsonNull || it.asJsonObject.size() == 0) {
+        source.get("charts")?.let { require(it.isJsonNull || (it.isJsonObject && it.asJsonObject.size() == 0)) {
             "charts legacy no debe usarse como almacenamiento editable en v2."
         } }
-        source.get("chartHistories")?.let { require(it.isJsonNull || it.asJsonObject.size() == 0) {
+        source.get("chartHistories")?.let { require(it.isJsonNull || (it.isJsonObject && it.asJsonObject.size() == 0)) {
             "chartHistories legacy no debe usarse como almacenamiento editable en v2."
         } }
     }
 
     private fun validateVariant(songId: String, engine: ChartEngine, variant: JsonObject) {
-        val metadataNode = variant.get("metadata") ?: error("Falta metadata de la variante $engine para $songId.")
-        require(metadataNode.isJsonObject) { "metadata debe ser un objeto." }
+        val metadataNode = variant.get("metadata")
+        require(metadataNode != null && metadataNode.isJsonObject) {
+            "Falta metadata de la variante $engine para $songId."
+        }
         val metadata = autoSaveGson.fromJson(metadataNode, SongConfig::class.java)
             ?: error("metadata inválido.")
         require(metadata.songFolder.isNotEmpty()) { "metadata.songFolder requerido." }
@@ -268,14 +286,16 @@ internal class ProjectConfigValidator(private val autoSaveGson: Gson) {
         } ?: emptySet()
         require(difficulties.all { isValidDifficulty(it) }) { "Dificultad inválida en la variante $engine de $songId." }
 
-        val charts = variant.get("charts")?.let {
-            require(it.isJsonObject) { "charts debe ser un objeto." }
-            it.asJsonObject
-        } ?: error("Falta charts en la variante $engine de $songId.")
-        val histories = variant.get("histories")?.let {
-            require(it.isJsonObject) { "histories debe ser un objeto." }
-            it.asJsonObject
-        } ?: error("Falta histories en la variante $engine de $songId.")
+        val chartsNode = variant.get("charts")
+        require(chartsNode != null && chartsNode.isJsonObject) {
+            "Falta charts en la variante $engine de $songId."
+        }
+        val charts = chartsNode.asJsonObject
+        val historiesNode = variant.get("histories")
+        require(historiesNode != null && historiesNode.isJsonObject) {
+            "Falta histories en la variante $engine de $songId."
+        }
+        val histories = historiesNode.asJsonObject
         val uneditable = variant.get("uneditableDifficulties")?.let {
             require(it.isJsonObject) { "uneditableDifficulties debe ser un objeto." }
             it.asJsonObject

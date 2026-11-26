@@ -40,12 +40,13 @@ internal fun requireSupportedChartSchema(config: JsonObject) {
  */
 internal fun requireIndependentChartSchema(config: JsonObject, gson: Gson): IndependentChartCollection {
     val version = config.get("chartSchemaVersion")
-    require(version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2") {
+    require(version != null && version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2") {
         "El proyecto requiere el esquema de charts independientes v2; chartSchemaVersion ausente o inválido."
     }
-    val independent = config.get("independentCharts") ?: error("Falta independentCharts en el esquema v2.")
-    require(independent.isJsonObject) { "independentCharts debe ser un objeto." }
-    val collection = parseIndependentCharts(independent.asJsonObject, gson)
+    val independentNode = config.get("independentCharts")
+    require(independentNode != null) { "Falta independentCharts en el esquema v2." }
+    require(independentNode.isJsonObject) { "independentCharts debe ser un objeto." }
+    val collection = parseIndependentCharts(independentNode.asJsonObject, gson)
     require(collection.songs.isNotEmpty()) { "El esquema v2 requiere al menos una canción." }
     return collection
 }
@@ -56,6 +57,11 @@ internal fun parseIndependentCharts(root: JsonObject, gson: Gson): IndependentCh
     root.entrySet().filterNot { it.key == "legacyDocumentJson" }.forEach { (songId, songNode) ->
         require(songNode.isJsonObject) { "Canción inválida: $songId." }
         val songObj = songNode.asJsonObject
+        // Song nodes carry only their identity and engine variants; any other key is a
+        // malformed v2 payload and is rejected instead of being read as hidden data.
+        require(songObj.keySet().all { it == "id" || it == "psych" || it == "vslice" }) {
+            "Variante de canción inválida: $songId."
+        }
         val psychNode = songObj.get("psych")
         val vSliceNode = songObj.get("vslice")
         require((psychNode == null || psychNode.isJsonObject || psychNode.isJsonNull) &&
@@ -64,7 +70,8 @@ internal fun parseIndependentCharts(root: JsonObject, gson: Gson): IndependentCh
         }
         val psych = if (psychNode == null || psychNode.isJsonNull) null else parseVariant(psychNode.asJsonObject, gson)
         val vSlice = if (vSliceNode == null || vSliceNode.isJsonNull) null else parseVariant(vSliceNode.asJsonObject, gson)
-        require(psych != null || vSlice != null) { "Canción $songId sin variantes." }
+        // A song without attributed variants is legal: unattributable data stays preserved
+        // verbatim in the legacy deposit. No empty variants are fabricated to pass validation.
         songs[songId] = IndependentSong(songId, psych, vSlice)
     }
     val legacy = root.get("legacyDocumentJson")
@@ -130,6 +137,7 @@ internal fun independentChartsToJson(collection: IndependentChartCollection, gso
     val root = JsonObject()
     collection.songs.forEach { (id, song) ->
         val songObj = JsonObject()
+        songObj.addProperty("id", id)
         song.psych?.let { songObj.add("psych", variantToJson(it, gson)) }
         song.vSlice?.let { songObj.add("vslice", variantToJson(it, gson)) }
         root.add(id, songObj)

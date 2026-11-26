@@ -174,7 +174,10 @@ internal class PortableProject(private val appRoot: File) {
                 }
                 val independentCharts = config.get("independentCharts")?.takeIf { it.isJsonObject }?.asJsonObject
                 val independentChartCount = independentCharts?.entrySet()?.sumOf { songEntry ->
-                    songEntry.value.asJsonObject.entrySet().sumOf { variantEntry ->
+                    // legacyDocumentJson is the opaque deposit text, not a song node.
+                    val songNode = songEntry.value
+                    if (songEntry.key == "legacyDocumentJson" || !songNode.isJsonObject) 0
+                    else songNode.asJsonObject.entrySet().sumOf { variantEntry ->
                         if (variantEntry.value.isJsonObject) {
                             variantEntry.value.asJsonObject.get("charts")?.takeIf { it.isJsonObject }?.asJsonObject?.size() ?: 0
                         } else 0

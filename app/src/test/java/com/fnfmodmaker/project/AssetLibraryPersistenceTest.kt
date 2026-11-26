@@ -20,7 +20,7 @@ class AssetLibraryPersistenceTest {
     /** Builds a config JSON with one imported pack of two files stored under assets/library/. */
     private fun libraryConfig(png: File, xml: File, packId: String): String {
         val pngSha = sha(png.readBytes()); val xmlSha = sha(xml.readBytes())
-        return """{"modTitle":"Con biblioteca","songs":[],
+        return """{"modTitle":"Con biblioteca","songs":[],"charts":{},"stageDraft":{},"characterLibrary":[{"id":"legacy","draft":{"enabled":false}}],
             "assetPacks":[{"id":"$packId","sourceName":"pack-juego.zip","importedAt":1700000000000,
             "engineHint":"Sin indicios de motor",
             "assets":[
@@ -123,7 +123,7 @@ class AssetLibraryPersistenceTest {
     @Test fun oldProjectsWithoutLibraryOpenWithEmptyCatalog() {
         val validator = ProjectConfigValidator(gson)
         // Proyecto antiguo completo pero sin assetPacks: abre con biblioteca vacía.
-        val old = """{"modTitle":"Viejo","songs":[],"charts":{},"stageDraft":{},"characterLibrary":[{"id":"legacy","draft":{"enabled":false}}],"character":{"enabled":false}}"""
+        val old = """{"modTitle":"Viejo","songs":[],"charts":{},"stageDraft":{},"characterLibrary":[{"id":"legacy","draft":{"enabled":false}}]}"""
         validator.validate(JsonParser.parseString(old).asJsonObject)
         val config = gson.fromJson(old, com.fnfmodmaker.model.ModConfig::class.java)
         assertTrue(config.assetPacks.isEmpty())

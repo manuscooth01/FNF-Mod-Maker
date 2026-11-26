@@ -44,7 +44,7 @@ class AssetPackImporterTest {
         "images/icons/icon-hero.png" to png)
 
     private fun importer(limits: AssetPackLimits = AssetPackLimits()) = AssetPackImporter(
-        temp.newFolder("tmp"), dimensions = { file -> BitmapFactory.decodeFile(file.absolutePath)?.let { it.width to it.height } },
+        temp.newFolder(), dimensions = { file -> BitmapFactory.decodeFile(file.absolutePath)?.let { it.width to it.height } },
         limits = limits)
 
     @Test fun publishKeepsHierarchyBytesAndCatalog() {

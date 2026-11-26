@@ -1875,10 +1875,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         return target
     }
     private fun parseConfig(value: com.google.gson.JsonObject): ModConfig {
+        // The marker is optional: an absent chartSchemaVersion is the legacy shared-chart
+        // schema and must never throw; only an explicit numeric 2 selects the v2 reader.
         val version = value.get("chartSchemaVersion")
-        val isV2 = version.isJsonPrimitive && version.asJsonPrimitive.isNumber && version.asString == "2"
+        val isV2 = version != null && version.isJsonPrimitive &&
+            version.asJsonPrimitive.isNumber && version.asString == "2"
         if (isV2) {
-            com.fnfmodmaker.project.requireIndependentChartSchema(value, autoSaveGson)
+            try {
+                com.fnfmodmaker.project.requireIndependentChartSchema(value, autoSaveGson)
+            } catch (e: Exception) {
+                throw IllegalArgumentException(
+                    "La versión de charts 2 contiene charts independientes que no se pudieron leer; no se modificó el proyecto.", e)
+            }
             val config = autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java)
                 ?: error("El proyecto está vacío.")
             chartRepository.setConfig(config)

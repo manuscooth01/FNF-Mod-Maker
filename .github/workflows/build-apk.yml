@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   build:
@@ -50,3 +51,20 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 90
+
+      - name: Registrar pruebas fallidas en un issue
+        if: failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "Commit: $GITHUB_SHA"
+            echo
+            python3 ci/report-test-failures.py
+          } > test-failures.md || true
+          gh issue create \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Resultados de pruebas fallidas (run #$GITHUB_RUN_NUMBER, commit ${GITHUB_SHA::7})" \
+            --body-file test-failures.md

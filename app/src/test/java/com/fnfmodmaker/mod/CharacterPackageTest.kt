@@ -66,7 +66,7 @@ class CharacterPackageTest {
         assertEquals(listOf("anim", "fps", "indices", "loop", "name", "offsets"),
             anim.keys().asSequence().toList().sorted())
         assertEquals("idle", anim.getString("anim"))
-        assertEquals("hero idle0000", anim.getString("name"))
+        assertEquals("hero idle", anim.getString("name"))
         assertTrue(File(temp.root, "psych/LEEME.txt").readText().contains("Psych"))
     }
 
@@ -85,7 +85,7 @@ class CharacterPackageTest {
         assertEquals("idle", json.getString("startingAnimation"))
         val anim = json.getJSONArray("animations").getJSONObject(0)
         assertEquals("idle", anim.getString("name"))
-        assertEquals("hero idle0000", anim.getString("prefix"))
+        assertEquals("hero idle", anim.getString("prefix"))
         assertEquals("V-Slice", File(temp.root, "vslice/LEEME.txt").readText().substringAfter("destino ").trim().take(7))
     }
 

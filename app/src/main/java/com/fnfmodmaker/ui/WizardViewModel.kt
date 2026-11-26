@@ -2756,8 +2756,10 @@ runCatching {
         if (busy) return
         error = null
 runCatching {
-            val file = requireAssignable(asset, pngOnly = false)
+            val file = asset.file ?: error("El recurso no tiene archivo disponible.")
+            // El atlas es el caso especial: solo el XML Sparrow, no una imagen.
             require(asset.extension.lowercase() == "xml") { "El atlas del personaje necesita el XML Sparrow; el recurso es \"${asset.extension}\"." }
+            require(File(file.path).isFile) { "Falta el archivo del recurso en el proyecto; vuelve a importar el paquete." }
             val pack = config.assetPacks.singleOrNull { it.id == asset.packId }
             val pairedPng = pack?.assets?.singleOrNull { it.id == asset.relatedId && it.file != null }?.file
                 ?: error("Este XML no tiene un PNG emparejado inequívoco en su paquete; usa el PNG por separado como hoja de sprites.")

@@ -77,7 +77,7 @@ class AssetLibraryViewModelTest {
     }
 
     private fun projectAssets(): File = File(app.filesDir, "projects").walkTopDown()
-        .firstOrNull { it.isDirectory && it.name == "assets" } ?: fail("No hay carpeta de recursos")
+        .firstOrNull { it.isDirectory && it.name == "assets" } ?: error("No hay carpeta de recursos")
 
     @Test fun importReviewConfirmCancelAndPersistence() {
         assertEquals(0, vm.config.assetPacks.size)

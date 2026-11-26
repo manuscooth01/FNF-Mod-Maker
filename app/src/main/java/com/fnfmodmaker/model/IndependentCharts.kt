@@ -1,9 +1,17 @@
 package com.fnfmodmaker.model
 
+import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.google.gson.JsonReader
+import com.google.gson.JsonToken
+import com.google.gson.JsonWriter
+import com.google.gson.TypeAdapter
+import com.google.gson.TypeAdapterFactory
+import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
+import com.google.gson.reflect.TypeToken
 
 /** Individual chart identity: BOTH is a project destination, never a chart engine. */
 enum class ChartEngine { PSYCH, VSLICE }
@@ -93,6 +101,58 @@ data class IndependentSong(
  * for projects with [ModConfig.chartSchemaVersion] == 2. Legacy JSON is retained as an
  * opaque document until a lossless, validated migration has been implemented.
  */
+/**
+ * Canonical JSON shape of the v2 collection: every song id is a root key of the
+ * `independentCharts` object, with an optional sibling `legacyDocumentJson` deposit
+ * preserving the original document verbatim. The dedicated adapter keeps model
+ * round trips compatible with the validator, the migration and the portable flows,
+ * which all read that flattened shape (never a `songs` wrapper).
+ */
+internal object IndependentChartCollectionFormat {
+    internal class Factory : TypeAdapterFactory {
+        override fun <T : Any?> create(gson: Gson, typeToken: TypeToken<T>): TypeAdapter<T>? {
+            if (typeToken.rawType != IndependentChartCollection::class.java) return null
+            val songAdapter = gson.getAdapter(IndependentSong::class.java)
+            return object : TypeAdapter<IndependentChartCollection>() {
+                override fun write(out: JsonWriter, value: IndependentChartCollection) {
+                    out.beginObject()
+                    value.songs.forEach { (songId, song) ->
+                        out.name(songId); songAdapter.write(out, song)
+                    }
+                    if (value.legacyDocumentJson.isNotEmpty()) {
+                        out.name("legacyDocumentJson"); out.value(value.legacyDocumentJson)
+                    }
+                    out.endObject()
+                }
+
+                override fun read(input: JsonReader): IndependentChartCollection {
+                    if (input.peek() == JsonToken.NULL) {
+                        input.nextNull(); return IndependentChartCollection()
+                    }
+                    val songs = linkedMapOf<String, IndependentSong>()
+                    var legacy = ""
+                    input.beginObject()
+                    while (input.hasNext()) {
+                        when (val songId = input.nextName()) {
+                            "legacyDocumentJson" -> legacy = input.nextString() ?: ""
+                            else -> {
+                                val song = songAdapter.read(input)
+                                    ?: throw IllegalArgumentException("Canción inválida: $songId.")
+                                // The id inside the song node is redundant; the map key is
+                                // authoritative and the model keeps both consistent.
+                                songs[songId] = if (song.id == songId) song else song.copy(id = songId)
+                            }
+                        }
+                    }
+                    input.endObject()
+                    return IndependentChartCollection(songs = songs, legacyDocumentJson = legacy)
+                }
+            } as TypeAdapter<T>
+        }
+    }
+}
+
+@JsonAdapter(IndependentChartCollectionFormat.Factory::class)
 data class IndependentChartCollection(
     val songs: Map<String, IndependentSong> = emptyMap(),
     val legacyDocumentJson: String = ""

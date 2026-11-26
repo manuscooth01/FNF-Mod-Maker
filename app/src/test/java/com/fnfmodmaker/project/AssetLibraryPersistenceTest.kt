@@ -12,7 +12,11 @@ import java.security.MessageDigest
 /** Asset Library persistence: duplication, portable round-trip, validation and old projects. */
 class AssetLibraryPersistenceTest {
     @get:Rule val temp = TemporaryFolder()
-    private val gson = Gson()
+    private val gson = com.google.gson.GsonBuilder().registerTypeAdapter(android.net.Uri::class.java,
+        object : com.google.gson.TypeAdapter<android.net.Uri>() {
+            override fun write(out: com.google.gson.stream.JsonWriter, value: android.net.Uri?) { out.nullValue() }
+            override fun read(input: com.google.gson.stream.JsonReader): android.net.Uri? { input.skipValue(); return null }
+        }.nullSafe()).create()
 
     private fun sha(data: ByteArray) = MessageDigest.getInstance("SHA-256").digest(data)
         .joinToString("") { "%02x".format(it) }

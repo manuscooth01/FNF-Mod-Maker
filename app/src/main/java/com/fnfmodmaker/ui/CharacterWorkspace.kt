@@ -55,6 +55,7 @@ internal fun CharacterWorkspace(
     if (selected !in draft.animationNames) selected = "idle"
 
     val jsonPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.previewCharacterJson(uri) }
+    val zipPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.prepareCharacterZipImport(uri) }
     vm.characterJsonPreview?.let { preview -> AlertDialog(onDismissRequest = vm::cancelCharacterJson,
         title = { Text("Revisar JSON de personaje · ${preview.format}") },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -65,6 +66,34 @@ internal fun CharacterWorkspace(
         confirmButton = { TextButton(onClick = vm::applyCharacterJson) { Text("Aplicar datos") } },
         dismissButton = { TextButton(onClick = vm::cancelCharacterJson) { Text("Cancelar") } }) }
 
+    vm.characterZipAnalysis?.let { analysis ->
+        val selection = remember(analysis) { mutableStateOf(analysis.candidates.map { it.id }.toSet()) }
+        AlertDialog(onDismissRequest = vm::cancelCharacterZipImport,
+            title = { Text("Importar personajes desde ZIP") },
+            text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+                analysis.problems.forEach { Text("• $it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                analysis.candidates.forEach { candidate ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(selection.value.contains(candidate.id), { checked ->
+                            selection.value = if (checked) selection.value + candidate.id else selection.value - candidate.id
+                        })
+                        Column(Modifier.weight(1f)) {
+                            Text("${candidate.name} · ${candidate.format} · ${candidate.id}", style = MaterialTheme.typography.bodySmall)
+                            Text(candidate.sheet.name.substringAfterLast('/') + " + " + candidate.xml.name.substringAfterLast('/') +
+                                (candidate.icon?.let { " + ${it.name.substringAfterLast('/')}" } ?: ""),
+                                style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                if (analysis.ignored.isNotEmpty()) Text("Archivos no reconocidos (se ignoran): ${analysis.ignored.size}", style = MaterialTheme.typography.labelSmall)
+                Text("Cada personaje se añade como identidad nueva de la biblioteca; nada se sobrescribe y puedes cancelar.",
+                    style = MaterialTheme.typography.bodySmall)
+            } },
+            confirmButton = { TextButton(onClick = { vm.applyCharacterZipImport(selection.value) },
+                enabled = selection.value.isNotEmpty() && !vm.busy) { Text("Importar") } },
+            dismissButton = { TextButton(onClick = vm::cancelCharacterZipImport) { Text("Cancelar") } })
+    }
+
     BoxWithConstraints(modifier.fillMaxSize()) {
         val landscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val wide = maxWidth >= 650.dp || (landscape && maxWidth >= 480.dp)
@@ -73,6 +102,8 @@ internal fun CharacterWorkspace(
             Column(Modifier.fillMaxWidth()) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("VISTA PREVIA · $selected", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = vm::undoCharacterEdit, enabled = vm.characterUndoAvailable && !vm.busy) { Text("Deshacer") }
+                    TextButton(onClick = vm::redoCharacterEdit, enabled = vm.characterRedoAvailable && !vm.busy) { Text("Rehacer") }
                     TextButton(onClick = { zoom = (zoom / 1.25f).coerceAtLeast(.25f) }) { Text("−") }
                     Text("${(zoom * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
                     TextButton(onClick = { zoom = (zoom * 1.25f).coerceAtMost(3f) }) { Text("+") }
@@ -101,7 +132,10 @@ internal fun CharacterWorkspace(
         }
         @Composable fun Controls(mod: Modifier) {
             Column(mod) {
-                OutlinedButton(onClick = { jsonPicker.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, enabled = !vm.busy) { Text("Importar JSON de personaje") }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = { jsonPicker.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, enabled = !vm.busy) { Text("Importar JSON") }
+                    OutlinedButton(onClick = { zipPicker.launch(arrayOf("application/zip", "application/octet-stream")) }, enabled = !vm.busy) { Text("Importar ZIP") }
+                }
                 if (draft.importedSourceJson.isNotEmpty()) Text("JSON ${draft.importedSourceFormat} conservado en el proyecto. Al exportar se genera un JSON nuevo con los campos editables; revisa los datos no compatibles.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     characterSections.forEach { label ->
@@ -174,6 +208,19 @@ private fun CharacterIdentity(vm: WizardViewModel, draft: CharacterDraft, onPick
     Field("Escala", draft.scale, vm::setCharScale, keyboardType = KeyboardType.Decimal, enabled = !vm.busy)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text("Voltear horizontalmente", Modifier.weight(1f)); Switch(draft.flipX, vm::setCharFlipX, enabled = !vm.busy)
+    }
+    SectionTitle("Propiedades de juego")
+    Text("danceEvery y isPixel son de V-Slice; singTime se exporta como sing_duration en Psych; la animación inicial solo se exporta a V-Slice (Psych siempre baila idle).",
+        style = MaterialTheme.typography.labelSmall)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Field("danceEvery", draft.danceEvery, vm::setCharacterDanceEvery, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f), enabled = !vm.busy)
+        Field("singTime (s)", draft.singTime, vm::setCharacterSingTime, keyboardType = KeyboardType.Decimal, modifier = Modifier.weight(1f), enabled = !vm.busy)
+    }
+    Field("Animación inicial", draft.startingAnimation, vm::setCharacterStartingAnimation,
+        hint = "V-Slice; debe existir en la lista de animaciones.", enabled = !vm.busy)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text("Pixel-art (isPixel; sin antialiasing en Psych)", Modifier.weight(1f))
+        Switch(draft.isPixel, vm::setCharacterIsPixel, enabled = !vm.busy)
     }
     SectionTitle("Icono de vida · opcional")
     Text(draft.icon?.displayName ?: "Se usará el icono del juego base.", style = MaterialTheme.typography.bodySmall)
@@ -282,6 +329,14 @@ private fun CharacterAnimation(vm: WizardViewModel, draft: CharacterDraft, selec
     Row {
         OutlinedButton(onClick = { if (vm.addCustomAnimation(newName)) { onSelect(newName); newName = ""; nameError = false } else nameError = true }, enabled = !vm.busy) { Text("Añadir") }
         if (selected in draft.customAnimations) TextButton(onClick = { confirmRemove = true }, enabled = !vm.busy) { Text("Eliminar $selected") }
+    }
+    if (selected in draft.customAnimations) {
+        var renameValue by rememberSaveable(selected) { mutableStateOf(selected) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Field("Renombrar $selected", renameValue, { renameValue = it.take(32) }, modifier = Modifier.weight(1f), enabled = !vm.busy)
+            TextButton(onClick = { if (vm.renameCustomAnimation(selected, renameValue)) onSelect(renameValue) },
+                enabled = !vm.busy && renameValue != selected && renameValue.matches(Regex("[A-Za-z0-9_-]{1,32}"))) { Text("Renombrar") }
+        }
     }
     if (nameError) Text("Nombre inválido, repetido o límite de 30 animaciones adicionales.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
     SectionTitle("Ajustes de $selected")

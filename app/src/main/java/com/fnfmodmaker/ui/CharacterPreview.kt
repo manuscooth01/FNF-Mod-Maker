@@ -135,6 +135,7 @@ internal fun CharacterPreviewPane(
     }
     var playing by remember(sources) { mutableStateOf(true) }
     var index by remember(sources) { mutableIntStateOf(0) }
+    var backgroundMode by rememberSaveable { mutableStateOf("escenario") }
     val fps = draft.settingsFor(animationName).fps.toIntOrNull()?.coerceIn(1, 60) ?: 24
     val loop = draft.settingsFor(animationName).loop
     LaunchedEffect(sources, fps, playing, loop) {
@@ -214,54 +215,76 @@ internal fun CharacterPreviewPane(
             drawRect(Color(0xFF08070C))
             clipRect {
               scale(scaleX = zoom, scaleY = zoom, pivot = Offset(size.width / 2f, size.height / 2f)) {
-            drawReferenceStage(k)
-            val anchor = characterGuideAnchor(draft.side)
-            val baseX = anchor.x + position.x
-            val baseY = anchor.y + position.y
-            drawGuideCharacter(GUIDE_COMPANION.x, GUIDE_COMPANION.y, "ACOMPAÑANTE", Color(0xFFDC83BF), k)
-            if (draft.side != CharacterSide.OPPONENT || currentFrame == null)
-                drawGuideCharacter(if (draft.side == CharacterSide.OPPONENT) baseX else GUIDE_OPPONENT.x,
-                    if (draft.side == CharacterSide.OPPONENT) baseY else GUIDE_OPPONENT.y, "RIVAL", Color(0xFFFF8D92), k)
-            if (draft.side != CharacterSide.PLAYER || currentFrame == null)
-                drawGuideCharacter(if (draft.side == CharacterSide.PLAYER) baseX else GUIDE_PLAYER.x,
-                    if (draft.side == CharacterSide.PLAYER) baseY else GUIDE_PLAYER.y, "JUGADOR", Color(0xFF73CBFF), k)
-            if (currentFrame != null) {
-                drawGuideLabel(anchor.x, if (draft.side == CharacterSide.PLAYER) "TU JUGADOR" else "TU RIVAL", k)
-            }
-            if (currentFrame != null) {
-                val width = (currentFrame.width * scaleValue * k).coerceIn(1f, 100000f)
-                val height = (currentFrame.height * scaleValue * k).coerceIn(1f, 100000f)
-                val logicalX = (baseX - animationX * scaleValue) * k
-                val x = logicalX - currentFrame.frameX * scaleValue * k
-                val y = (baseY - animationY * scaleValue - currentFrame.frameY * scaleValue) * k
-                clipRect {
-                    if (draft.flipX) {
-                        scale(scaleX = -1f, scaleY = 1f, pivot = Offset(logicalX + currentFrame.frameWidth * scaleValue * k / 2f, y + height / 2f)) {
-                            drawUprightFrame(currentFrame, x, y, width, height)
-                        }
-                    } else {
-                        drawUprightFrame(currentFrame, x, y, width, height)
+                when (backgroundMode) {
+                    "oscuro" -> drawRect(Color(0xFF101018))
+                    "cuadros" -> drawCheckerboard(k)
+                    else -> drawReferenceStage(k)
+                }
+                val anchor = characterGuideAnchor(draft.side)
+                val baseX = anchor.x + position.x
+                val baseY = anchor.y + position.y
+                if (backgroundMode == "escenario") {
+                    drawGuideCharacter(GUIDE_COMPANION.x, GUIDE_COMPANION.y, "ACOMPAÑANTE", Color(0xFFDC83BF), k)
+                    if (draft.side != CharacterSide.OPPONENT || currentFrame == null)
+                        drawGuideCharacter(if (draft.side == CharacterSide.OPPONENT) baseX else GUIDE_OPPONENT.x,
+                            if (draft.side == CharacterSide.OPPONENT) baseY else GUIDE_OPPONENT.y, "RIVAL", Color(0xFFFF8D92), k)
+                    if (draft.side != CharacterSide.PLAYER || currentFrame == null)
+                        drawGuideCharacter(if (draft.side == CharacterSide.PLAYER) baseX else GUIDE_PLAYER.x,
+                            if (draft.side == CharacterSide.PLAYER) baseY else GUIDE_PLAYER.y, "JUGADOR", Color(0xFF73CBFF), k)
+                    if (currentFrame != null) {
+                        drawGuideLabel(anchor.x, if (draft.side == CharacterSide.PLAYER) "TU JUGADOR" else "TU RIVAL", k)
                     }
                 }
-            }
-            // El foco es orientativo: no sigue los offsets específicos de una animación.
-            val centerX = (baseX + (reference?.width ?: 180) * scaleValue / 2f + position.cameraX) * k
-            val centerY = (baseY + (reference?.height ?: 180) * scaleValue / 2f + position.cameraY) * k
-            drawCircle(Color(0xFFFFD75E), radius = 8f * k, center = Offset(centerX, centerY))
-            drawLine(Color(0xFFFFD75E), Offset(centerX - 18f * k, centerY), Offset(centerX + 18f * k, centerY), 2f)
-            drawLine(Color(0xFFFFD75E), Offset(centerX, centerY - 18f * k), Offset(centerX, centerY + 18f * k), 2f)
+                if (currentFrame != null) {
+                    val width = (currentFrame.width * scaleValue * k).coerceIn(1f, 100000f)
+                    val height = (currentFrame.height * scaleValue * k).coerceIn(1f, 100000f)
+                    val logicalX = (baseX - animationX * scaleValue) * k
+                    val x = logicalX - currentFrame.frameX * scaleValue * k
+                    val y = (baseY - animationY * scaleValue - currentFrame.frameY * scaleValue) * k
+                    clipRect {
+                        if (draft.flipX) {
+                            scale(scaleX = -1f, scaleY = 1f, pivot = Offset(logicalX + currentFrame.frameWidth * scaleValue * k / 2f, y + height / 2f)) {
+                                drawUprightFrame(currentFrame, x, y, width, height)
+                            }
+                        } else {
+                            drawUprightFrame(currentFrame, x, y, width, height)
+                        }
+                    }
+                }
+                // El foco es orientativo: no sigue los offsets específicos de una animación.
+                if (backgroundMode == "escenario") {
+                    val centerX = (baseX + (reference?.width ?: 180) * scaleValue / 2f + position.cameraX) * k
+                    val centerY = (baseY + (reference?.height ?: 180) * scaleValue / 2f + position.cameraY) * k
+                    drawCircle(Color(0xFFFFD75E), radius = 8f * k, center = Offset(centerX, centerY))
+                    drawLine(Color(0xFFFFD75E), Offset(centerX - 18f * k, centerY), Offset(centerX + 18f * k, centerY), 2f)
+                    drawLine(Color(0xFFFFD75E), Offset(centerX, centerY - 18f * k), Offset(centerX, centerY + 18f * k), 2f)
+                }
               }
+            }
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("escenario" to "Escenario", "oscuro" to "Oscuro", "cuadros" to "Cuadros").forEach { (value, label) ->
+                FilterChip(backgroundMode == value, { backgroundMode = value }, label = { Text(label) })
             }
         }
         when {
             sources.isEmpty() -> Text("Añade frames válidos para previsualizar $animationName.", style = MaterialTheme.typography.bodySmall)
             !loaded -> Text("Cargando vista previa…", style = MaterialTheme.typography.bodySmall)
             previews == null -> Text("No se pudo cargar la vista previa; comprueba los archivos.", color = MaterialTheme.colorScheme.error)
-            else -> Row(Modifier.horizontalScroll(rememberScrollState())) {
-                TextButton(onClick = { if (!playing && index == sources.lastIndex) index = 0; playing = !playing }) { Text(if (playing) "Pausar" else "Reproducir") }
-                TextButton(onClick = { playing = false; index = (index - 1 + sources.size) % sources.size }) { Text("‹ Frame") }
-                TextButton(onClick = { playing = false; index = (index + 1) % sources.size }) { Text("Frame ›") }
-                Text("${index + 1}/${sources.size}", style = MaterialTheme.typography.bodySmall)
+            else -> Column {
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    TextButton(onClick = { if (!playing && index == sources.lastIndex) index = 0; playing = !playing }) { Text(if (playing) "Pausar" else "Reproducir") }
+                    TextButton(onClick = { playing = false; index = (index - 1 + sources.size) % sources.size }) { Text("‹ Frame") }
+                    TextButton(onClick = { playing = false; index = (index + 1) % sources.size }) { Text("Frame ›") }
+                    Text("${index + 1}/${sources.size}", style = MaterialTheme.typography.bodySmall)
+                }
+                // Timeline: toca un frame para saltar a él; la reproducción se pausa.
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    sources.forEachIndexed { frameIndex, _ ->
+                        FilterChip(index == frameIndex, { playing = false; index = frameIndex },
+                            label = { Text("${frameIndex + 1}") })
+                    }
+                }
             }
         }
         if ((draft.animations.firstOrNull { it.first == animationName }?.second ?: 0) > 100) {
@@ -286,6 +309,22 @@ private fun DrawScope.drawUprightFrame(frame: PreviewFrame, x: Float, y: Float, 
     rotate(degrees = -90f, pivot = Offset(centerX, centerY)) {
         drawImage(frame.image, dstOffset = IntOffset((centerX - width / 2f).roundToInt(), (centerY - height / 2f).roundToInt()),
             dstSize = IntSize(width.roundToInt(), height.roundToInt()))
+    }
+}
+
+/** Tablero de cuadros neutro para inspeccionar frames sin el escenario de referencia. */
+private fun DrawScope.drawCheckerboard(k: Float) {
+    val cell = (40f * k).coerceAtLeast(8f)
+    var column = 0
+    var x = 0f
+    while (x < size.width) {
+        var row = 0
+        var y = 0f
+        while (y < size.height) {
+            if ((column + row) % 2 == 0) drawRect(Color(0xFF1E1B24), Offset(x, y), Size(cell, cell))
+            y += cell; row++
+        }
+        x += cell; column++
     }
 }
 

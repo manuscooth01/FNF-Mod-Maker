@@ -2433,7 +2433,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     internal fun selectLibraryCharacter(id: String) {
         if (busy || config.characterLibrary.none { it.id == id }) return
-        config = config.copy(selectedCharacterId = id); activeVariationIndex = null; scheduleAutoSave()
+        config = config.copy(selectedCharacterId = id); activeVariationIndex = null
+        resetCharacterUndoStacks(); scheduleAutoSave()
     }
     internal fun createLibraryCharacter(duplicate: Boolean = false) {
         if (busy || config.characterLibrary.size >= 64) return
@@ -2446,12 +2447,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             else CharacterDraft(enabled = true, charId = "personaje-$n", displayName = "Personaje $n")
         config = config.copy(characterLibrary = config.characterLibrary + com.fnfmodmaker.model.CharacterEntry(id, draft),
             selectedCharacterId = id, characterAssignments = config.resolvedAssignments())
-        activeVariationIndex = null; error = null; scheduleAutoSave()
+        activeVariationIndex = null; error = null
+        resetCharacterUndoStacks(); scheduleAutoSave()
     }
     internal fun removeLibraryCharacter(id: String) {
         if (busy || config.characterLibrary.none { it.id == id }) return
         config = com.fnfmodmaker.model.removeLibraryCharacter(config, id)
-        activeVariationIndex = null; scheduleAutoSave()
+        activeVariationIndex = null
+        resetCharacterUndoStacks(); scheduleAutoSave()
     }
     internal fun assignLibraryCharacter(role: com.fnfmodmaker.model.CharacterRole, id: String) {
         if (busy || (id.isNotEmpty() && config.characterLibrary.none { it.id == id })) return
@@ -2465,9 +2468,61 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun updateCharacter(block: (CharacterDraft) -> CharacterDraft) {
+        pushCharacterUndo()
         config = config.copy(character = block(config.character))
         characterSaved = null
         scheduleAutoSave()
+    }
+
+    // ---------------- Deshacer y rehacer del personaje ----------------
+
+    private val characterUndoStack = ArrayDeque<CharacterDraft>()
+    private val characterRedoStack = ArrayDeque<CharacterDraft>()
+    internal var characterUndoAvailable by mutableStateOf(false)
+        private set
+    internal var characterRedoAvailable by mutableStateOf(false)
+        private set
+
+    private fun pushCharacterUndo() {
+        characterUndoStack.addLast(config.character)
+        while (characterUndoStack.size > 50) characterUndoStack.removeFirst()
+        characterRedoStack.clear()
+        refreshCharacterUndoState()
+    }
+
+    /** Deshace la última edición del personaje seleccionado; el resto del proyecto no cambia. */
+    internal fun undoCharacterEdit() {
+        if (busy || characterUndoStack.isEmpty()) return
+        val previous = characterUndoStack.removeLast()
+        characterRedoStack.addLast(config.character)
+        while (characterRedoStack.size > 50) characterRedoStack.removeFirst()
+        config = config.copy(character = previous)
+        characterSaved = null
+        refreshCharacterUndoState()
+        scheduleAutoSave()
+    }
+
+    /** Rehace la última edición deshecha del personaje seleccionado. */
+    internal fun redoCharacterEdit() {
+        if (busy || characterRedoStack.isEmpty()) return
+        val next = characterRedoStack.removeLast()
+        characterUndoStack.addLast(config.character)
+        config = config.copy(character = next)
+        characterSaved = null
+        refreshCharacterUndoState()
+        scheduleAutoSave()
+    }
+
+    /** Cambiar de identidad invalida las pilas: deshacer no debe restaurar otro personaje. */
+    private fun resetCharacterUndoStacks() {
+        characterUndoStack.clear()
+        characterRedoStack.clear()
+        refreshCharacterUndoState()
+    }
+
+    private fun refreshCharacterUndoState() {
+        characterUndoAvailable = characterUndoStack.isNotEmpty()
+        characterRedoAvailable = characterRedoStack.isNotEmpty()
     }
 
     internal var characterJsonPreview by mutableStateOf<com.fnfmodmaker.model.CharacterJsonPreview?>(null)
@@ -2496,6 +2551,128 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     internal fun cancelCharacterJson() { characterJsonPreview = null; characterJsonBase = null; characterJsonBaseId = null }
+
+    // ---------------- Importar personajes desde ZIP ----------------
+
+    internal var characterZipAnalysis by mutableStateOf<com.fnfmodmaker.model.CharacterZipImport.Analysis?>(null)
+        private set
+
+    /** Lee y analiza el ZIP sin escribir nada; el usuario confirma cada personaje. */
+    internal fun prepareCharacterZipImport(uri: Uri) {
+        if (busy) return
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        characterZipAnalysis = null
+        status = "Analizando el ZIP de personajes…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val entries = mutableListOf<com.fnfmodmaker.model.CharacterZipImport.Entry>()
+                var total = 0L
+                val input = app.contentResolver.openInputStream(uri) ?: error("No se pudo abrir el ZIP.")
+                java.util.zip.ZipInputStream(input.buffered()).use { zip ->
+                    while (true) {
+                        val entry = zip.nextEntry ?: break
+                        if (entry.isDirectory) { zip.closeEntry(); continue }
+                        require(entries.size < com.fnfmodmaker.model.CharacterZipImport.MAX_ENTRIES) { "El ZIP supera el máximo de entradas." }
+                        val bytes = java.io.ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val n = zip.read(buffer)
+                            if (n < 0) break
+                            if (n == 0) continue
+                            total += n
+                            require(total <= 512L * 1024 * 1024) { "El ZIP supera 512 MB." }
+                            bytes.write(buffer, 0, n)
+                        }
+                        entries.add(com.fnfmodmaker.model.CharacterZipImport.Entry(entry.name, bytes.toByteArray()))
+                        zip.closeEntry()
+                    }
+                }
+                com.fnfmodmaker.model.CharacterZipImport.analyze(entries)
+            } }
+            result.onSuccess { analysis ->
+                if (analysis.candidates.isEmpty() && analysis.problems.isEmpty()) {
+                    error = "El ZIP no contiene personajes Psych ni V-Slice reconocibles."
+                } else characterZipAnalysis = analysis
+            }.onFailure { error = "No se pudo leer el ZIP: ${it.message}" }
+            status = ""
+            busy = false
+        }
+    }
+
+    internal fun cancelCharacterZipImport() {
+        if (!busy) characterZipAnalysis = null
+    }
+
+    /** Importa los personajes confirmados como identidades nuevas de la biblioteca. */
+    internal fun applyCharacterZipImport(ids: Set<String>) {
+        val analysis = characterZipAnalysis ?: return
+        if (busy || ids.isEmpty()) return
+        val selected = analysis.candidates.filter { it.id in ids }
+        if (selected.size != ids.size) { error = "Uno de los personajes ya no está disponible; vuelve a abrir el ZIP."; return }
+        val app = getApplication<Application>()
+        busy = true
+        error = null
+        status = "Importando ${selected.size} personaje(s)…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val dir = projectAssetDirectory()
+                val created = mutableListOf<File>()
+                fun save(entry: com.fnfmodmaker.model.CharacterZipImport.Entry, fallback: String): File {
+                    val safe = entry.name.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { fallback }
+                    val target = File.createTempFile("imp_", "_$safe", dir).also { created.add(it) }
+                    target.writeBytes(entry.bytes)
+                    return target
+                }
+                selected.map { candidate ->
+                    // Validación completa con el importador compartido antes de escribir nada.
+                    val preview = com.fnfmodmaker.model.parseCharacterJson(
+                        candidate.sourceJson, candidate.jsonName.substringAfterLast('/'), CharacterSide.OPPONENT)
+                    val png = save(candidate.sheet, "spritesheet.png")
+                    val xml = save(candidate.xml, "atlas.xml")
+                    if (!MediaTools.isPng(png)) throw IllegalStateException("${candidate.id}: el PNG del ZIP no es válido.")
+                    val size = MediaTools.imageSize(png) ?: throw IllegalStateException("${candidate.id}: no se pudo leer el PNG del ZIP.")
+                    if (size.first !in 1..4096 || size.second !in 1..4096) throw IllegalStateException("${candidate.id}: el PNG supera 4096 px por lado.")
+                    val icon = candidate.icon?.let { save(it, "icon.png") }
+                    val frames = com.fnfmodmaker.model.parseSparrowAtlas(xml.readText(Charsets.UTF_8))
+                    var draft = com.fnfmodmaker.model.applyCharacterJson(CharacterDraft(), preview)
+                    draft = draft.copy(
+                        atlasSheet = PickedImage(Uri.EMPTY, candidate.sheet.name.substringAfterLast('/'), png.absolutePath),
+                        atlasSheetWidth = size.first, atlasSheetHeight = size.second,
+                        atlasXml = PickedImage(Uri.EMPTY, candidate.xml.name.substringAfterLast('/'), xml.absolutePath),
+                        atlasFrames = frames,
+                        icon = icon?.let { PickedImage(Uri.EMPTY, it.name.substringAfterLast('/'), it.absolutePath) })
+                    Triple(candidate.id, preview, draft)
+                }
+            } }
+            result.onSuccess { imported ->
+                val used = config.characterLibrary.map { it.draft.charFolder.lowercase() }.toMutableSet()
+                val entries = imported.map { (candidateId, preview, draft) ->
+                    var charId = draft.charId.ifBlank { candidateId }
+                    var folder = draft.copy(charId = charId).charFolder.lowercase()
+                    var n = 2
+                    while (folder in used) { charId = "${draft.charId}-$n"; folder = draft.copy(charId = charId).charFolder.lowercase(); n++ }
+                    used.add(folder)
+                    val entry = com.fnfmodmaker.model.CharacterEntry(java.util.UUID.randomUUID().toString(), draft.copy(charId = charId))
+                    Pair(entry, preview)
+                }
+                pushCharacterUndo()
+                config = config.copy(characterLibrary = config.characterLibrary + entries.map { it.first },
+                    selectedCharacterId = entries.first().first.id, characterAssignments = config.resolvedAssignments())
+                warnings = warnings + entries.flatMap { it.second.warnings }.distinct() +
+                    "Importados ${entries.size} personaje(s) desde ZIP; revisa su lado (jugador o rival) y sus animaciones."
+                characterZipAnalysis = null
+                error = null
+                status = "¡Personajes importados!"
+                forceAutoSave()
+            }.onFailure {
+                error = it.message ?: "No se pudo importar el ZIP."
+                status = ""
+            }
+            busy = false
+        }
+    }
     internal fun applyCharacterJson() {
         val preview = characterJsonPreview ?: return
         if (busy || config.selectedCharacterId != characterJsonBaseId || config.character != characterJsonBase) { error = "El personaje cambió; vuelve a elegir el JSON."; cancelCharacterJson(); return }
@@ -2544,6 +2721,19 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     internal fun setCharFlipX(enabled: Boolean) = updateCharacter { it.copy(flipX = enabled) }
 
+    // Propiedades de juego compartidas con los esquemas reales; las que un motor no
+    // tiene se quedan en el proyecto y la exportación informa de su ausencia.
+    internal fun setCharacterDanceEvery(value: String) =
+        updateCharacter { it.copy(danceEvery = value.filter { c -> c.isDigit() || c == '.' }.take(6)) }
+
+    internal fun setCharacterSingTime(value: String) =
+        updateCharacter { it.copy(singTime = value.filter { c -> c.isDigit() || c == '.' }.take(6)) }
+
+    internal fun setCharacterStartingAnimation(value: String) =
+        updateCharacter { it.copy(startingAnimation = value.filter { c -> c.isLetterOrDigit() || c == '-' || c == '_' }.take(32)) }
+
+    internal fun setCharacterIsPixel(enabled: Boolean) = updateCharacter { it.copy(isPixel = enabled) }
+
     internal fun setCharIdleFrames(value: String) =
         updateCharacter { it.copy(idleFrames = value.filter { c -> c.isDigit() }.take(3)) }
 
@@ -2578,6 +2768,21 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (busy || name !in config.character.customAnimations) return
         updateCharacter { it.copy(customAnimations = it.customAnimations - name, customFrameCounts = it.customFrameCounts - name,
             animationFrames = it.animationFrames - name, animationSettings = it.animationSettings - name, atlasPrefixes = it.atlasPrefixes - name) }
+    }
+
+    /** Renombra una animación propia moviendo sus frames, ajustes y prefijo en bloque. */
+    internal fun renameCustomAnimation(old: String, new: String): Boolean {
+        if (busy || old !in config.character.customAnimations) return false
+        if (!new.matches(Regex("[A-Za-z0-9_-]{1,32}")) || new in config.character.animationNames) return false
+        updateCharacter { draft ->
+            fun remap(map: Map<String, String>) = map.entries.associate { (key, value) -> if (key == old) new to value else key to value }
+            draft.copy(customAnimations = draft.customAnimations.map { if (it == old) new else it },
+                customFrameCounts = remap(draft.customFrameCounts),
+                animationFrames = draft.animationFrames.entries.associate { (key, value) -> if (key == old) new to value else key to value },
+                animationSettings = draft.animationSettings.entries.associate { (key, value) -> if (key == old) new to value else key to value },
+                atlasPrefixes = remap(draft.atlasPrefixes))
+        }
+        return true
     }
     internal fun setCustomFrameCount(name: String, count: String) {
         if (!busy && name in config.character.customAnimations) updateCharacter { it.copy(customFrameCounts = it.customFrameCounts + (name to count.filter(Char::isDigit).take(3))) }
@@ -3037,9 +3242,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     val warningsList = mutableListOf<String>()
                     val roots = engines.associateWith { engine ->
+                        val engineRoot = File(workRoot, "${draft.charFolder}-${engine.name.lowercase()}")
                         com.fnfmodmaker.mod.CharacterPackage.build(
-                            File(workRoot, "${draft.charFolder}-${engine.name.lowercase()}"),
-                            snapshot, engine, appRoot, { message -> status = message }, warningsList)
+                            engineRoot, snapshot, engine, appRoot, { message -> status = message }, warningsList)
+                        engineRoot
                     }
                     val (firstEngine, firstRoot) = roots.entries.first()
                     val stream = app.contentResolver.openOutputStream(uri)

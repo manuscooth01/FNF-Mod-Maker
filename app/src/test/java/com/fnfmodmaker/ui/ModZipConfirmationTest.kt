@@ -249,6 +249,22 @@ class ModZipConfirmationTest {
         store.clear(); scheduler.runCurrent(); assertTrue(next.isCancelled)
     }
 
+    @Test fun stalePlaybackCallbackCannotChangeNewSessionAndRejectedSwitchKeepsOldSession() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val current = vm.currentProjectId!!; val session = vm.projectSession
+        val future = projects.newId(); seedFuture(future, validIndependentV2(projects.load(current).config))
+        val before = vm.chartEditorState
+        vm.switchProject(future); await { !vm.busy }
+        assertEquals(current, vm.currentProjectId); assertEquals(session, vm.projectSession); assertEquals(before, vm.chartEditorState)
+        val compatible = projects.newId(); projects.save(compatible, projects.load(current).config)
+        vm.switchProject(compatible); await { !vm.busy }; assertEquals(compatible, vm.currentProjectId)
+        assertNotEquals(session, vm.projectSession)
+        vm.seekTo(1234); val newState = vm.chartEditorState; val newConfig = vm.config
+        val oldPlayer = android.media.MediaPlayer()
+        try { vm.onPlaybackComplete(oldPlayer, session) } finally { oldPlayer.release() }
+        assertEquals(newState, vm.chartEditorState); assertEquals(newConfig, vm.config); assertEquals(compatible, vm.currentProjectId)
+    }
+
     @Test fun manualRecoveryRequiresConfirmationThenOpensWithResourceAndUndo() {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val original = vm.currentProjectId!!; val target = projects.newId()
@@ -276,6 +292,10 @@ class ModZipConfirmationTest {
         vm.initChartHistory(); vm.addChartNote(com.fnfmodmaker.model.ChartNote(timeMs = 345, lane = 2))
         assertTrue(vm.chartEditorState.canUndo); vm.undo(); assertTrue(vm.chartEditorState.canRedo); vm.redo()
         assertTrue(vm.activeChartDraft.notes.any { it.timeMs == 345L && it.lane == 2 })
+        assertArrayEquals(backupBytes, backup.readBytes())
+        vm.setModTitle("Recuperado y guardado"); vm.forceAutoSave()
+        await { projects.load(target).config.get("modTitle").asString == "Recuperado y guardado" }
+        assertEquals("Recuperado y guardado", projects.load(target).config.get("modTitle").asString)
         assertArrayEquals(backupBytes, backup.readBytes())
     }
 

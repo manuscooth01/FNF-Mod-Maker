@@ -1293,7 +1293,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         return try {
             mp.setDataSource(instrumental.path)
             mp.prepare()
-            mp.setOnCompletionListener { onPlaybackComplete() }
+            val session = projectSession
+            mp.setOnCompletionListener { completed -> onPlaybackComplete(completed, session) }
             mp
         } catch (e: Exception) {
             e.printStackTrace()
@@ -1496,8 +1497,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Polling para actualizar currentTimeMs desde MediaPlayer. */
     private fun startPlaybackPolling() {
         playbackJob?.cancel()
+        val player = mediaPlayer
+        val session = projectSession
         playbackJob = viewModelScope.launch {
-            while (mediaPlayer?.isPlaying == true) {
+            while (session == projectSession && mediaPlayer === player && player?.isPlaying == true) {
                 val currentPos = mediaPlayer?.currentPosition ?: 0
                 chartEditorState = chartEditorState.copy(currentTimeMs = currentPos.toLong())
                 delay(16) // ~60fps
@@ -1506,7 +1509,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** Callback al terminar reproducción. */
-    private fun onPlaybackComplete() {
+    internal fun onPlaybackComplete(player: MediaPlayer, session: Long) {
+        if (session != projectSession || mediaPlayer !== player) return
         chartEditorState = chartEditorState.copy(isPlaying = false, currentTimeMs = 0)
         playbackJob?.cancel()
         mediaPlayer?.seekTo(0)
@@ -1521,11 +1525,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     /** Limpia MediaPlayer al cambiar de canción o cerrar. */
     internal fun releaseMediaPlayer() {
         playbackJob?.cancel()
-        mediaPlayer?.apply {
-            if (isPlaying) pause()
-            release()
-        }
+        val old = mediaPlayer
         mediaPlayer = null
+        old?.let { player ->
+            runCatching { if (player.isPlaying) player.pause() }
+            runCatching { player.release() }
+        }
     }
 
     /** Actualiza togglePlayback para usar MediaPlayer real. */
@@ -1859,6 +1864,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     var projectSaveStatus by mutableStateOf("Abriendo proyecto…")
         private set
     private var projectRevision = 0L
+    // A session token distinguishes reopening the same id from the previous session.
+    internal var projectSession = 0L
+        private set
     internal var portableImportSummary by mutableStateOf<PortableSummary?>(null)
         private set
     var portableExportName by mutableStateOf<String?>(null)
@@ -1954,30 +1962,36 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
     private fun startProjectAutoSave() {
         autoSaveJob?.cancel()
+        val id = currentProjectId ?: return
+        val session = ++projectSession
         autoSaveJob = viewModelScope.launch {
-            while (true) { delay(30_000); saveAutoSave() }
+            while (id == currentProjectId && session == projectSession) {
+                delay(30_000)
+                if (id == currentProjectId && session == projectSession) saveAutoSave()
+            }
         }
     }
     private fun saveAutoSave() {
         val id = currentProjectId ?: return
         val snapshot = config
         val revision = projectRevision
+        val session = projectSession
         projectSaveStatus = "Guardando…"
         viewModelScope.launch {
             val result = projectMutex.withLock {
-                if (currentProjectId != id || projectRevision != revision) return@launch
+                if (currentProjectId != id || projectRevision != revision || projectSession != session) return@launch
                 withContext(Dispatchers.IO) { runCatching {
                     saveProjectSnapshot(id, snapshot); projectStore.list()
                 } }
             }
             result.onSuccess { list ->
-                if (currentProjectId == id && projectRevision == revision) {
+                if (currentProjectId == id && projectRevision == revision && projectSession == session) {
                     projects = list
                     projectSaveStatus = "Guardado en este dispositivo"
                     if (projectMessage?.startsWith("No se pudo guardar el proyecto:") == true) projectMessage = null
                 }
             }.onFailure {
-                if (currentProjectId == id && projectRevision == revision) {
+                if (currentProjectId == id && projectRevision == revision && projectSession == session) {
                     projectSaveStatus = "Error al guardar"
                     projectMessage = "No se pudo guardar el proyecto: ${it.message}. Comprueba el espacio e intenta de nuevo."
                 }
@@ -2445,9 +2459,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         savedName = null
         builtFiles = emptyList()
         pendingAutoSaveJob?.cancel()
+        val id = currentProjectId
+        val session = projectSession
         pendingAutoSaveJob = viewModelScope.launch {
             delay(1000)
-            saveAutoSave()
+            if (id != null && id == currentProjectId && session == projectSession) saveAutoSave()
         }
     }
 
@@ -3773,6 +3789,7 @@ runCatching {
     }
 
     override fun onCleared() {
+        projectSession++
         autoSaveJob?.cancel(); pendingAutoSaveJob?.cancel()
         closeLiveChart()
         releaseMediaPlayer()

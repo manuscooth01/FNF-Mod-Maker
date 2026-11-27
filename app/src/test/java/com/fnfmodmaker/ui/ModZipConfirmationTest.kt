@@ -193,6 +193,45 @@ class ModZipConfirmationTest {
         assertEquals(before, projectFiles())
     }
 
+    @Test fun startupWithCorruptPrimaryAndV2BackupDoesNotRestoreOrActivateSession() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val compatible = vm.currentProjectId!!; val target = projects.newId()
+        seedFuture(target, validIndependentV2(projects.load(compatible).config))
+        val primary = File(app.filesDir, "projects/$target/project.json")
+        val backup = File(app.filesDir, "projects/$target/project.json.bak")
+        check(primary.renameTo(backup)); primary.writeText("broken")
+        File(app.filesDir, "projects/$target/project.json.tmp").writeText("interrupted evidence")
+        store.clear(); scheduler.runCurrent(); seedActive(target)
+        val before = projectFiles(); store = ViewModelStore()
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = WizardViewModel(app) as T
+        }
+        vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]; await { !vm.busy }
+        assertNull(vm.currentProjectId); assertEquals(target, projects.activeId())
+        assertTrue(vm.projectMessage.orEmpty().contains("no es compatible", true))
+        vm.forceAutoSave(); scheduler.runCurrent(); assertEquals(before, projectFiles())
+        vm.switchProject(compatible); await { !vm.busy }
+        assertEquals(compatible, vm.currentProjectId)
+        assertEquals(before.filterKeys { it.startsWith("$target/") }, projectFiles().filterKeys { it.startsWith("$target/") })
+    }
+
+    @Test fun rejectionKeepsRealUndoHistoryAndPlaybackState() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val previous = vm.currentProjectId!!
+        vm.initChartHistory(); vm.addChartNote(com.fnfmodmaker.model.ChartNote(timeMs = 100, lane = 1))
+        assertTrue(vm.chartEditorState.canUndo)
+        vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
+        val target = projects.newId(); seedFuture(target, validIndependentV2(projects.load(previous).config))
+        val config = vm.config; val editor = vm.chartEditorState; val playing = vm.livePlaying; val loading = vm.liveLoading
+        val before = projectFiles(); vm.switchProject(target); await { !vm.busy }
+        assertEquals(previous, vm.currentProjectId); assertEquals(previous, projects.activeId())
+        assertEquals(config, vm.config); assertEquals(editor, vm.chartEditorState)
+        assertEquals(playing, vm.livePlaying); assertEquals(loading, vm.liveLoading)
+        assertEquals(before, projectFiles()); assertTrue(vm.chartEditorState.canUndo)
+        vm.undo(); assertTrue(vm.chartEditorState.canRedo)
+        vm.redo(); assertEquals(config, vm.config)
+    }
+
     @Test fun incompatibleActiveProjectAllowsSafeRecovery() {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val compatible = vm.currentProjectId!!
@@ -313,7 +352,7 @@ class ModZipConfirmationTest {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val current = vm.currentProjectId!!
         val incompatible = projects.newId()
-        projects.save(incompatible, projects.load(current).config.deepCopy().apply { addProperty("chartSchemaVersion", 99) })
+        seedFuture(incompatible, projects.load(current).config.deepCopy().apply { addProperty("chartSchemaVersion", 99) })
         val currentFile = File(app.filesDir, "projects/$current/project.json")
         val activeFile = File(app.filesDir, "projects/active.txt")
         val oldCurrent = currentFile.readBytes(); val oldActive = activeFile.readBytes()

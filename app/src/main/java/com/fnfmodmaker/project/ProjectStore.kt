@@ -30,7 +30,9 @@ internal class SafeFile(private val file: File) {
         }
     }
 
-    fun <T> read(recover: Boolean = true, parse: (String) -> T): T {
+    fun <T> read(parse: (String) -> T): T = read(true, parse)
+
+    fun <T> read(recover: Boolean, parse: (String) -> T): T {
         var primaryError: Exception? = null
         if (file.exists()) try { return parse(file.readText(Charsets.UTF_8)) } catch (e: Exception) { primaryError = e }
         if (backup.exists()) try {

@@ -115,6 +115,70 @@ class ModZipConfirmationTest {
         assertEquals(1, vm.config.chartSchemaVersion)
     }
 
+    private fun validIndependentV2(base: com.google.gson.JsonObject) = base.deepCopy().apply {
+        addProperty("chartSchemaVersion", 2)
+        add("independentCharts", com.google.gson.JsonParser.parseString("""{"stable":{"id":"stable"}}"""))
+        add("charts", com.google.gson.JsonObject())
+        add("chartHistories", com.google.gson.JsonObject())
+    }
+
+    private fun projectFiles(): Map<String, List<Byte>> {
+        val root = File(app.filesDir, "projects")
+        return root.walkTopDown().filter { it.isFile }.associate { it.relativeTo(root).path to it.readBytes().toList() }
+    }
+
+    @Test fun validV2SwitchIsRejectedWithoutChangingActiveProjectOrDisk() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val originalId = vm.currentProjectId!!
+        vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
+        val target = projects.newId()
+        projects.save(target, validIndependentV2(projects.load(originalId).config))
+        val before = projectFiles(); val config = vm.config; val editor = vm.chartEditorState
+        vm.switchProject(target); await { !vm.busy }
+        assertEquals(originalId, vm.currentProjectId); assertEquals(originalId, projects.activeId())
+        assertEquals(config, vm.config); assertEquals(editor, vm.chartEditorState)
+        assertTrue(vm.projectMessage.orEmpty().contains("no es compatible", true))
+        vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
+        assertEquals(before, projectFiles())
+    }
+
+    @Test fun validV2ActiveProjectDoesNotOpenOrAutosaveAndCompatibleProjectStillOpens() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val compatible = vm.currentProjectId!!
+        vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
+        val target = projects.newId(); projects.save(target, validIndependentV2(projects.load(compatible).config))
+        store.clear(); scheduler.runCurrent(); projects.setActive(target)
+        val before = projectFiles()
+        store = ViewModelStore()
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = WizardViewModel(app) as T
+        }
+        vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
+        await { !vm.busy }
+        assertNull(vm.currentProjectId); assertEquals(target, projects.activeId())
+        assertTrue(vm.projectMessage.orEmpty().contains("no es compatible", true))
+        vm.forceAutoSave(); scheduler.runCurrent()
+        assertEquals(before, projectFiles())
+        vm.switchProject(compatible); await { !vm.busy }
+        assertEquals(compatible, vm.currentProjectId); assertEquals(compatible, projects.activeId())
+        assertEquals(before.filterKeys { it.startsWith("$target/") }, projectFiles().filterKeys { it.startsWith("$target/") })
+    }
+
+    @Test fun v2BackupIsNotRestoredOverOriginalDuringRejectedSwitch() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val originalId = vm.currentProjectId!!
+        vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
+        val target = projects.newId(); projects.save(target, validIndependentV2(projects.load(originalId).config))
+        val primary = File(app.filesDir, "projects/$target/project.json")
+        val backup = File(app.filesDir, "projects/$target/project.json.bak")
+        check(primary.renameTo(backup)); val before = projectFiles(); val config = vm.config
+        vm.switchProject(target); await { !vm.busy }
+        assertEquals(originalId, vm.currentProjectId); assertEquals(originalId, projects.activeId())
+        assertEquals(config, vm.config); assertFalse(primary.exists())
+        vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
+        assertEquals(before, projectFiles())
+    }
+
     @Test fun incompatibleActiveProjectAllowsSafeRecovery() {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val compatible = vm.currentProjectId!!

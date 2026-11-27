@@ -1941,6 +1941,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 chartRepository.setConfig(record.second)
                 config = record.second
                 currentProjectId = record.first; projects = list; projectSaveStatus = "Guardado en este dispositivo"
+                startProjectAutoSave()
                 modIdEdited = config.modId.isNotBlank() && config.modId != slugify(config.modTitle)
                 projectMessage = if (missing.isEmpty()) null else "No se encontraron ${missing.size} recursos del borrador anterior: ${missing.joinToString()}. Vuelve a elegirlos."
             }.onFailure {
@@ -1950,6 +1951,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             }
             busy = false
         }
+    }
+    private fun startProjectAutoSave() {
+        autoSaveJob?.cancel()
         autoSaveJob = viewModelScope.launch {
             while (true) { delay(30_000); saveAutoSave() }
         }
@@ -2159,6 +2163,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         pendingAutoSaveJob?.cancel()
         chartRepository.setConfig(opened)
         currentProjectId = id; config = opened; projects = list
+        startProjectAutoSave()
         projectRevision++; projectSaveStatus = "Guardado en este dispositivo"
         activeSongIndex = 0; activeChartSongIndex = 0; activeChartDifficulty = "normal"; activeVariationIndex = null
         chartEditorState = ChartEditorState(); aiProposal = null; aiProposalNotice = null; step = 0
@@ -3744,6 +3749,7 @@ runCatching {
     }
 
     override fun onCleared() {
+        autoSaveJob?.cancel(); pendingAutoSaveJob?.cancel()
         closeLiveChart()
         releaseMediaPlayer()
         super.onCleared()

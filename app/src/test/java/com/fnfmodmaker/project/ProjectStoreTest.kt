@@ -114,6 +114,36 @@ class ProjectStoreTest {
         assertEquals(before, snapshot(root))
     }
 
+    @Test fun externalChangeAfterInspectionIsDetectedBeforeSave() {
+        val root = File(temp.root, "projects"); val original = ProjectStore(root, temp.root); val id = original.newId()
+        val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"v1"}""").asJsonObject
+        original.save(id, config); original.save(id, config)
+        val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak"); val savedBackup = backup.readBytes()
+        val external = document(id, """{"chartSchemaVersion":2,"independentCharts":{"stable":{"id":"stable"}}}""")
+        val tested = ProjectStore(root, temp.root) { primary.writeText(external) }
+        val failure = assertThrows(IllegalStateException::class.java) { tested.save(id, config) }
+        assertTrue(failure.message!!.contains("cambió")); assertEquals(external, primary.readText())
+        assertArrayEquals(savedBackup, backup.readBytes()); assertFalse(File(root, "$id/project.json.tmp").exists())
+    }
+
+    @Test fun twoStoreInstancesSerializeConcurrentSavesForSameProject() {
+        val root = File(temp.root, "projects"); val a = ProjectStore(root, temp.root); val b = ProjectStore(root, temp.root)
+        val id = a.newId(); val original = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"initial"}""").asJsonObject
+        a.save(id, original)
+        val first = original.deepCopy().apply { addProperty("modTitle", "first") }
+        val second = original.deepCopy().apply { addProperty("modTitle", "second") }
+        val latch = java.util.concurrent.CountDownLatch(1); val pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val f1 = pool.submit { latch.await(); a.save(id, first) }
+            val f2 = pool.submit { latch.await(); b.save(id, second) }
+            latch.countDown(); f1.get(20, java.util.concurrent.TimeUnit.SECONDS); f2.get(20, java.util.concurrent.TimeUnit.SECONDS)
+        } finally { pool.shutdownNow() }
+        val main = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")
+        fun title(file: File) = JsonParser.parseString(file.readText()).asJsonObject.getAsJsonObject("config").get("modTitle").asString
+        assertEquals(setOf("first", "second"), setOf(title(main), title(backup)))
+        assertFalse(File(root, "$id/project.json.tmp").exists())
+    }
+
     @Test fun atomicFileRecoversLastValidVersionAfterCorruption() {
         val path = File(temp.root, "data.json")
         val safe = SafeFile(path)

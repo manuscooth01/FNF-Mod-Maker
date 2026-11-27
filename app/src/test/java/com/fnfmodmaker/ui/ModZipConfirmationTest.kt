@@ -170,6 +170,8 @@ class ModZipConfirmationTest {
         vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
         await { !vm.busy }
         assertNull(vm.currentProjectId); assertEquals(target, projects.activeId())
+        val autoSave = WizardViewModel::class.java.getDeclaredField("autoSaveJob").apply { isAccessible = true }.get(vm)
+        assertNull(autoSave)
         assertTrue(vm.projectMessage.orEmpty().contains("no es compatible", true))
         vm.forceAutoSave(); scheduler.runCurrent()
         assertEquals(before, projectFiles())
@@ -230,6 +232,21 @@ class ModZipConfirmationTest {
         assertEquals(before, projectFiles()); assertTrue(vm.chartEditorState.canUndo)
         vm.undo(); assertTrue(vm.chartEditorState.canRedo)
         vm.redo(); assertEquals(config, vm.config)
+    }
+
+    @Test fun autosaveSessionStartsOnlyForOpenedProjectsAndCancelsOnSwitch() {
+        fun job() = WizardViewModel::class.java.getDeclaredField("autoSaveJob").apply { isAccessible = true }.get(vm) as kotlinx.coroutines.Job?
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val first = vm.currentProjectId!!; val originalJob = job()!!; assertTrue(originalJob.isActive)
+        val future = projects.newId(); seedFuture(future, validIndependentV2(projects.load(first).config))
+        val before = projectFiles(); vm.switchProject(future); await { !vm.busy }
+        assertSame(originalJob, job()); assertTrue(originalJob.isActive)
+        assertEquals(first, vm.currentProjectId); assertEquals(before, projectFiles())
+        val compatible = projects.newId(); projects.save(compatible, projects.load(first).config)
+        vm.switchProject(compatible); await { !vm.busy }
+        assertEquals(compatible, vm.currentProjectId); assertTrue(originalJob.isCancelled)
+        val next = job()!!; assertNotSame(originalJob, next); assertTrue(next.isActive)
+        store.clear(); scheduler.runCurrent(); assertTrue(next.isCancelled)
     }
 
     @Test fun incompatibleActiveProjectAllowsSafeRecovery() {

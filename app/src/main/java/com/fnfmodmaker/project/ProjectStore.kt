@@ -50,7 +50,11 @@ internal class SafeFile(private val file: File) {
     fun exists(): Boolean = file.exists() || backup.exists()
 }
 
-internal class ProjectStore(private val root: File, private val permittedAssetRoot: File) {
+internal class ProjectStore(
+    private val root: File,
+    private val permittedAssetRoot: File,
+    private val afterInspection: (() -> Unit)? = null
+) {
     companion object { private val projectLocks = java.util.concurrent.ConcurrentHashMap<String, Any>() }
     private fun <T> withProjectLock(id: String, action: () -> T): T {
         val key = dir(id).canonicalPath
@@ -128,6 +132,7 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
     fun save(id: String, config: JsonObject) = withProjectLock(id) {
         requireReadableProjectSchema(config)
         val before = checkCandidates(id)
+        afterInspection?.invoke()
         stable(id, before)
         check(before[0].kind != CandidateKind.ABSENT || before[1].kind == CandidateKind.ABSENT) { "La copia requiere recuperación manual antes de guardar; se conservan los archivos." }
         val wrapper = JsonObject().apply {
@@ -143,6 +148,7 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
     }
     fun load(id: String): ProjectRecord = withProjectLock(id) {
         val before = checkCandidates(id)
+        afterInspection?.invoke()
         if (before[0].kind == CandidateKind.ABSENT && before[1].kind == CandidateKind.V1) {
             // Missing primary: verify the backup as a complete legacy project. Reading it
             // without recovery avoids overwriting or creating any project files.

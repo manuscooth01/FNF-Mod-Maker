@@ -59,6 +59,7 @@ internal class ProjectStore(
             java.nio.file.Files.createLink(destination.toPath(), source.toPath())
         else android.system.Os.link(source.absolutePath, destination.absolutePath)
     },
+    private val beforeFileLock: ((String) -> Unit)? = null,
     private val afterInspection: (() -> Unit)? = null
 ) {
     companion object { private val projectLocks = java.util.concurrent.ConcurrentHashMap<String, Any>() }
@@ -76,7 +77,10 @@ internal class ProjectStore(
         val file = File(lockDir, "$name.lock")
         check(file.canonicalFile.parentFile == lockDir.canonicalFile && file.canonicalFile.name == file.name) { "Archivo de bloqueo inseguro." }
         return java.io.RandomAccessFile(file, "rw").use { handle ->
-            handle.channel.use { channel -> channel.lock().use { action() } }
+            handle.channel.use { channel ->
+                beforeFileLock?.invoke(name)
+                channel.lock().use { action() }
+            }
         }
     }
     private fun <T> withMutationLock(id: String, action: () -> T): T =

@@ -18,6 +18,7 @@ object ProjectProcessWorker {
         val root = File(args[0]); val id = args[1]; val operation = args[2]
         val store = ProjectStore(root, root.parentFile,
             recoveryInstall = { source, target -> java.nio.file.Files.createLink(target.toPath(), source.toPath()) },
+            beforeFileLock = { name -> if (name == id) { println("ATTEMPT"); System.out.flush() } },
             afterInspection = { println("LOCKED"); System.out.flush(); check(readLine() == "CONTINUE") })
         println("READY"); System.out.flush(); check(readLine() == "START")
         try {
@@ -79,8 +80,8 @@ class ProjectCrossProcessTest {
             val primary = File(root, "$id/project.json")
             val first = worker(root, id, firstOp); val second = worker(root, id, if (firstOp == "save") "recover" else "save")
             try {
-                first.send("START"); assertEquals("LOCKED", first.line())
-                second.send("START"); first.send("CONTINUE")
+                first.send("START"); assertEquals("ATTEMPT", first.line()); assertEquals("LOCKED", first.line())
+                second.send("START"); assertEquals("ATTEMPT", second.line()); first.send("CONTINUE")
                 val firstResult = first.done(); val secondResult = second.done()
                 if (firstOp == "save") {
                     assertTrue(firstResult.startsWith("RESULT:FAIL:")); assertEquals("RESULT:OK", secondResult)
@@ -98,7 +99,8 @@ class ProjectCrossProcessTest {
         val (root, id, original) = fixture(); val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")
         val first = worker(root, id, "recover"); val second = worker(root, id, "recover")
         try {
-            first.send("START"); assertEquals("LOCKED", first.line()); second.send("START"); first.send("CONTINUE")
+            first.send("START"); assertEquals("ATTEMPT", first.line()); assertEquals("LOCKED", first.line())
+            second.send("START"); assertEquals("ATTEMPT", second.line()); first.send("CONTINUE")
             assertEquals("RESULT:OK", first.done()); assertTrue(second.done().startsWith("RESULT:FAIL:"))
             assertArrayEquals(original, primary.readBytes()); assertArrayEquals(original, backup.readBytes())
         } finally { close(first, second) }
@@ -106,7 +108,7 @@ class ProjectCrossProcessTest {
             val (r, key, bytes) = fixture(); val p = File(r, "$key/project.json"); val b = File(r, "$key/project.json.bak")
             val recovering = worker(r, key, "recover")
             try {
-                recovering.send("START"); assertEquals("LOCKED", recovering.line())
+                recovering.send("START"); assertEquals("ATTEMPT", recovering.line()); assertEquals("LOCKED", recovering.line())
                 if (change == "primary") p.writeText("external") else b.writeBytes(bytes + " ".toByteArray(StandardCharsets.UTF_8))
                 recovering.send("CONTINUE"); assertTrue(recovering.done().startsWith("RESULT:FAIL:"))
                 if (change == "primary") { assertEquals("external", p.readText()); assertArrayEquals(bytes, b.readBytes()) }

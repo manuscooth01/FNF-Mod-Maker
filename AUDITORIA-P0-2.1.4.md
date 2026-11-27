@@ -17,8 +17,8 @@ Base: `6a7094a7879a5758c339b025a59eaad4b1e45536`. Inspección estática; los res
 
 ## Trabajos y observadores
 
-- `WizardViewModel`: bucle de autoguardado de 30 s, trabajo diferido de 1 s, trabajos de guardado IO y mutex de instancia; `projectRevision` evita que un resultado antiguo reemplace estado nuevo.
-- `playbackJob`: sondeo de `MediaPlayer` cada 16 ms; `livePolling`: sondeo de reproducción/voz cada 50 ms. MediaPlayer tiene callbacks preparados, finalización, búsqueda y error. `closeLiveChart` y `releaseMediaPlayer` liberan los recursos en cambios exitosos y cierre.
+- `WizardViewModel`: bucle de autoguardado de 30 s, trabajo diferido de 1 s, trabajos de guardado IO y mutex de instancia; `projectRevision` y `projectSession` restringen estos resultados a la sesión actual, incluso si se reabre el mismo ID.
+- `playbackJob`: sondeo de `MediaPlayer` cada 16 ms; `livePolling`: sondeo de reproducción/voz cada 50 ms. El sondeo clásico y su callback de finalización comprueban identidad de reproductor y sesión; `livePolling` y sus callbacks comprueban identidad del reproductor y/o pertenencia a las voces. MediaPlayer tiene callbacks preparados, finalización, búsqueda y error. `closeLiveChart` y `releaseMediaPlayer` liberan los recursos en cambios exitosos y cierre.
 - `FNFModMakerApp` registra un `LifecycleEventObserver` de ON_STOP para autoguardado; pertenece a la composición, no a un ID de proyecto. `LiveChartEditor` registra otro para pausar y cerrar; `AudioPreview` registra otro para detener su controlador. Se retiran al abandonar sus respectivas composiciones.
 - `AudioPreviewController` dispone de corrutina de sondeo y callbacks de MediaPlayer; las vistas paran preview al cambiar entradas. `TouchChartGridEditor` abre y cierra una sesión de cuadrícula mediante `DisposableEffect`.
 - `CharacterPreview` y `ModPreviewScreen` tienen animaciones con `LaunchedEffect`. Apariencia, biblioteca ZIP, importación, generación de audio/imagen, IA y construcción ejecutan otras corrutinas/callbacks; algunas usan `busy`, `aiBusy`, tokens de progreso o snapshots, pero no todas comparten un token de sesión de proyecto.

@@ -93,9 +93,14 @@ class PortableProjectTest {
         // A completed save became the backup when the next write was interrupted.
         store.save(id, config.deepCopy().apply { addProperty("modTitle", "Next") })
         assertTrue(file.delete()); File(file.parentFile, "project.json.tmp").writeText("incomplete")
-        val recovered = store.load(id).config
-        assertEquals(config.get("charts"), recovered.get("charts"))
-        assertEquals(config.get("chartHistories"), recovered.get("chartHistories"))
+        val backup = File(file.parentFile, "project.json.bak")
+        val temporary = File(file.parentFile, "project.json.tmp")
+        val backupBytes = backup.readBytes(); val temporaryBytes = temporary.readBytes()
+        assertThrows(IllegalStateException::class.java) { store.load(id) }
+        assertFalse(file.exists()); assertArrayEquals(backupBytes, backup.readBytes()); assertArrayEquals(temporaryBytes, temporary.readBytes())
+        val preserved = com.google.gson.JsonParser.parseString(backup.readText()).asJsonObject.getAsJsonObject("config")
+        assertEquals(config.get("charts"), preserved.get("charts"))
+        assertEquals(config.get("chartHistories"), preserved.get("chartHistories"))
     }
 
     private fun zip(file: File, contents: List<Pair<String, ByteArray>>) {

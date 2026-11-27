@@ -51,6 +51,11 @@ internal class SafeFile(private val file: File) {
 }
 
 internal class ProjectStore(private val root: File, private val permittedAssetRoot: File) {
+    companion object { private val projectLocks = java.util.concurrent.ConcurrentHashMap<String, Any>() }
+    private fun <T> withProjectLock(id: String, action: () -> T): T {
+        val key = dir(id).canonicalPath
+        return synchronized(projectLocks.computeIfAbsent(key) { Any() }) { action() }
+    }
     private val idPattern = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
     fun newId(): String = UUID.randomUUID().toString()
     private fun dir(id: String): File {
@@ -63,25 +68,68 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
     private fun projectFile(id: String) = SafeFile(File(dir(id), "project.json"))
     private fun activeFile() = SafeFile(File(root, "active.txt"))
     fun activeId(): String? = if (activeFile().exists()) activeFile().read { text -> text.trim().also { require(idPattern.matches(it)) } } else null
-    // Examine all parseable candidates, including interrupted writes, before any mutation.
-    // A corrupt candidate may be recovered from a compatible backup; an unreadable file
-    // fails closed. Do not interpret incompatible data as corruption and fall back to V1.
-    private fun checkCandidates(id: String) {
-        val folder = dir(id)
-        for (name in listOf("project.json", "project.json.bak", "project.json.tmp")) {
-            val candidate = File(folder, name)
-            if (!candidate.exists()) continue
-            val text = candidate.readText(Charsets.UTF_8)
-            val json = try { JsonParser.parseString(text) } catch (_: com.google.gson.JsonParseException) { continue }
-            if (!json.isJsonObject) continue
-            val config = json.asJsonObject.get("config")
-            if (config != null && config.isJsonObject) requireReadableProjectSchema(config.asJsonObject)
-        }
+    // Classification is read-only: no fallback can hide an unreadable candidate.
+    private enum class CandidateKind { ABSENT, V1, V2, FUTURE, CORRUPT, INVALID_WRAPPER, READ_ERROR }
+    private data class Candidate(val file: File, val kind: CandidateKind, val bytes: List<Byte> = emptyList())
+    private fun classify(id: String, file: File): Candidate {
+        if (!file.exists()) return Candidate(file, CandidateKind.ABSENT)
+        val bytes = try { file.readBytes() } catch (_: Exception) { return Candidate(file, CandidateKind.READ_ERROR) }
+        val doc = try {
+            val text = Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+            val reader = com.google.gson.stream.JsonReader(java.io.StringReader(text)).apply { isLenient = false }
+            val value = com.google.gson.internal.Streams.parse(reader)
+            if (reader.peek() != com.google.gson.stream.JsonToken.END_DOCUMENT) return Candidate(file, CandidateKind.CORRUPT, bytes.toList())
+            if (!value.isJsonObject) return Candidate(file, CandidateKind.CORRUPT, bytes.toList())
+            value.asJsonObject
+        } catch (_: Exception) { return Candidate(file, CandidateKind.CORRUPT, bytes.toList()) }
+        val wrappedVersion = doc.get("version")
+        if (wrappedVersion?.isJsonPrimitive != true || !wrappedVersion.asJsonPrimitive.isNumber || wrappedVersion.asString != "1")
+            return Candidate(file, CandidateKind.INVALID_WRAPPER, bytes.toList())
+        val wrappedId = doc.get("id")
+        if (wrappedId?.isJsonPrimitive != true || !wrappedId.asJsonPrimitive.isString || wrappedId.asString != id || doc.get("config")?.isJsonObject != true)
+            return Candidate(file, CandidateKind.INVALID_WRAPPER, bytes.toList())
+        val config = doc.getAsJsonObject("config")
+        val version = config.get("chartSchemaVersion")
+        if (version?.isJsonPrimitive == true && version.asJsonPrimitive.isNumber && version.asString == "2")
+            return Candidate(file, CandidateKind.V2, bytes.toList())
+        if (runCatching { requireReadableProjectSchema(config) }.isFailure)
+            return Candidate(file, CandidateKind.FUTURE, bytes.toList())
+        // A missing schema marker alone is not evidence: an identifiable legacy field
+        // must be present. Full model validation is additionally required for recovery.
+        val recognizable = listOf("modTitle", "songs", "charts", "character", "characterLibrary", "stageDraft", "assetPacks", "audio")
+            .any { config.has(it) && !config.get(it).isJsonNull }
+        if (!recognizable) return Candidate(file, CandidateKind.INVALID_WRAPPER, bytes.toList())
+        return Candidate(file, CandidateKind.V1, bytes.toList())
     }
-    fun setActive(id: String) { load(id); activeFile().write(id) }
-    fun save(id: String, config: JsonObject) {
+    private fun candidates(id: String): List<Candidate> = listOf("project.json", "project.json.bak", "project.json.tmp")
+        .map { classify(id, File(dir(id), it)) }
+    private fun checkCandidates(id: String): List<Candidate> {
+        val result = candidates(id)
+        val incompatible = result.firstOrNull { it.kind == CandidateKind.V2 || it.kind == CandidateKind.FUTURE }
+        if (incompatible != null) throw IllegalArgumentException("La versión de charts no es compatible; se conservan los archivos.")
+        val unsafe = result.firstOrNull { it.kind !in listOf(CandidateKind.ABSENT, CandidateKind.V1) }
+        if (unsafe != null) throw IllegalStateException("Proyecto requiere recuperación manual (${unsafe.file.name}: ${unsafe.kind}); se conservan los archivos.")
+        // Any existing temp may contain an interrupted write and must never be replaced.
+        if (result[2].kind != CandidateKind.ABSENT)
+            throw IllegalStateException("Proyecto requiere recuperación manual: existe un archivo temporal; se conservan los archivos.")
+        return result
+    }
+    private fun stable(id: String, previous: List<Candidate>) {
+        check(candidates(id) == previous) { "El proyecto cambió durante la inspección; recuperación manual necesaria." }
+    }
+    fun setActive(id: String) = withProjectLock(id) {
+        load(id)
+        check(classify(id, File(dir(id), "project.json")).kind == CandidateKind.V1) {
+            "La copia requiere recuperación manual antes de activar el proyecto."
+        }
+        activeFile().write(id)
+    }
+    fun save(id: String, config: JsonObject) = withProjectLock(id) {
         requireReadableProjectSchema(config)
-        checkCandidates(id)
+        val before = checkCandidates(id)
+        stable(id, before)
+        check(before[0].kind != CandidateKind.ABSENT || before[1].kind == CandidateKind.ABSENT) { "La copia requiere recuperación manual antes de guardar; se conservan los archivos." }
         val wrapper = JsonObject().apply {
             addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
         }
@@ -93,18 +141,35 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         require(doc.get("id")?.asString == id) { "El proyecto no coincide con su carpeta." }
         ProjectRecord(id, doc.getAsJsonObject("config") ?: error("Falta la configuración."), doc.get("updatedAt")?.asLong ?: 0L)
     }
-    fun load(id: String): ProjectRecord {
-        checkCandidates(id)
-        return readRecord(id, true).also { requireReadableProjectSchema(it.config) }
+    fun load(id: String): ProjectRecord = withProjectLock(id) {
+        val before = checkCandidates(id)
+        if (before[0].kind == CandidateKind.ABSENT && before[1].kind == CandidateKind.V1) {
+            // Missing primary: verify the backup as a complete legacy project. Reading it
+            // without recovery avoids overwriting or creating any project files.
+            val backup = readRecord(id, false)
+            val validatorGson = com.google.gson.GsonBuilder().registerTypeAdapter(android.net.Uri::class.java,
+                object : com.google.gson.TypeAdapter<android.net.Uri>() {
+                    override fun write(out: com.google.gson.stream.JsonWriter, value: android.net.Uri?) { out.nullValue() }
+                    override fun read(input: com.google.gson.stream.JsonReader): android.net.Uri? { input.skipValue(); return null }
+                }.nullSafe()).create()
+            try { ProjectConfigValidator(validatorGson).validate(backup.config) }
+            catch (e: Exception) { throw IllegalStateException("La copia requiere recuperación manual; se conservan los archivos.", e) }
+            stable(id, before)
+            return@withProjectLock backup
+        }
+        stable(id, before)
+        readRecord(id, false).also { requireReadableProjectSchema(it.config) }
     }
     fun list(): List<ProjectSummary> = root.listFiles().orEmpty().filter { it.isDirectory && idPattern.matches(it.name) && projectFile(it.name).exists() }.map { folder ->
-        runCatching {
+        runCatching { withProjectLock(folder.name) {
+            checkCandidates(folder.name)
             val record = readRecord(folder.name, false)
-            val problem = runCatching { checkCandidates(folder.name); requireReadableProjectSchema(record.config) }.exceptionOrNull()?.let {
-                "Charts incompatibles: ${it.message}"
-            }
-            ProjectSummary(record.id, record.config.get("modTitle")?.asString?.takeIf { it.isNotBlank() } ?: "Proyecto sin nombre", record.updatedAt, problem)
-        }.getOrElse { ProjectSummary(folder.name, "Proyecto no legible", folder.lastModified(), "No se pudo abrir; sus archivos se conservan.") }
+            ProjectSummary(record.id, record.config.get("modTitle")?.asString?.takeIf { it.isNotBlank() } ?: "Proyecto sin nombre", record.updatedAt, null)
+        } }.getOrElse {
+            val incompatible = it is IllegalArgumentException && it.message.orEmpty().contains("no es compatible")
+            ProjectSummary(folder.name, "Proyecto no legible", folder.lastModified(),
+                if (incompatible) "Charts incompatibles: ${it.message}" else "Recuperación manual necesaria: ${it.message}. Los archivos se conservan.")
+        }
     }.sortedByDescending { it.updatedAt }
 
     /** Hidden staging lives beside final projects: publication is one same-filesystem rename. */

@@ -53,15 +53,65 @@ class ProjectStoreTest {
         assertEquals(before, snapshot(root))
     }
 
-    @Test fun compatibleBackupIsListedWithoutRecoveryThenRestoredByLoad() {
+    @Test fun corruptPrimaryWithCompatibleBackupRequiresManualRecovery() {
         val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
         val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"v1"}""").asJsonObject
         store.save(id, config); store.save(id, config)
         val folder = File(root, id); val primary = File(folder, "project.json"); val backup = File(folder, "project.json.bak")
         val expected = backup.readBytes(); primary.writeText("broken"); val before = snapshot(root)
-        assertNull(store.list().single().problem); assertEquals(before, snapshot(root))
-        assertEquals(config, store.load(id).config); assertArrayEquals(expected, primary.readBytes())
-        assertArrayEquals(expected, backup.readBytes())
+        assertTrue(store.list().single().problem!!.contains("manual"))
+        assertThrows(IllegalStateException::class.java) { store.load(id) }
+        assertEquals(before, snapshot(root)); assertArrayEquals(expected, backup.readBytes())
+    }
+
+    @Test fun untrustedCandidatesRequireManualRecoveryAndPreserveAllBytes() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val active = store.newId(); val config = JsonParser.parseString("""{"modTitle":"active","chartSchemaVersion":1}""").asJsonObject
+        store.save(active, config); store.setActive(active)
+        val id = store.newId(); val dir = File(root, id); check(dir.mkdirs())
+        val primary = File(dir, "project.json"); val backup = File(dir, "project.json.bak"); val tmp = File(dir, "project.json.tmp")
+        val v1 = document(id, """{"modTitle":"v1","chartSchemaVersion":1}""")
+        val v2 = document(id, """{"chartSchemaVersion":2,"independentCharts":{"stable":{"id":"stable"}}}""")
+        val wrongId = document(store.newId(), """{"modTitle":"v1","chartSchemaVersion":1}""")
+        val cases = listOf(
+            Triple("{\"version\":1,\"config\":", v1, null), // truncated
+            Triple("not-json", v1, null),
+            Triple(v1.replace("\"version\":1", "\"version\":99"), v1, null),
+            Triple(wrongId, v1, null), Triple(v1, v2, null), Triple(v2, v1, null),
+            Triple(v1, v1, v2), Triple(document(id, "{}"), v1, null))
+        cases.forEach { (main, previous, temporary) ->
+            primary.writeText(main); backup.writeText(previous)
+            if (temporary == null) { if (tmp.exists()) assertTrue(tmp.delete()) } else tmp.writeText(temporary)
+            val before = snapshot(root)
+            assertNotNull(store.list().single { it.id == id }.problem)
+            assertThrows(Exception::class.java) { store.load(id) }
+            assertThrows(Exception::class.java) { store.save(id, config) }
+            assertThrows(Exception::class.java) { store.setActive(id) }
+            assertEquals(active, store.activeId()); assertEquals(before, snapshot(root))
+        }
+    }
+
+    @Test fun unreadableCandidateBlocksAllProjectOperations() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
+        val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"v1"}""").asJsonObject
+        store.save(id, config); val folder = File(root, id); val bad = File(folder, "project.json.bak")
+        assertTrue(bad.mkdir()); val before = snapshot(root)
+        assertTrue(store.list().single().problem!!.contains("READ_ERROR"))
+        assertThrows(IllegalStateException::class.java) { store.load(id) }
+        assertThrows(IllegalStateException::class.java) { store.save(id, config) }
+        assertTrue(bad.isDirectory); assertEquals(before, snapshot(root))
+    }
+
+    @Test fun missingPrimaryCanReadValidatedV1BackupWithoutModifyingFiles() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
+        val config = com.google.gson.Gson().toJsonTree(com.fnfmodmaker.model.ModConfig()).asJsonObject
+        config.addProperty("chartSchemaVersion", 1)
+        store.save(id, config); store.save(id, config)
+        val primary = File(root, "$id/project.json"); assertTrue(primary.delete()); val before = snapshot(root)
+        assertEquals(config, store.load(id).config); assertEquals(before, snapshot(root)); assertFalse(primary.exists())
+        assertThrows(IllegalStateException::class.java) { store.save(id, config) }
+        assertThrows(IllegalStateException::class.java) { store.setActive(id) }
+        assertEquals(before, snapshot(root))
     }
 
     @Test fun atomicFileRecoversLastValidVersionAfterCorruption() {

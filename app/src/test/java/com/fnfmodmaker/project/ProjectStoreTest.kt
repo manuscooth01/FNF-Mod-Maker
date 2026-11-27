@@ -77,7 +77,9 @@ class ProjectStoreTest {
             Triple("{\"version\":1,\"config\":", v1, null), // truncated
             Triple("not-json", v1, null),
             Triple(v1.replace("\"version\":1", "\"version\":99"), v1, null),
-            Triple(wrongId, v1, null), Triple(v1, v2, null), Triple(v2, v1, null),
+            Triple(wrongId, v1, null),
+            Triple(document(id, """{"chartSchemaVersion":2,"chartSchemaVersion":1,"modTitle":"fake"}"""), v1, null),
+            Triple(document(id, """{"modTitle":{}}"""), v1, null), Triple(v1, v2, null), Triple(v2, v1, null),
             Triple(v1, v1, v2), Triple(document(id, "{}"), v1, null))
         cases.forEach { (main, previous, temporary) ->
             primary.writeText(main); backup.writeText(previous)

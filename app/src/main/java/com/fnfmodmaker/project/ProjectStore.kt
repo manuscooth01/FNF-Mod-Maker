@@ -76,11 +76,38 @@ internal class ProjectStore(
     private enum class CandidateKind { ABSENT, V1, V2, FUTURE, CORRUPT, INVALID_WRAPPER, READ_ERROR }
     private data class Candidate(val file: File, val kind: CandidateKind, val bytes: List<Byte> = emptyList())
     private fun classify(id: String, file: File): Candidate {
-        if (!file.exists()) return Candidate(file, CandidateKind.ABSENT)
+        if (!file.exists()) {
+            val parent = file.parentFile
+            if (parent.exists()) {
+                val names = parent.list() ?: return Candidate(file, CandidateKind.READ_ERROR)
+                if (file.name in names) return Candidate(file, CandidateKind.READ_ERROR)
+            }
+            return Candidate(file, CandidateKind.ABSENT)
+        }
         val bytes = try { file.readBytes() } catch (_: Exception) { return Candidate(file, CandidateKind.READ_ERROR) }
         val doc = try {
             val text = Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
                 .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+            // Strictly walk the entire document first; Gson's tree parser otherwise
+            // silently accepts duplicate keys, which can hide a schema marker.
+            val checker = com.google.gson.stream.JsonReader(java.io.StringReader(text)).apply { isLenient = false }
+            fun checkValue() {
+                when (checker.peek()) {
+                    com.google.gson.stream.JsonToken.BEGIN_OBJECT -> {
+                        checker.beginObject(); val names = mutableSetOf<String>()
+                        while (checker.hasNext()) { check(names.add(checker.nextName())) { "Clave JSON duplicada." }; checkValue() }
+                        checker.endObject()
+                    }
+                    com.google.gson.stream.JsonToken.BEGIN_ARRAY -> {
+                        checker.beginArray(); while (checker.hasNext()) checkValue(); checker.endArray()
+                    }
+                    com.google.gson.stream.JsonToken.STRING, com.google.gson.stream.JsonToken.NUMBER -> checker.nextString()
+                    com.google.gson.stream.JsonToken.BOOLEAN -> checker.nextBoolean()
+                    com.google.gson.stream.JsonToken.NULL -> checker.nextNull()
+                    else -> error("JSON inválido.")
+                }
+            }
+            checkValue(); check(checker.peek() == com.google.gson.stream.JsonToken.END_DOCUMENT)
             val reader = com.google.gson.stream.JsonReader(java.io.StringReader(text)).apply { isLenient = false }
             val value = com.google.gson.internal.Streams.parse(reader)
             if (reader.peek() != com.google.gson.stream.JsonToken.END_DOCUMENT) return Candidate(file, CandidateKind.CORRUPT, bytes.toList())
@@ -94,6 +121,10 @@ internal class ProjectStore(
         if (wrappedId?.isJsonPrimitive != true || !wrappedId.asJsonPrimitive.isString || wrappedId.asString != id || doc.get("config")?.isJsonObject != true)
             return Candidate(file, CandidateKind.INVALID_WRAPPER, bytes.toList())
         val config = doc.getAsJsonObject("config")
+        val updatedAt = doc.get("updatedAt")
+        if (updatedAt != null && (updatedAt.isJsonNull || !updatedAt.isJsonPrimitive || !updatedAt.asJsonPrimitive.isNumber ||
+                runCatching { updatedAt.asString.toLong() }.isFailure))
+            return Candidate(file, CandidateKind.INVALID_WRAPPER, bytes.toList())
         val version = config.get("chartSchemaVersion")
         if (version?.isJsonPrimitive == true && version.asJsonPrimitive.isNumber && version.asString == "2")
             return Candidate(file, CandidateKind.V2, bytes.toList())
@@ -101,9 +132,17 @@ internal class ProjectStore(
             return Candidate(file, CandidateKind.FUTURE, bytes.toList())
         // A missing schema marker alone is not evidence: an identifiable legacy field
         // must be present. Full model validation is additionally required for recovery.
-        val recognizable = listOf("modTitle", "songs", "charts", "character", "characterLibrary", "stageDraft", "assetPacks", "audio")
-            .any { config.has(it) && !config.get(it).isJsonNull }
-        if (!recognizable) return Candidate(file, CandidateKind.INVALID_WRAPPER, bytes.toList())
+        val fields = mapOf("modTitle" to "string", "songs" to "array", "charts" to "object",
+            "character" to "object", "characterLibrary" to "array", "stageDraft" to "object", "assetPacks" to "array", "audio" to "object")
+        val present = fields.filterKeys { config.has(it) && !config.get(it).isJsonNull }
+        if (present.isEmpty() || present.any { (name, type) ->
+                val node = config.get(name)
+                when (type) {
+                    "string" -> !node.isJsonPrimitive || !node.asJsonPrimitive.isString
+                    "array" -> !node.isJsonArray
+                    else -> !node.isJsonObject
+                }
+            }) return Candidate(file, CandidateKind.INVALID_WRAPPER, bytes.toList())
         return Candidate(file, CandidateKind.V1, bytes.toList())
     }
     private fun candidates(id: String): List<Candidate> = listOf("project.json", "project.json.bak", "project.json.tmp")

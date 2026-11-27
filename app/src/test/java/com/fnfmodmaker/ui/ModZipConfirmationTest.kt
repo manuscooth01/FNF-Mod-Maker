@@ -234,6 +234,93 @@ class ModZipConfirmationTest {
         vm.redo(); assertEquals(config, vm.config)
     }
 
+    @Test fun characterUndoAndRedoFromProjectACannotChangeNewProjectB() {
+        val original = vm.currentProjectId!!
+        vm.setCharName("A primero"); vm.setCharName("A segundo"); vm.undoCharacterEdit()
+        assertEquals("A primero", vm.config.character.displayName)
+        assertTrue(vm.characterUndoAvailable); assertTrue(vm.characterRedoAvailable)
+        vm.switchProject(); await { !vm.busy }
+        assertNotNull(vm.currentProjectId); assertNotEquals(original, vm.currentProjectId)
+        val b = vm.config; val character = b.character
+        assertFalse(vm.characterUndoAvailable); assertFalse(vm.characterRedoAvailable)
+        vm.undoCharacterEdit(); vm.redoCharacterEdit()
+        assertEquals(character, vm.config.character); assertEquals(b, vm.config)
+        assertFalse(vm.characterUndoAvailable); assertFalse(vm.characterRedoAvailable)
+    }
+
+    @Test fun reopenedProjectStartsWithEmptyCharacterHistory() {
+        val a = vm.currentProjectId!!
+        vm.setCharName("Edición guardada de A"); assertTrue(vm.characterUndoAvailable)
+        vm.switchProject(); await { !vm.busy }
+        assertNotEquals(a, vm.currentProjectId)
+        vm.switchProject(a); await { !vm.busy }
+        assertEquals(a, vm.currentProjectId); assertEquals("Edición guardada de A", vm.config.character.displayName)
+        val before = vm.config
+        assertFalse(vm.characterUndoAvailable); assertFalse(vm.characterRedoAvailable)
+        vm.undoCharacterEdit(); vm.redoCharacterEdit(); assertEquals(before, vm.config)
+        assertFalse(vm.characterUndoAvailable); assertFalse(vm.characterRedoAvailable)
+    }
+
+    @Test fun rejectedProjectChangeKeepsCharacterUndoAndRedoUsable() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val a = vm.currentProjectId!!; val first = vm.config.character
+        vm.setCharName("Primero"); val edited = vm.config.character
+        vm.setCharName("Segundo"); vm.undoCharacterEdit()
+        assertTrue(vm.characterUndoAvailable); assertTrue(vm.characterRedoAvailable)
+        val session = vm.projectSession; val before = vm.config
+        val incompatible = projects.newId(); seedFuture(incompatible, validIndependentV2(projects.load(a).config))
+        vm.switchProject(incompatible); await { !vm.busy }
+        assertEquals(a, vm.currentProjectId); assertEquals(session, vm.projectSession); assertEquals(before, vm.config)
+        assertTrue(vm.projectMessage.orEmpty().contains("compatible"))
+        assertTrue(vm.characterUndoAvailable); assertTrue(vm.characterRedoAvailable)
+        vm.redoCharacterEdit(); assertEquals("Segundo", vm.config.character.displayName)
+        vm.undoCharacterEdit(); assertEquals(edited, vm.config.character)
+        vm.undoCharacterEdit(); assertEquals(first, vm.config.character)
+    }
+
+    @Test fun characterUndoRedoRemainsOrderedAndBoundedWithinSession() {
+        vm.setCharName("Primero"); val first = vm.config.character
+        vm.setCharName("Segundo"); val second = vm.config.character
+        vm.setCharName("Tercero"); val third = vm.config.character
+        assertTrue(vm.characterUndoAvailable); assertFalse(vm.characterRedoAvailable)
+        vm.undoCharacterEdit(); assertEquals(second, vm.config.character); assertTrue(vm.characterRedoAvailable)
+        vm.undoCharacterEdit(); assertEquals(first, vm.config.character)
+        vm.redoCharacterEdit(); assertEquals(second, vm.config.character)
+        vm.redoCharacterEdit(); assertEquals(third, vm.config.character); assertFalse(vm.characterRedoAvailable)
+        // A real identity change clears the existing stack before testing the 50-edit bound.
+        val selected = vm.config.selectedCharacterId; vm.selectLibraryCharacter(selected)
+        assertFalse(vm.characterUndoAvailable); assertFalse(vm.characterRedoAvailable)
+        repeat(55) { vm.setCharName("Cambio $it") }
+        repeat(50) { assertTrue(vm.characterUndoAvailable); vm.undoCharacterEdit() }
+        assertFalse(vm.characterUndoAvailable); assertTrue(vm.characterRedoAvailable)
+        assertEquals("Cambio 4", vm.config.character.displayName)
+        repeat(50) { assertTrue(vm.characterRedoAvailable); vm.redoCharacterEdit() }
+        assertEquals("Cambio 54", vm.config.character.displayName); assertFalse(vm.characterRedoAvailable)
+        vm.undoCharacterEdit(); assertTrue(vm.characterRedoAvailable)
+        vm.setCharName("Nueva rama"); assertFalse(vm.characterRedoAvailable)
+    }
+
+    @Test fun failedActivePreparationAndInstallationKeepCharacterHistory() {
+        val root = File(app.filesDir, "projects"); val assetRoot = File(app.applicationInfo.dataDir)
+        val projects = com.fnfmodmaker.project.ProjectStore(root, assetRoot)
+        val a = vm.currentProjectId!!; val target = projects.newId(); projects.save(target, projects.load(a).config)
+        vm.setCharName("Primero"); vm.setCharName("Segundo"); vm.undoCharacterEdit()
+        val before = vm.config; val session = vm.projectSession
+        val failures = listOf(
+            com.fnfmodmaker.project.ProjectStore(root, assetRoot, activeTempWrite = { _, _ -> throw java.io.IOException("prepare failure") }),
+            com.fnfmodmaker.project.ProjectStore(root, assetRoot, activeReplace = { _, _ -> throw java.io.IOException("install failure") })
+        )
+        failures.forEachIndexed { index, failing ->
+            WizardViewModel::class.java.getDeclaredField("projectStore").apply { isAccessible = true }.set(vm, failing)
+            vm.switchProject(target); await { !vm.busy }
+            assertTrue(vm.projectMessage.orEmpty().contains(if (index == 0) "prepare failure" else "install failure"))
+            assertEquals(a, vm.currentProjectId); assertEquals(session, vm.projectSession); assertEquals(before, vm.config)
+            assertTrue(vm.characterUndoAvailable); assertTrue(vm.characterRedoAvailable)
+        }
+        vm.redoCharacterEdit(); assertEquals("Segundo", vm.config.character.displayName)
+        vm.undoCharacterEdit(); assertEquals("Primero", vm.config.character.displayName)
+    }
+
     @Test fun autosaveSessionStartsOnlyForOpenedProjectsAndCancelsOnSwitch() {
         fun job() = WizardViewModel::class.java.getDeclaredField("autoSaveJob").apply { isAccessible = true }.get(vm) as kotlinx.coroutines.Job?
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))

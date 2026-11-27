@@ -42,6 +42,17 @@ class ProjectStoreTest {
         rejectAndCheck() // a V2 interrupted write is protected too
     }
 
+    @Test fun legacyExplicitNullSchemaFieldsRemainReadableWithoutDiscardingBytes() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
+        val config = JsonParser.parseString("""{"chartSchemaVersion":null,"independentCharts":null,"modTitle":"legacy"}""").asJsonObject
+        store.save(id, config); val before = snapshot(root)
+        assertNull(store.list().single().problem); assertEquals(config, store.load(id).config)
+        assertEquals(before, snapshot(root))
+        val forged = config.deepCopy().apply { add("independentCharts", JsonParser.parseString("""{"song":{}}""")) }
+        assertThrows(IllegalArgumentException::class.java) { store.save(id, forged) }
+        assertEquals(before, snapshot(root))
+    }
+
     @Test fun compatibleBackupIsListedWithoutRecoveryThenRestoredByLoad() {
         val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
         val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"v1"}""").asJsonObject

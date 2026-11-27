@@ -1893,7 +1893,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         return target
     }
     private fun parseConfig(value: com.google.gson.JsonObject): ModConfig {
-        requireSupportedChartSchema(value)
+        com.fnfmodmaker.project.requireReadableProjectSchema(value)
         return autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java)
             ?: error("El proyecto está vacío.")
     }

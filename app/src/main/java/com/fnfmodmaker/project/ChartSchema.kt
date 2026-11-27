@@ -35,6 +35,23 @@ internal fun requireSupportedChartSchema(config: JsonObject) {
     }
 }
 
+/** Some legacy model serializers emitted both optional schema fields as null.
+ * Treat only that exact pair as absent for project I/O; never discard a payload.
+ * The strict portable/schema validator remains unchanged.
+ */
+internal fun requireReadableProjectSchema(config: JsonObject) {
+    val version = config.get("chartSchemaVersion")
+    val independent = config.get("independentCharts")
+    if (version != null && version.isJsonNull && independent != null && independent.isJsonNull) {
+        val normalized = config.deepCopy()
+        normalized.remove("chartSchemaVersion")
+        normalized.remove("independentCharts")
+        requireSupportedChartSchema(normalized)
+    } else {
+        requireSupportedChartSchema(config)
+    }
+}
+
 /**
  * Validate the v2 independent-chart schema before it reaches persistence or editors.
  * Returns the parsed [IndependentChartCollection] so callers do not re-parse.

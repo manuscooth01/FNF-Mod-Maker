@@ -75,12 +75,12 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
             val json = try { JsonParser.parseString(text) } catch (_: com.google.gson.JsonParseException) { continue }
             if (!json.isJsonObject) continue
             val config = json.asJsonObject.get("config")
-            if (config != null && config.isJsonObject) requireSupportedChartSchema(config.asJsonObject)
+            if (config != null && config.isJsonObject) requireReadableProjectSchema(config.asJsonObject)
         }
     }
     fun setActive(id: String) { load(id); activeFile().write(id) }
     fun save(id: String, config: JsonObject) {
-        requireSupportedChartSchema(config)
+        requireReadableProjectSchema(config)
         checkCandidates(id)
         val wrapper = JsonObject().apply {
             addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
@@ -95,12 +95,12 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
     }
     fun load(id: String): ProjectRecord {
         checkCandidates(id)
-        return readRecord(id, true).also { requireSupportedChartSchema(it.config) }
+        return readRecord(id, true).also { requireReadableProjectSchema(it.config) }
     }
     fun list(): List<ProjectSummary> = root.listFiles().orEmpty().filter { it.isDirectory && idPattern.matches(it.name) && projectFile(it.name).exists() }.map { folder ->
         runCatching {
             val record = readRecord(folder.name, false)
-            val problem = runCatching { checkCandidates(folder.name); requireSupportedChartSchema(record.config) }.exceptionOrNull()?.let {
+            val problem = runCatching { checkCandidates(folder.name); requireReadableProjectSchema(record.config) }.exceptionOrNull()?.let {
                 "Charts incompatibles: ${it.message}"
             }
             ProjectSummary(record.id, record.config.get("modTitle")?.asString?.takeIf { it.isNotBlank() } ?: "Proyecto sin nombre", record.updatedAt, problem)
@@ -122,9 +122,9 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         val id = newId()
         val finalDir = dir(id)
         require(!finalDir.exists()) { "No se pudo crear un identificador único." }
-        requireSupportedChartSchema(prepared.config)
+        requireReadableProjectSchema(prepared.config)
         val config = portable.materialize(prepared, finalDir)
-        requireSupportedChartSchema(config)
+        requireReadableProjectSchema(config)
         validate(config)
         val wrapper = JsonObject().apply {
             addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
@@ -139,7 +139,7 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         require(stage.parentFile.canonicalFile == root.canonicalFile && stage.name.startsWith(".pending-") && idPattern.matches(stage.name.removePrefix(".pending-")) && stage.isDirectory)
         val id = newId(); val finalDir = dir(id)
         require(!finalDir.exists())
-        requireSupportedChartSchema(source)
+        requireReadableProjectSchema(source)
         val output = source.deepCopy()
         val canonicalStage = stage.canonicalFile
         // Stage and assets themselves must not be links to a different directory.

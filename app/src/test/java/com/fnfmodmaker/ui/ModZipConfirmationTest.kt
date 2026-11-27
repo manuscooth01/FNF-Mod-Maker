@@ -451,6 +451,49 @@ class ModZipConfirmationTest {
         assertArrayEquals(oldActive, primary.readBytes()); assertArrayEquals(oldProject, currentFile.readBytes())
     }
 
+    @Test fun installFailureAfterPreparationKeepsPreviousSessionAndPendingEdits() {
+        val root = File(app.filesDir, "projects"); val assetRoot = File(app.applicationInfo.dataDir)
+        val projects = com.fnfmodmaker.project.ProjectStore(root, assetRoot)
+        val current = vm.currentProjectId!!; val target = projects.newId(); projects.save(target, projects.load(current).config)
+        val primary = File(root, "active.txt"); val backup = File(root, "active.txt.bak").apply { writeText("backup evidence") }
+        val temp = File(root, "active.txt.tmp").apply { writeText("temp evidence") }
+        val before = listOf(primary, backup, temp).map { it.readBytes().toList() }
+        var prepared = false
+        val failing = com.fnfmodmaker.project.ProjectStore(root, assetRoot,
+            afterActivePrepared = { prepared = true }, activeReplace = { _, _ -> throw java.io.IOException("install failure") })
+        WizardViewModel::class.java.getDeclaredField("projectStore").apply { isAccessible = true }.set(vm, failing)
+        vm.setModTitle("Cambios pendientes"); val session = vm.projectSession; val editor = vm.chartEditorState
+        vm.switchProject(target); await { !vm.busy }
+        assertTrue(prepared); assertTrue(vm.projectMessage.orEmpty().contains("install failure"))
+        assertEquals(current, vm.currentProjectId); assertEquals(session, vm.projectSession)
+        assertEquals("Cambios pendientes", vm.config.modTitle); assertEquals(editor, vm.chartEditorState)
+        assertEquals(before, listOf(primary, backup, temp).map { it.readBytes().toList() })
+        assertEquals("Cambios pendientes", projects.load(current).config.get("modTitle").asString)
+        assertTrue(root.listFiles().orEmpty().none { it.name.startsWith("active-selection-") })
+    }
+
+    @Test fun previousSaveFailureAfterPreparationKeepsPreviousSessionAndPointer() {
+        val root = File(app.filesDir, "projects"); val assetRoot = File(app.applicationInfo.dataDir)
+        val projects = com.fnfmodmaker.project.ProjectStore(root, assetRoot)
+        val current = vm.currentProjectId!!; val target = projects.newId(); projects.save(target, projects.load(current).config)
+        val primary = File(root, "active.txt"); val oldActive = primary.readBytes()
+        val oldProject = File(root, "$current/project.json"); val beforeProject = oldProject.readBytes()
+        val backup = File(root, "active.txt.bak").apply { writeText("backup evidence") }
+        val temp = File(root, "active.txt.tmp").apply { writeText("temp evidence") }
+        val b = backup.readBytes(); val t = temp.readBytes(); var prepared = false
+        val failing = com.fnfmodmaker.project.ProjectStore(root, assetRoot, afterActivePrepared = { prepared = true },
+            beforeSaveWrite = { id -> if (id == current) throw java.io.IOException("previous save failure") })
+        WizardViewModel::class.java.getDeclaredField("projectStore").apply { isAccessible = true }.set(vm, failing)
+        vm.setModTitle("Pendiente de guardar"); val session = vm.projectSession; val editor = vm.chartEditorState
+        vm.switchProject(target); await { !vm.busy }
+        assertTrue(prepared); assertTrue(vm.projectMessage.orEmpty().contains("previous save failure"))
+        assertEquals(current, vm.currentProjectId); assertEquals(session, vm.projectSession)
+        assertEquals("Pendiente de guardar", vm.config.modTitle); assertEquals(editor, vm.chartEditorState)
+        assertArrayEquals(oldActive, primary.readBytes()); assertArrayEquals(beforeProject, oldProject.readBytes())
+        assertArrayEquals(b, backup.readBytes()); assertArrayEquals(t, temp.readBytes())
+        assertTrue(root.listFiles().orEmpty().none { it.name.startsWith("active-selection-") })
+    }
+
     @Test fun unknownJsonSurvivesAutosaveDuplicationAndPortableExport() {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val first = vm.currentProjectId!!

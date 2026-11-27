@@ -63,6 +63,7 @@ internal class ProjectStore(
     private val activeTempWrite: ((File, String) -> Unit)? = null,
     private val activeReplace: ((File, File) -> Unit)? = null,
     private val afterActivePrepared: (() -> Unit)? = null,
+    private val beforeSaveWrite: ((String) -> Unit)? = null,
     private val afterInspection: (() -> Unit)? = null
 ) {
     companion object { private val projectLocks = java.util.concurrent.ConcurrentHashMap<String, Any>() }
@@ -304,6 +305,7 @@ internal class ProjectStore(
             val before = checkCandidates(id)
             afterInspection?.invoke()
             stable(id, before)
+            beforeSaveWrite?.invoke(id)
             check(before[0].kind != CandidateKind.ABSENT || before[1].kind == CandidateKind.ABSENT) { "La copia requiere recuperación manual antes de guardar; se conservan los archivos." }
             val wrapper = JsonObject().apply {
                 addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)

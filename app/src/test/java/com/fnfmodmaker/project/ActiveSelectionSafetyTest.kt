@@ -178,7 +178,7 @@ class ActiveSelectionSafetyTest {
                 store.installPreparedActive(prepared)
             }
         }
-        assertTrue(error.message.orEmpty().contains("temporal")); assertArrayEquals(original, oldPrimary.readBytes())
+        assertTrue(error.message.orEmpty().contains("project.json.tmp")); assertArrayEquals(original, oldPrimary.readBytes())
         assertEquals(before, bytes(p, b, t)); assertFalse(stage!!.exists()); assertEquals(old, p.readText())
     }
 

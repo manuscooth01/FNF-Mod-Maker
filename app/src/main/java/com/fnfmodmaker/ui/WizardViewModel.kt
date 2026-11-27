@@ -2164,10 +2164,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                         val (project, list, missing) = withContext(Dispatchers.IO) {
                             // Reject a target before parsing or snapshotting the current session.
                             if (target != null) projectStore.load(target)
-                            val oldSnapshot = oldId?.let { projectSnapshot(it, oldConfig) }
+                            // Duplication needs a read-only snapshot to construct the destination.
+                            val duplicateSnapshot = if (duplicate) oldId?.let { projectSnapshot(it, oldConfig) } else null
                             val id = target ?: projectStore.newId()
                             val missing = if (target == null) {
-                                val source = if (duplicate) requireNotNull(oldSnapshot).deepCopy().also {
+                                val source = if (duplicate) requireNotNull(duplicateSnapshot).deepCopy().also {
                                     val name = oldConfig.modTitle.ifBlank { "Proyecto sin nombre" }
                                     it.addProperty("modTitle", "$name (copia)")
                                 } else configJson(ModConfig())
@@ -2178,12 +2179,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                                 projectStore.save(id, copied.config)
                                 copied.missing
                             } else emptyList()
-                            val loaded = projectStore.load(id)
-                            val validated = parseConfig(loaded.config)
-                            val projects = projectStore.list()
-                            if (oldId != null && oldSnapshot != null && projectStore.load(oldId).config != oldSnapshot) projectStore.save(oldId, oldSnapshot)
-                            projectStore.setActive(id)
-                            Triple(loaded.id to validated, projects, missing)
+                            projectStore.prepareActive(id).use { selection ->
+                                val loaded = projectStore.load(id)
+                                val validated = parseConfig(loaded.config)
+                                val oldSnapshot = oldId?.let { projectSnapshot(it, oldConfig) }
+                                val projects = projectStore.list()
+                                if (oldId != null && oldSnapshot != null && projectStore.load(oldId).config != oldSnapshot)
+                                    projectStore.save(oldId, oldSnapshot)
+                                projectStore.installPreparedActive(selection)
+                                Triple(loaded.id to validated, projects, missing)
+                            }
                         }
                         applyOpenedProject(project.first, project.second, list, missing)
                     }

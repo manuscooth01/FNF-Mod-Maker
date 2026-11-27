@@ -116,4 +116,70 @@ class ActiveSelectionSafetyTest {
         assertEquals(current, store.activeId())
     }
 
+    @Test fun preparationErrorsAndVerificationFailureCleanOwnStageOnly() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val old = store.newId(); val target = store.newId(); store.save(old, config()); store.save(target, config()); store.setActive(old)
+        val p = File(root, "active.txt"); val b = File(root, "active.txt.bak").apply { writeText("backup") }
+        val t = File(root, "active.txt.tmp").apply { writeText("temp") }; val before = bytes(p, b, t)
+        fun stages() = root.listFiles().orEmpty().filter { it.name.startsWith("active-selection-") }.map { it.name }.toSet()
+        val initialStages = stages()
+        val failWrite = ProjectStore(root, temp.root, activeTempWrite = { file, _ -> file.writeText("partial"); throw java.io.IOException("write error") })
+        assertEquals("write error", assertThrows(java.io.IOException::class.java) { failWrite.prepareActive(target) }.message)
+        assertEquals(initialStages, stages()); assertEquals(before, bytes(p, b, t))
+        val failVerify = ProjectStore(root, temp.root, activeTempWrite = { file, _ -> file.writeText("invalid") })
+        assertTrue(assertThrows(IllegalStateException::class.java) { failVerify.prepareActive(target) }.message.orEmpty().contains("verificar"))
+        assertEquals(initialStages, stages()); assertEquals(before, bytes(p, b, t))
+    }
+
+    @Test fun cancellationAndInstallFailureCleanStageAndPreserveCandidates() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val old = store.newId(); val target = store.newId(); store.save(old, config()); store.save(target, config()); store.setActive(old)
+        val p = File(root, "active.txt"); val b = File(root, "active.txt.bak").apply { writeText("backup") }
+        val t = File(root, "active.txt.tmp").apply { writeText("temp") }; val before = bytes(p, b, t)
+        val cancelled = store.prepareActive(target); val owned = cancelled.stage; assertTrue(owned.exists())
+        cancelled.close(); assertFalse(owned.exists()); assertEquals(before, bytes(p, b, t))
+        assertThrows(IllegalStateException::class.java) { store.installPreparedActive(cancelled) }
+        val failing = ProjectStore(root, temp.root, activeReplace = { _, _ -> throw java.io.IOException("install error") })
+        var stage: File? = null
+        val error = assertThrows(java.io.IOException::class.java) {
+            failing.prepareActive(target).use { prepared -> stage = prepared.stage; failing.installPreparedActive(prepared) }
+        }
+        assertEquals("install error", error.message); assertFalse(stage!!.exists()); assertEquals(before, bytes(p, b, t))
+        assertEquals(old, store.activeId())
+    }
+
+    @Test fun changesAfterPreparationAreRejectedAndStageIsCleaned() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val old = store.newId(); val external = store.newId(); val target = store.newId()
+        listOf(old, external, target).forEach { store.save(it, config()) }; store.setActive(old)
+        val p = File(root, "active.txt"); val b = File(root, "active.txt.bak").apply { writeText("backup") }
+        val t = File(root, "active.txt.tmp").apply { writeText("temp") }; val backup = b.readBytes(); val tmp = t.readBytes()
+        var stage: File? = null
+        val failure = assertThrows(IllegalStateException::class.java) {
+            store.prepareActive(target).use { prepared ->
+                stage = prepared.stage; p.writeText(external); store.installPreparedActive(prepared)
+            }
+        }
+        assertTrue(failure.message.orEmpty().contains("cambió")); assertEquals(external, p.readText())
+        assertArrayEquals(backup, b.readBytes()); assertArrayEquals(tmp, t.readBytes()); assertFalse(stage!!.exists())
+    }
+
+    @Test fun failedPreviousProjectSaveAfterPreparationDoesNotInstallSelection() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val old = store.newId(); val target = store.newId(); store.save(old, config()); store.save(target, config()); store.setActive(old)
+        val p = File(root, "active.txt"); val b = File(root, "active.txt.bak").apply { writeText("backup") }
+        val t = File(root, "active.txt.tmp").apply { writeText("temp") }; val before = bytes(p, b, t)
+        val oldPrimary = File(root, "$old/project.json"); val original = oldPrimary.readBytes(); var stage: File? = null
+        val error = assertThrows(IllegalStateException::class.java) {
+            store.prepareActive(target).use { prepared ->
+                stage = prepared.stage
+                File(root, "$old/project.json.tmp").writeText("interrupted project write")
+                store.save(old, config().apply { addProperty("modTitle", "pending") })
+                store.installPreparedActive(prepared)
+            }
+        }
+        assertTrue(error.message.orEmpty().contains("temporal")); assertArrayEquals(original, oldPrimary.readBytes())
+        assertEquals(before, bytes(p, b, t)); assertFalse(stage!!.exists()); assertEquals(old, p.readText())
+    }
+
 }

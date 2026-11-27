@@ -143,16 +143,67 @@ internal class ProjectStore(
                 java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         }
     }
-    private fun writeActive(id: String) {
+    /** A caller owns this handle and must close it on success, failure or cancellation.
+     * It holds no lock or file descriptor. Only the uniquely created stage is cleaned up. */
+    internal class PreparedActive internal constructor(
+        internal val owner: ProjectStore,
+        internal val id: String,
+        internal val stage: File,
+        internal val activeBefore: List<List<Byte>?>,
+        internal val projectBefore: List<Pair<String, List<Byte>>>
+    ) : java.io.Closeable {
+        internal var closed = false
+        override fun close() {
+            if (closed) return
+            closed = true
+            // After successful rename the stage does not exist; no candidate is touched.
+            if (stage.exists()) check(stage.delete()) { "No se pudo limpiar el temporal de selección propio: ${stage.name}." }
+        }
+    }
+    private fun projectCandidateSnapshot(id: String) = candidates(id).map { it.kind.name to it.bytes }
+    private fun prepareActiveLocked(id: String): PreparedActive {
         val before = activeSnapshot()
+        val projectBefore = projectCandidateSnapshot(id)
         val staged = File.createTempFile("active-selection-", ".tmp", root)
-        if (activeTempWrite != null) activeTempWrite.invoke(staged, id)
-        else staged.outputStream().use { out -> out.write(id.toByteArray(Charsets.UTF_8)); out.fd.sync() }
-        val expected = id.toByteArray(Charsets.UTF_8)
-        check(idPattern.matches(id) && staged.readBytes().contentEquals(expected)) { "No se pudo verificar la selección activa." }
-        afterActivePrepared?.invoke()
-        check(activeSnapshot() == before) { "La selección activa cambió durante la preparación." }
-        installActive(staged, activeFile())
+        try {
+            if (activeTempWrite != null) activeTempWrite.invoke(staged, id)
+            else staged.outputStream().use { out -> out.write(id.toByteArray(Charsets.UTF_8)); out.fd.sync() }
+            val expected = id.toByteArray(Charsets.UTF_8)
+            check(idPattern.matches(id) && staged.readBytes().contentEquals(expected)) { "No se pudo verificar la selección activa." }
+            afterActivePrepared?.invoke()
+            check(activeSnapshot() == before) { "La selección activa cambió durante la preparación." }
+            check(projectCandidateSnapshot(id) == projectBefore) { "El proyecto destino cambió durante la preparación." }
+            return PreparedActive(this, id, staged, before, projectBefore)
+        } catch (e: Throwable) {
+            if (staged.exists() && !staged.delete()) e.addSuppressed(IllegalStateException("No se pudo limpiar el temporal de selección propio."))
+            throw e
+        }
+    }
+    private fun installPreparedLocked(prepared: PreparedActive) {
+        check(prepared.owner === this && !prepared.closed) { "Selección preparada inválida o cerrada." }
+        check(activeSnapshot() == prepared.activeBefore) { "La selección activa cambió durante la preparación." }
+        check(projectCandidateSnapshot(prepared.id) == prepared.projectBefore) { "El proyecto destino cambió durante la preparación." }
+        check(prepared.stage.readBytes().contentEquals(prepared.id.toByteArray(Charsets.UTF_8))) {
+            "El temporal de selección cambió durante la preparación."
+        }
+        installActive(prepared.stage, activeFile())
+    }
+    private fun <T> withValidatedActiveTarget(id: String, action: () -> T): T = withProjectLock(id) {
+        // Do not create a project lock artifact for an incompatible target.
+        load(id)
+        withFileLock(id) {
+            load(id)
+            check(classify(id, File(dir(id), "project.json")).kind == CandidateKind.V1) {
+                "La copia requiere recuperación manual antes de activar el proyecto."
+            }
+            action()
+        }
+    }
+    fun prepareActive(id: String): PreparedActive = withValidatedActiveTarget(id) {
+        withActiveLock { prepareActiveLocked(id) }
+    }
+    fun installPreparedActive(prepared: PreparedActive) = withValidatedActiveTarget(prepared.id) {
+        withActiveLock { installPreparedLocked(prepared) }
     }
     // Classification is read-only: no fallback can hide an unreadable candidate.
     private enum class CandidateKind { ABSENT, V1, V2, FUTURE, CORRUPT, INVALID_WRAPPER, READ_ERROR }
@@ -243,16 +294,8 @@ internal class ProjectStore(
     private fun stable(id: String, previous: List<Candidate>) {
         check(candidates(id) == previous) { "El proyecto cambió durante la inspección; recuperación manual necesaria." }
     }
-    fun setActive(id: String) = withProjectLock(id) {
-        // Reject incompatible projects without creating lock artifacts in their folder.
-        load(id)
-        withFileLock(id) {
-            load(id)
-            check(classify(id, File(dir(id), "project.json")).kind == CandidateKind.V1) {
-                "La copia requiere recuperación manual antes de activar el proyecto."
-            }
-            withActiveLock { writeActive(id) }
-        }
+    fun setActive(id: String) = withValidatedActiveTarget(id) {
+        withActiveLock { prepareActiveLocked(id).use { installPreparedLocked(it) } }
     }
     fun save(id: String, config: JsonObject) = withProjectLock(id) {
         requireReadableProjectSchema(config)

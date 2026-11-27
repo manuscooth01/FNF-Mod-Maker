@@ -184,6 +184,20 @@ class ProjectStoreTest {
         }
     }
 
+    @Test fun recoveryRejectsMissingResourceAndMismatchedIdWithoutChangingBackup() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root, recoveryInstall = ::link)
+        val (id, config) = backupFixture(root, store); val backup = File(root, "$id/project.json.bak")
+        val primary = File(root, "$id/project.json"); val bytes = backup.readBytes()
+        val audio = File(config.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("instrumental").get("path").asString)
+        assertTrue(audio.delete())
+        val missing = assertThrows(IllegalArgumentException::class.java) { store.recoverBackup(id) }
+        assertTrue(missing.message.orEmpty().contains("recurso", true)); assertFalse(primary.exists()); assertArrayEquals(bytes, backup.readBytes())
+        val doc = JsonParser.parseString(bytes.toString(Charsets.UTF_8)).asJsonObject
+        doc.addProperty("id", store.newId()); backup.writeText(doc.toString()); val mismatched = backup.readBytes()
+        val failure = assertThrows(IllegalStateException::class.java) { store.recoverBackup(id) }
+        assertTrue(failure.message.orEmpty().contains("INVALID_WRAPPER")); assertFalse(primary.exists()); assertArrayEquals(mismatched, backup.readBytes())
+    }
+
     @Test fun recoveryDetectsBackupChangeAndNeverOverwritesAConcurrentPrimary() {
         val root = File(temp.root, "projects"); val base = ProjectStore(root, temp.root, recoveryInstall = ::link)
         val (id, _) = backupFixture(root, base); val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")

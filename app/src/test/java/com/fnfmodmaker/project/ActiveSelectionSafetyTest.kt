@@ -1,0 +1,76 @@
+package com.fnfmodmaker.project
+
+import com.google.gson.JsonParser
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import java.io.File
+
+/** Files of an interrupted selection are evidence, not implicit recovery inputs. */
+class ActiveSelectionSafetyTest {
+    @get:Rule val temp = TemporaryFolder()
+
+    private fun config() = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"legacy"}""").asJsonObject
+    private fun bytes(vararg files: File) = files.associate { it.name to if (it.isFile) it.readBytes().toList() else null }
+
+    @Test fun missingPrimaryDoesNotRestoreOrSelectBackup() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val id = store.newId(); store.save(id, config())
+        val primary = File(root, "active.txt"); val backup = File(root, "active.txt.bak").apply { writeText(id) }
+        val temporary = File(root, "active.txt.tmp").apply { writeText("interrupted") }
+        val before = bytes(primary, backup, temporary)
+        assertNull("No se debe elegir el backup", store.activeId())
+        assertEquals(before, bytes(primary, backup, temporary))
+    }
+
+    @Test fun corruptPrimaryDoesNotRestoreOrSelectBackup() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val id = store.newId(); store.save(id, config())
+        val primary = File(root, "active.txt").apply { writeBytes(byteArrayOf(0xff.toByte(), 0x00)) }
+        val backup = File(root, "active.txt.bak").apply { writeText(id) }
+        val temporary = File(root, "active.txt.tmp").apply { writeText("interrupted") }
+        val before = bytes(primary, backup, temporary)
+        val failure = assertThrows(IllegalStateException::class.java) { store.activeId() }
+        assertTrue(failure.message.orEmpty().contains("inválido"))
+        assertEquals(before, bytes(primary, backup, temporary))
+    }
+
+    @Test fun validPrimaryAndOldBackupAreReadWithoutModifyingEither() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val id = store.newId(); val old = store.newId(); store.save(id, config()); store.save(old, config())
+        val primary = File(root, "active.txt").apply { writeText(id) }
+        val backup = File(root, "active.txt.bak").apply { writeText(old) }
+        val temporary = File(root, "active.txt.tmp").apply { writeText("evidence") }
+        val before = bytes(primary, backup, temporary)
+        assertEquals(id, store.activeId())
+        assertEquals(before, bytes(primary, backup, temporary))
+    }
+
+    @Test fun explicitCompatibleSelectionDoesNotConsumeExistingBackupOrTemporary() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val old = store.newId(); val target = store.newId(); store.save(old, config()); store.save(target, config())
+        val primary = File(root, "active.txt").apply { writeText(old) }
+        val backup = File(root, "active.txt.bak").apply { writeText(store.newId()) }
+        val temporary = File(root, "active.txt.tmp").apply { writeText("preserve me") }
+        val oldBackup = backup.readBytes(); val oldTemp = temporary.readBytes()
+        store.setActive(target)
+        assertEquals(target, store.activeId()); assertEquals(target, primary.readText())
+        assertArrayEquals(oldBackup, backup.readBytes()); assertArrayEquals(oldTemp, temporary.readBytes())
+    }
+
+    @Test fun pointerToMissingOrIncompatibleProjectMustNotBeReturned() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val id = store.newId(); assertTrue(root.mkdirs())
+        val primary = File(root, "active.txt").apply { writeText(id) }
+        val before = primary.readBytes()
+        val missing = assertThrows(IllegalStateException::class.java) { store.activeId() }
+        assertTrue(missing.message.orEmpty().contains("proyecto"))
+        assertArrayEquals(before, primary.readBytes())
+        val folder = File(root, id).apply { mkdirs() }
+        File(folder, "project.json").writeText("""{"version":1,"id":"$id","updatedAt":1,"config":{"chartSchemaVersion":2,"independentCharts":{}}}""")
+        val incompatible = assertThrows(IllegalArgumentException::class.java) { store.activeId() }
+        assertTrue(incompatible.message.orEmpty().contains("compatible"))
+        assertArrayEquals(before, primary.readBytes())
+    }
+}

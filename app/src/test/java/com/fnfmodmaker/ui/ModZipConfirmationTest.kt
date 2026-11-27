@@ -249,6 +249,36 @@ class ModZipConfirmationTest {
         store.clear(); scheduler.runCurrent(); assertTrue(next.isCancelled)
     }
 
+    @Test fun manualRecoveryRequiresConfirmationThenOpensWithResourceAndUndo() {
+        val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
+        val original = vm.currentProjectId!!; val target = projects.newId()
+        val config = projects.load(original).config.deepCopy().apply { addProperty("chartSchemaVersion", 1) }
+        val audio = File(projects.assets(target), "recovered.ogg").apply { writeText("audio original") }
+        config.getAsJsonArray("songs")[0].asJsonObject.add("instrumental", com.google.gson.JsonParser.parseString(
+            """{"path":${com.google.gson.Gson().toJson(audio.absolutePath)},"displayName":"recovered.ogg","durationMs":1000}"""))
+        projects.save(target, config); projects.save(target, config)
+        val primary = File(app.filesDir, "projects/$target/project.json"); val backup = File(app.filesDir, "projects/$target/project.json.bak")
+        assertTrue(primary.delete()); val backupBytes = backup.readBytes()
+        store.clear(); scheduler.runCurrent(); store = ViewModelStore()
+        val factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = WizardViewModel(app) as T
+        }
+        vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]; await { !vm.busy }
+        assertEquals(original, vm.currentProjectId); val before = projectFiles()
+        vm.requestProjectRecovery(target); assertEquals(target, vm.recoveryConfirmationId)
+        vm.cancelProjectRecovery(); assertNull(vm.recoveryConfirmationId); assertEquals(before, projectFiles())
+        vm.confirmProjectRecovery(); scheduler.runCurrent(); assertEquals(before, projectFiles())
+        vm.requestProjectRecovery(target); vm.confirmProjectRecovery(); await { !vm.busy }
+        assertTrue(vm.projectMessage.orEmpty().contains("recuperada", true)); assertArrayEquals(backupBytes, backup.readBytes())
+        assertArrayEquals(backupBytes, primary.readBytes()); assertEquals(original, vm.currentProjectId)
+        vm.switchProject(target); await { !vm.busy }; assertEquals(target, vm.currentProjectId)
+        assertEquals("audio original", File(vm.config.songs[0].instrumental!!.path).readText())
+        vm.initChartHistory(); vm.addChartNote(com.fnfmodmaker.model.ChartNote(timeMs = 345, lane = 2))
+        assertTrue(vm.chartEditorState.canUndo); vm.undo(); assertTrue(vm.chartEditorState.canRedo); vm.redo()
+        assertTrue(vm.activeChartDraft.notes.any { it.timeMs == 345L && it.lane == 2 })
+        assertArrayEquals(backupBytes, backup.readBytes())
+    }
+
     @Test fun incompatibleActiveProjectAllowsSafeRecovery() {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val compatible = vm.currentProjectId!!

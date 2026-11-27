@@ -146,6 +146,96 @@ class ProjectStoreTest {
         assertFalse(File(root, "$id/project.json.tmp").exists())
     }
 
+    private fun backupFixture(root: File, store: ProjectStore): Pair<String, com.google.gson.JsonObject> {
+        val id = store.newId()
+        val config = com.google.gson.Gson().toJsonTree(com.fnfmodmaker.model.ModConfig()).asJsonObject
+        config.addProperty("chartSchemaVersion", 1)
+        val audio = File(temp.root, "recover-$id.ogg").apply { writeText("audio bytes") }
+        config.getAsJsonArray("songs")[0].asJsonObject.add("instrumental", JsonParser.parseString(
+            """{"path":${com.google.gson.Gson().toJson(audio.absolutePath)},"displayName":"song.ogg","durationMs":1000}"""))
+        store.save(id, config); store.save(id, config)
+        assertTrue(File(root, "$id/project.json").delete())
+        return id to config
+    }
+    private fun link(source: File, destination: File) { java.nio.file.Files.createLink(destination.toPath(), source.toPath()) }
+
+    @Test fun explicitRecoveryCopiesVerifiedBackupAndLeavesOriginalUntouched() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root, recoveryInstall = ::link)
+        val (id, config) = backupFixture(root, store); val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")
+        val bytes = backup.readBytes(); val before = snapshot(root)
+        assertEquals(config, store.load(id).config); assertEquals(before, snapshot(root)); assertFalse(primary.exists())
+        store.recoverBackup(id)
+        assertArrayEquals(bytes, primary.readBytes()); assertArrayEquals(bytes, backup.readBytes())
+        assertFalse(java.nio.file.Files.isSameFile(primary.toPath(), backup.toPath()))
+        assertEquals(config, store.load(id).config); store.setActive(id); assertEquals(id, store.activeId())
+        assertEquals("audio bytes", File(config.getAsJsonArray("songs")[0].asJsonObject.getAsJsonObject("instrumental").get("path").asString).readText())
+        assertArrayEquals(bytes, backup.readBytes())
+    }
+
+    @Test fun invalidBackupOrV2IsNotRecoveredAndBytesSurvive() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root, recoveryInstall = ::link)
+        val (id, _) = backupFixture(root, store); val backup = File(root, "$id/project.json.bak")
+        val invalid = document(id, """{"modTitle":"missing data","chartSchemaVersion":1}""")
+        val v2 = document(id, """{"chartSchemaVersion":2,"independentCharts":{"stable":{"id":"stable"}}}""")
+        for (text in listOf(invalid, v2)) {
+            backup.writeText(text); val before = snapshot(root)
+            assertThrows(Exception::class.java) { store.recoverBackup(id) }
+            assertEquals(before, snapshot(root)); assertFalse(File(root, "$id/project.json").exists())
+        }
+    }
+
+    @Test fun recoveryDetectsBackupChangeAndNeverOverwritesAConcurrentPrimary() {
+        val root = File(temp.root, "projects"); val base = ProjectStore(root, temp.root, recoveryInstall = ::link)
+        val (id, _) = backupFixture(root, base); val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")
+        val original = backup.readBytes(); val external = original + " ".toByteArray()
+        val changed = ProjectStore(root, temp.root, recoveryInstall = ::link, afterInspection = { backup.writeBytes(external) })
+        assertThrows(IllegalStateException::class.java) { changed.recoverBackup(id) }
+        assertArrayEquals(external, backup.readBytes()); assertFalse(primary.exists())
+        backup.writeBytes(original)
+        val racing = ProjectStore(root, temp.root, recoveryInstall = { source, destination ->
+            destination.writeText("external primary"); link(source, destination)
+        })
+        assertThrows(java.nio.file.FileAlreadyExistsException::class.java) { racing.recoverBackup(id) }
+        assertEquals("external primary", primary.readText()); assertArrayEquals(original, backup.readBytes())
+        assertTrue(primary.parentFile.listFiles().orEmpty().any { it.name.startsWith("project.recovery-") })
+    }
+
+    @Test fun recoveryWriteFailureKeepsBackupAndVerifiedTemporary() {
+        val root = File(temp.root, "projects"); val base = ProjectStore(root, temp.root, recoveryInstall = ::link)
+        val (id, _) = backupFixture(root, base); val backup = File(root, "$id/project.json.bak"); val bytes = backup.readBytes()
+        val failing = ProjectStore(root, temp.root, recoveryInstall = { _, _ -> throw java.io.IOException("injected install failure") })
+        val error = assertThrows(java.io.IOException::class.java) { failing.recoverBackup(id) }
+        assertEquals("injected install failure", error.message); assertArrayEquals(bytes, backup.readBytes())
+        assertFalse(File(root, "$id/project.json").exists())
+        val temporary = backup.parentFile.listFiles().orEmpty().single { it.name.startsWith("project.recovery-") }
+        assertArrayEquals(bytes, temporary.readBytes())
+    }
+
+    @Test fun twoStoreInstancesOnlyOneCanRecover() {
+        val root = File(temp.root, "projects"); val a = ProjectStore(root, temp.root, recoveryInstall = ::link); val b = ProjectStore(root, temp.root, recoveryInstall = ::link)
+        val (id, config) = backupFixture(root, a); val backup = File(root, "$id/project.json.bak"); val bytes = backup.readBytes()
+        val gate = java.util.concurrent.CountDownLatch(1); val pool = java.util.concurrent.Executors.newFixedThreadPool(2)
+        try {
+            val f1 = pool.submit<Boolean> { gate.await(); runCatching { a.recoverBackup(id) }.isSuccess }
+            val f2 = pool.submit<Boolean> { gate.await(); runCatching { b.recoverBackup(id) }.isSuccess }
+            gate.countDown(); assertEquals(setOf(true, false), setOf(f1.get(20, java.util.concurrent.TimeUnit.SECONDS), f2.get(20, java.util.concurrent.TimeUnit.SECONDS)))
+        } finally { pool.shutdownNow() }
+        assertArrayEquals(bytes, backup.readBytes()); assertEquals(config, a.load(id).config)
+    }
+
+    @Test fun fileLockIsVisibleToAnotherProcessDuringSave() {
+        val root = File(temp.root, "projects"); val original = ProjectStore(root, temp.root); val id = original.newId()
+        val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"v1"}""").asJsonObject; original.save(id, config)
+        val lock = File(root, ".project-locks/$id.lock")
+        var observed = ""
+        val second = ProjectStore(root, temp.root, afterInspection = {
+            val python = "import fcntl,sys; f=open(sys.argv[1],'r+');\ntry: fcntl.lockf(f,fcntl.LOCK_EX|fcntl.LOCK_NB); print('acquired')\nexcept BlockingIOError: print('blocked')"
+            val child = ProcessBuilder("python3", "-c", python, lock.absolutePath).redirectErrorStream(true).start()
+            observed = child.inputStream.bufferedReader().readText().trim(); assertEquals(0, child.waitFor())
+        })
+        second.save(id, config); assertEquals("blocked", observed); assertEquals(config, original.load(id).config)
+    }
+
     @Test fun atomicFileRecoversLastValidVersionAfterCorruption() {
         val path = File(temp.root, "data.json")
         val safe = SafeFile(path)

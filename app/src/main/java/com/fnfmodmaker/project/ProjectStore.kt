@@ -53,12 +53,37 @@ internal class SafeFile(private val file: File) {
 internal class ProjectStore(
     private val root: File,
     private val permittedAssetRoot: File,
+    private val recoveryInstall: (File, File) -> Unit = { source, destination ->
+        // link(2) is atomic and fails when the destination exists; renameTo is not.
+        if (android.os.Build.VERSION.SDK_INT >= 26)
+            java.nio.file.Files.createLink(destination.toPath(), source.toPath())
+        else android.system.Os.link(source.absolutePath, destination.absolutePath)
+    },
     private val afterInspection: (() -> Unit)? = null
 ) {
     companion object { private val projectLocks = java.util.concurrent.ConcurrentHashMap<String, Any>() }
     private fun <T> withProjectLock(id: String, action: () -> T): T {
         val key = dir(id).canonicalPath
         return synchronized(projectLocks.computeIfAbsent(key) { Any() }) { action() }
+    }
+    // Advisory OS locks are shared by cooperating processes. Lock files are persistent:
+    // removing them would allow two processes to lock different inodes for the same id.
+    private fun <T> withFileLock(name: String, action: () -> T): T {
+        val lockDir = File(root, ".project-locks")
+        check(root.isDirectory || root.mkdirs()) { "No se pudo crear el directorio de proyectos." }
+        check(lockDir.isDirectory || lockDir.mkdirs()) { "No se pudo crear la coordinación de proyectos." }
+        check(lockDir.canonicalFile.parentFile == root.canonicalFile && lockDir.canonicalFile.name == lockDir.name) { "Directorio de bloqueo inseguro." }
+        val file = File(lockDir, "$name.lock")
+        check(file.canonicalFile.parentFile == lockDir.canonicalFile && file.canonicalFile.name == file.name) { "Archivo de bloqueo inseguro." }
+        return java.io.RandomAccessFile(file, "rw").use { handle ->
+            handle.channel.use { channel -> channel.lock().use { action() } }
+        }
+    }
+    private fun <T> withMutationLock(id: String, action: () -> T): T =
+        withProjectLock(id) { withFileLock(id, action) }
+    private fun <T> withActiveLock(action: () -> T): T {
+        val key = File(root, ".project-locks/active.lock").canonicalPath
+        return synchronized(projectLocks.computeIfAbsent(key) { Any() }) { withFileLock("active", action) }
     }
     private val idPattern = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
     fun newId(): String = UUID.randomUUID().toString()
@@ -162,22 +187,29 @@ internal class ProjectStore(
         check(candidates(id) == previous) { "El proyecto cambió durante la inspección; recuperación manual necesaria." }
     }
     fun setActive(id: String) = withProjectLock(id) {
+        // Reject incompatible projects without creating lock artifacts in their folder.
         load(id)
-        check(classify(id, File(dir(id), "project.json")).kind == CandidateKind.V1) {
-            "La copia requiere recuperación manual antes de activar el proyecto."
+        withFileLock(id) {
+            load(id)
+            check(classify(id, File(dir(id), "project.json")).kind == CandidateKind.V1) {
+                "La copia requiere recuperación manual antes de activar el proyecto."
+            }
+            withActiveLock { activeFile().write(id) }
         }
-        activeFile().write(id)
     }
     fun save(id: String, config: JsonObject) = withProjectLock(id) {
         requireReadableProjectSchema(config)
-        val before = checkCandidates(id)
-        afterInspection?.invoke()
-        stable(id, before)
-        check(before[0].kind != CandidateKind.ABSENT || before[1].kind == CandidateKind.ABSENT) { "La copia requiere recuperación manual antes de guardar; se conservan los archivos." }
-        val wrapper = JsonObject().apply {
-            addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
+        checkCandidates(id)
+        withFileLock(id) {
+            val before = checkCandidates(id)
+            afterInspection?.invoke()
+            stable(id, before)
+            check(before[0].kind != CandidateKind.ABSENT || before[1].kind == CandidateKind.ABSENT) { "La copia requiere recuperación manual antes de guardar; se conservan los archivos." }
+            val wrapper = JsonObject().apply {
+                addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
+            }
+            projectFile(id).write(wrapper.toString())
         }
-        projectFile(id).write(wrapper.toString())
     }
     private fun readRecord(id: String, recover: Boolean): ProjectRecord = projectFile(id).read(recover) { raw ->
         val doc = JsonParser.parseString(raw).asJsonObject
@@ -204,6 +236,67 @@ internal class ProjectStore(
         }
         stable(id, before)
         readRecord(id, false).also { requireReadableProjectSchema(it.config) }
+    }
+    /** Explicitly requested by the user. Never moves or removes the backup. */
+    fun recoverBackup(id: String) = withProjectLock(id) {
+        val initial = checkCandidates(id)
+        check(initial[0].kind == CandidateKind.ABSENT && initial[1].kind == CandidateKind.V1) {
+            "No hay una copia V1 recuperable con archivo principal ausente."
+        }
+        withFileLock(id) {
+            val before = checkCandidates(id)
+            check(before == initial && before[0].kind == CandidateKind.ABSENT && before[1].kind == CandidateKind.V1) {
+                "El proyecto cambió; no se recuperó ningún archivo."
+            }
+            val raw = before[1].bytes.toByteArray()
+            val doc = JsonParser.parseString(raw.toString(Charsets.UTF_8)).asJsonObject
+            val config = doc.getAsJsonObject("config")
+            requireReadableProjectSchema(config)
+            val gson = com.google.gson.GsonBuilder().registerTypeAdapter(android.net.Uri::class.java,
+                object : com.google.gson.TypeAdapter<android.net.Uri>() {
+                    override fun write(out: com.google.gson.stream.JsonWriter, value: android.net.Uri?) { out.nullValue() }
+                    override fun read(input: com.google.gson.stream.JsonReader): android.net.Uri? { input.skipValue(); return null }
+                }.nullSafe()).create()
+            ProjectConfigValidator(gson).validate(config)
+            val appRoot = permittedAssetRoot.canonicalFile
+            visitProjectAssets(config) { asset ->
+                val path = asset.get("path").asString
+                require(File(path).isAbsolute && '\u0000' !in path && '\\' !in path && path.split('/').none { it == "." || it == ".." }) { "Ruta de recurso inválida." }
+                val resource = File(path).canonicalFile
+                require(resource.path.startsWith(appRoot.path + File.separator) && resource.isFile && resource.canRead()) {
+                    "Falta un recurso o no es accesible: ${asset.get("displayName").asString}."
+                }
+            }
+            config.get("assetPacks")?.takeIf { it.isJsonArray }?.asJsonArray?.forEach { pack ->
+                pack.asJsonObject.get("assets")?.takeIf { it.isJsonArray }?.asJsonArray?.forEach { entry ->
+                    val item = entry.asJsonObject
+                    val fileNode = item.get("file")?.takeIf { it.isJsonObject }?.asJsonObject
+                    if (fileNode != null) {
+                        val resource = File(fileNode.get("path").asString)
+                        item.get("sizeBytes")?.takeUnless { it.isJsonNull }?.let { require(resource.length() == it.asLong) { "Tamaño de recurso incorrecto." } }
+                        item.get("sha256")?.takeUnless { it.isJsonNull }?.let { expected ->
+                            val digest = java.security.MessageDigest.getInstance("SHA-256")
+                            resource.inputStream().use { stream ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) { val n = stream.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
+                            }
+                            val actual = digest.digest().joinToString("") { "%02x".format(it.toInt() and 255) }
+                            require(actual == expected.asString) { "Checksum de recurso incorrecto." }
+                        }
+                    }
+                }
+            }
+            afterInspection?.invoke()
+            stable(id, before)
+            val temp = File.createTempFile("project.recovery-", ".tmp", dir(id))
+            temp.outputStream().use { out -> out.write(raw); out.fd.sync() }
+            check(temp.readBytes().contentEquals(raw)) { "La copia temporal no coincide con el backup." }
+            check(classify(id, temp).kind == CandidateKind.V1) { "La copia temporal no es un proyecto V1 válido." }
+            stable(id, before)
+            val primary = File(dir(id), "project.json")
+            recoveryInstall(temp, primary) // atomic no-replace; failure leaves the temp and backup intact
+            temp.delete() // best effort; it is our own verified temporary, never the backup
+        }
     }
     fun list(): List<ProjectSummary> = root.listFiles().orEmpty().filter { it.isDirectory && idPattern.matches(it.name) && projectFile(it.name).exists() }.map { folder ->
         runCatching { withProjectLock(folder.name) {
@@ -232,6 +325,7 @@ internal class ProjectStore(
         val stage = prepared.directory
         require(stage.parentFile.canonicalFile == root.canonicalFile && stage.name.startsWith(".pending-") && idPattern.matches(stage.name.removePrefix(".pending-")) && stage.isDirectory)
         val id = newId()
+        return withMutationLock(id) {
         val finalDir = dir(id)
         require(!finalDir.exists()) { "No se pudo crear un identificador único." }
         requireReadableProjectSchema(prepared.config)
@@ -243,13 +337,16 @@ internal class ProjectStore(
         }
         SafeFile(File(stage, "project.json")).write(wrapper.toString())
         check(stage.renameTo(finalDir)) { "No se pudo incorporar el proyecto; los proyectos existentes no cambiaron." }
-        return id
+        id
+        }
     }
 
     /** Publish an already converted mod as a new project; all references must stay in its staged assets. */
     fun publishModImport(stage: File, source: JsonObject, validate: (JsonObject) -> Unit): String {
         require(stage.parentFile.canonicalFile == root.canonicalFile && stage.name.startsWith(".pending-") && idPattern.matches(stage.name.removePrefix(".pending-")) && stage.isDirectory)
-        val id = newId(); val finalDir = dir(id)
+        val id = newId()
+        return withMutationLock(id) {
+        val finalDir = dir(id)
         require(!finalDir.exists())
         requireReadableProjectSchema(source)
         val output = source.deepCopy()
@@ -303,7 +400,8 @@ internal class ProjectStore(
         val wrapper = JsonObject().apply { addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", output) }
         SafeFile(File(stage, "project.json")).write(wrapper.toString())
         check(stage.renameTo(finalDir)) { "No se pudo publicar el proyecto importado." }
-        return id
+        id
+        }
     }
 
     /** Copy known assets; reject malformed or missing references before publishing a copy.

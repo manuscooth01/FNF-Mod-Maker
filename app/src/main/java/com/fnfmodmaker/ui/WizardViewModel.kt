@@ -2111,6 +2111,30 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         ProjectConfigValidator(autoSaveGson).validate(value)
     }
 
+    internal var recoveryConfirmationId by mutableStateOf<String?>(null)
+        private set
+    internal fun requestProjectRecovery(id: String) {
+        if (!busy && projects.any { it.id == id && it.problem?.startsWith("Recuperación manual") == true }) recoveryConfirmationId = id
+    }
+    internal fun cancelProjectRecovery() { recoveryConfirmationId = null }
+    internal fun confirmProjectRecovery() {
+        if (busy) return
+        val id = recoveryConfirmationId ?: return
+        recoveryConfirmationId = null
+        busy = true; projectMessage = null
+        viewModelScope.launch {
+            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
+                projectStore.recoverBackup(id)
+                projectStore.list()
+            } } }
+            result.onSuccess { list ->
+                projects = list
+                projectMessage = "Copia recuperada sin consumir el backup. Puedes abrir el proyecto."
+            }.onFailure { projectMessage = "No se pudo recuperar: ${it.message}. Los archivos originales se conservan." }
+            busy = false
+        }
+    }
+
     /** Save current work before switching. Failed copies/opening never replace the current draft. */
     internal fun switchProject(target: String? = null, duplicate: Boolean = false) {
         if (busy || (duplicate && currentProjectId == null)) return

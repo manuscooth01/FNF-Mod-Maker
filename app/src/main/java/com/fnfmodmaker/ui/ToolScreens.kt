@@ -210,6 +210,9 @@ internal fun HomeScreen(vm: WizardViewModel) {
                     Column(Modifier.fillMaxWidth().padding(12.dp)) {
                         Text(project.title, fontWeight = FontWeight.SemiBold)
                         Text(project.problem ?: if (project.id == vm.currentProjectId) "Proyecto actual" else "Guardado en el dispositivo", style = MaterialTheme.typography.labelSmall)
+                        if (project.problem?.startsWith("Recuperación manual") == true) {
+                            TextButton(onClick = { vm.requestProjectRecovery(project.id) }, enabled = !vm.busy) { Text("Recuperar copia V1…") }
+                        }
                         if (project.problem == null) Row(Modifier.horizontalScroll(rememberScrollState())) {
                             TextButton(onClick = { if (project.id == vm.currentProjectId) vm.openTool(Tool.MOD) else vm.switchProject(project.id) },
                                 enabled = !vm.busy) { Text(if (project.id == vm.currentProjectId) "Continuar" else "Abrir") }
@@ -217,6 +220,15 @@ internal fun HomeScreen(vm: WizardViewModel) {
                         }
                     }
                 }
+            }
+            vm.recoveryConfirmationId?.let {
+                AlertDialog(
+                    onDismissRequest = vm::cancelProjectRecovery,
+                    title = { Text("Recuperar copia del proyecto") },
+                    text = { Text("Se verificará la copia V1 y sus recursos. Solo se creará el archivo principal si no existe; el backup no se eliminará. El proyecto actual no cambiará.") },
+                    confirmButton = { TextButton(onClick = vm::confirmProjectRecovery) { Text("Recuperar") } },
+                    dismissButton = { TextButton(onClick = vm::cancelProjectRecovery) { Text("Cancelar") } }
+                )
             }
             Text("Guarda un .fnfproject fuera de la app para conservar una copia. La importación ZIP solo admite subconjuntos de Psych y V-Slice.", style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(12.dp))

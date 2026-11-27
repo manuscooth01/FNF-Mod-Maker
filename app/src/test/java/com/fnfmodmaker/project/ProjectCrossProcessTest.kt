@@ -117,6 +117,24 @@ class ProjectCrossProcessTest {
         } finally { close(first, second, reader) }
     }
 
+    @Test fun activeSelectionDetectsExternalChangeAcrossProcesses() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val config = Gson().toJsonTree(ModConfig()).asJsonObject.apply { addProperty("chartSchemaVersion", 1) }
+        val old = store.newId(); val external = store.newId(); val target = store.newId()
+        listOf(old, external, target).forEach { store.save(it, config) }; store.setActive(old)
+        val primary = File(root, "active.txt"); val backup = File(root, "active.txt.bak").apply { writeText("backup") }
+        val tmp = File(root, "active.txt.tmp").apply { writeText("temp") }
+        val b = backup.readBytes(); val t = tmp.readBytes()
+        val child = worker(root, target, "activeSelect")
+        try {
+            child.send("START"); assertEquals("ATTEMPT", child.line()); assertEquals("LOCKED", child.line())
+            // Deliberately ignore the advisory lock to test detection before the final check.
+            primary.writeText(external); child.send("CONTINUE")
+            assertTrue(child.done().startsWith("RESULT:FAIL:IllegalStateException:La selección activa cambió"))
+            assertEquals(external, primary.readText()); assertArrayEquals(b, backup.readBytes()); assertArrayEquals(t, tmp.readBytes())
+        } finally { close(child) }
+    }
+
     @Test fun activePointerSurvivesProcessDeathBeforeAndAfterAtomicInstall() {
         val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
         val config = Gson().toJsonTree(ModConfig()).asJsonObject.apply { addProperty("chartSchemaVersion", 1) }

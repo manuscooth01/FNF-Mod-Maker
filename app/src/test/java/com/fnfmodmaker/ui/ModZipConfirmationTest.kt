@@ -169,7 +169,7 @@ class ModZipConfirmationTest {
         }
         vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
         await { !vm.busy }
-        assertNull(vm.currentProjectId); assertEquals(target, projects.activeId())
+        assertNull(vm.currentProjectId); assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(target, File(app.filesDir, "projects/active.txt").readText())
         val autoSave = WizardViewModel::class.java.getDeclaredField("autoSaveJob").apply { isAccessible = true }.get(vm)
         assertNull(autoSave)
         assertTrue(vm.projectMessage.orEmpty().contains("no es compatible", true))
@@ -209,7 +209,7 @@ class ModZipConfirmationTest {
             @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = WizardViewModel(app) as T
         }
         vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]; await { !vm.busy }
-        assertNull(vm.currentProjectId); assertEquals(target, projects.activeId())
+        assertNull(vm.currentProjectId); assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(target, File(app.filesDir, "projects/active.txt").readText())
         assertTrue(vm.projectMessage.orEmpty().contains("no es compatible", true))
         vm.forceAutoSave(); scheduler.runCurrent(); assertEquals(before, projectFiles())
         vm.switchProject(compatible); await { !vm.busy }

@@ -2209,6 +2209,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         chartRepository.setConfig(opened)
         currentProjectId = id; config = opened; projects = list
         startProjectAutoSave()
+        resetCharacterUndoStacks()
         projectRevision++; projectSaveStatus = "Guardado en este dispositivo"
         activeSongIndex = 0; activeChartSongIndex = 0; activeChartDifficulty = "normal"; activeVariationIndex = null
         chartEditorState = ChartEditorState(); aiProposal = null; aiProposalNotice = null; step = 0

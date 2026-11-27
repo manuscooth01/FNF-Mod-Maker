@@ -207,9 +207,11 @@ internal class ProjectStore(
     }
     fun list(): List<ProjectSummary> = root.listFiles().orEmpty().filter { it.isDirectory && idPattern.matches(it.name) && projectFile(it.name).exists() }.map { folder ->
         runCatching { withProjectLock(folder.name) {
-            checkCandidates(folder.name)
+            val inspected = checkCandidates(folder.name)
             val record = readRecord(folder.name, false)
-            ProjectSummary(record.id, record.config.get("modTitle")?.asString?.takeIf { it.isNotBlank() } ?: "Proyecto sin nombre", record.updatedAt, null)
+            val problem = if (inspected[0].kind == CandidateKind.ABSENT)
+                "Recuperación manual necesaria: solo existe la copia anterior." else null
+            ProjectSummary(record.id, record.config.get("modTitle")?.asString?.takeIf { it.isNotBlank() } ?: "Proyecto sin nombre", record.updatedAt, problem)
         } }.getOrElse {
             val incompatible = it is IllegalArgumentException && it.message.orEmpty().contains("no es compatible")
             ProjectSummary(folder.name, "Proyecto no legible", folder.lastModified(),

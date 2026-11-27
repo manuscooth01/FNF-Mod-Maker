@@ -321,6 +321,40 @@ class ModZipConfirmationTest {
         vm.undoCharacterEdit(); assertEquals("Primero", vm.config.character.displayName)
     }
 
+    @Test fun staleAutosaveMustNotOverwriteChangesFromAnotherStore() {
+        val root = File(app.filesDir, "projects")
+        val other = com.fnfmodmaker.project.ProjectStore(root, File(app.applicationInfo.dataDir))
+        val id = vm.currentProjectId!!; val session = vm.projectSession
+        vm.setModTitle("Edición local pendiente")
+        val external = other.load(id).config.deepCopy().apply { addProperty("modTitle", "Edición externa") }
+        other.save(id, external)
+        val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")
+        val tmp = File(root, "$id/project.json.tmp"); val primaryBefore = primary.readBytes(); val backupBefore = backup.readBytes()
+        vm.forceAutoSave(); await { vm.projectSaveStatus != "Guardando…" }
+        assertEquals("Error al guardar", vm.projectSaveStatus)
+        assertTrue(vm.projectMessage.orEmpty().contains("conflicto", ignoreCase = true))
+        assertEquals(id, vm.currentProjectId); assertEquals(session, vm.projectSession)
+        assertEquals("Edición local pendiente", vm.config.modTitle)
+        assertArrayEquals(primaryBefore, primary.readBytes()); assertArrayEquals(backupBefore, backup.readBytes()); assertFalse(tmp.exists())
+        assertEquals("Edición externa", other.load(id).config.get("modTitle").asString)
+    }
+
+    @Test fun staleSnapshotMustBlockProjectSwitchAndPreserveSession() {
+        val root = File(app.filesDir, "projects")
+        val other = com.fnfmodmaker.project.ProjectStore(root, File(app.applicationInfo.dataDir))
+        val id = vm.currentProjectId!!; val session = vm.projectSession
+        val target = other.newId(); other.save(target, other.load(id).config)
+        vm.setModTitle("Pendiente local")
+        other.save(id, other.load(id).config.deepCopy().apply { addProperty("modTitle", "Cambio de otra sesión") })
+        val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")
+        val active = File(root, "active.txt"); val p = primary.readBytes(); val b = backup.readBytes(); val a = active.readBytes()
+        vm.switchProject(target); await { !vm.busy }
+        assertTrue(vm.projectMessage.orEmpty().contains("conflicto", ignoreCase = true))
+        assertEquals(id, vm.currentProjectId); assertEquals(session, vm.projectSession); assertEquals("Pendiente local", vm.config.modTitle)
+        assertArrayEquals(p, primary.readBytes()); assertArrayEquals(b, backup.readBytes()); assertArrayEquals(a, active.readBytes())
+        assertEquals("Cambio de otra sesión", other.load(id).config.get("modTitle").asString)
+    }
+
     @Test fun autosaveSessionStartsOnlyForOpenedProjectsAndCancelsOnSwitch() {
         fun job() = WizardViewModel::class.java.getDeclaredField("autoSaveJob").apply { isAccessible = true }.get(vm) as kotlinx.coroutines.Job?
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))

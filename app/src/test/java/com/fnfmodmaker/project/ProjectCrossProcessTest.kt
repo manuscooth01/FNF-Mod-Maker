@@ -30,6 +30,22 @@ object ProjectProcessWorker {
     }
 }
 
+/** Loads before the barrier, then attempts to persist that session's snapshot. */
+object StaleSnapshotWorker {
+    @JvmStatic fun main(args: Array<String>) {
+        val root = File(args[0]); val id = args[1]; val title = args[2]
+        var saving = false
+        val store = ProjectStore(root, root.parentFile,
+            beforeFileLock = { name -> if (saving && name == id) { println("ATTEMPT"); System.out.flush() } },
+            afterInspection = { if (saving) { println("LOCKED"); System.out.flush(); check(readLine() == "CONTINUE") } })
+        val snapshot = store.load(id).config.deepCopy().apply { addProperty("modTitle", title) }
+        println("READY"); System.out.flush(); check(readLine() == "START"); saving = true
+        try { store.save(id, snapshot); println("RESULT:OK") }
+        catch (e: Throwable) { println("RESULT:FAIL:${e.javaClass.simpleName}:${e.message}") }
+        System.out.flush()
+    }
+}
+
 /** Runs the real selection implementation in a second JVM. */
 object ActiveProcessWorker {
     @JvmStatic fun main(args: Array<String>) {
@@ -80,7 +96,11 @@ class ProjectCrossProcessTest {
             cls.protectionDomain?.codeSource?.location?.takeIf { it.protocol == "file" }?.let { paths.add(File(it.toURI()).path) }
         }
         val java = File(System.getProperty("java.home"), "bin/java").absolutePath
-        val entry = if (op.startsWith("active")) ActiveProcessWorker::class.java.name else ProjectProcessWorker::class.java.name
+        val entry = when {
+            op.startsWith("active") -> ActiveProcessWorker::class.java.name
+            op.startsWith("snapshot-") -> StaleSnapshotWorker::class.java.name
+            else -> ProjectProcessWorker::class.java.name
+        }
         val process = ProcessBuilder(java, "-cp", paths.joinToString(File.pathSeparator), entry,
             root.absolutePath, id, op).redirectErrorStream(true).start()
         val child = Child(process, process.outputStream.bufferedWriter(), process.inputStream.bufferedReader())
@@ -97,6 +117,25 @@ class ProjectCrossProcessTest {
         return Triple(root, id, bytes)
     }
     private fun close(vararg children: Child) { children.forEach { if (it.process.isAlive) it.process.destroyForcibly() } }
+
+    @Test fun staleSnapshotFromSecondJvmMustNotOverwriteNewerSave() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
+        val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"initial"}""").asJsonObject
+        store.save(id, config)
+        val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak"); val tmp = File(root, "$id/project.json.tmp")
+        val first = worker(root, id, "snapshot-first"); val stale = worker(root, id, "snapshot-stale")
+        try {
+            first.send("START"); assertEquals("ATTEMPT", first.line()); assertEquals("LOCKED", first.line())
+            stale.send("START"); assertEquals("ATTEMPT", stale.line()); first.send("CONTINUE")
+            assertEquals("RESULT:OK", first.done()); assertEquals("LOCKED", stale.line())
+            val expectedPrimary = primary.readBytes(); val expectedBackup = backup.readBytes(); assertFalse(tmp.exists())
+            stale.send("CONTINUE")
+            val rejected = stale.done()
+            assertTrue("Expected an explicit conflict, got $rejected", rejected.startsWith("RESULT:FAIL:") && rejected.contains("conflicto", ignoreCase = true))
+            assertArrayEquals(expectedPrimary, primary.readBytes()); assertArrayEquals(expectedBackup, backup.readBytes()); assertFalse(tmp.exists())
+            assertEquals("snapshot-first", store.load(id).config.get("modTitle").asString)
+        } finally { close(first, stale) }
+    }
 
     @Test fun activeChangesAndReadsAreSerializedWithoutTouchingAuxiliaryFiles() {
         val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)

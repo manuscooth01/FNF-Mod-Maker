@@ -73,4 +73,47 @@ class ActiveSelectionSafetyTest {
         assertTrue(incompatible.message.orEmpty().contains("compatible"))
         assertArrayEquals(before, primary.readBytes())
     }
+    @Test fun writeAndInstallFailuresPreserveAllNamedCandidates() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val old = store.newId(); val target = store.newId(); store.save(old, config()); store.save(target, config())
+        val primary = File(root, "active.txt").apply { writeText(old) }
+        val backup = File(root, "active.txt.bak").apply { writeText("backup evidence") }
+        val temporary = File(root, "active.txt.tmp").apply { writeText("temporary evidence") }
+        val before = bytes(primary, backup, temporary)
+        val writeFailure = ProjectStore(root, temp.root, activeTempWrite = { staged, _ ->
+            staged.writeText("partial"); throw java.io.IOException("injected write failure")
+        })
+        val writeError = assertThrows(java.io.IOException::class.java) { writeFailure.setActive(target) }
+        assertEquals("injected write failure", writeError.message); assertEquals(before, bytes(primary, backup, temporary))
+        val installFailure = ProjectStore(root, temp.root, activeReplace = { _, _ -> throw java.io.IOException("injected install failure") })
+        val installError = assertThrows(java.io.IOException::class.java) { installFailure.setActive(target) }
+        assertEquals("injected install failure", installError.message); assertEquals(before, bytes(primary, backup, temporary))
+        assertEquals(old, store.activeId())
+    }
+
+    @Test fun externalChangeBeforeInstallationIsDetectedWithoutOverwritingIt() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val old = store.newId(); val other = store.newId(); val target = store.newId()
+        listOf(old, other, target).forEach { store.save(it, config()) }; store.setActive(old)
+        val primary = File(root, "active.txt"); val backup = File(root, "active.txt.bak").apply { writeText("backup") }
+        val temporary = File(root, "active.txt.tmp").apply { writeText("temp") }
+        val backupBytes = backup.readBytes(); val tempBytes = temporary.readBytes()
+        val racing = ProjectStore(root, temp.root, afterActivePrepared = { primary.writeText(other) })
+        val error = assertThrows(IllegalStateException::class.java) { racing.setActive(target) }
+        assertTrue(error.message.orEmpty().contains("cambió")); assertEquals(other, primary.readText())
+        assertArrayEquals(backupBytes, backup.readBytes()); assertArrayEquals(tempBytes, temporary.readBytes())
+    }
+
+    @Test fun v2SelectionRejectedWithoutModifyingCandidates() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val current = store.newId(); store.save(current, config()); store.setActive(current)
+        val target = store.newId(); val folder = File(root, target).apply { mkdirs() }
+        File(folder, "project.json").writeText("""{"version":1,"id":"$target","updatedAt":1,"config":{"chartSchemaVersion":2,"independentCharts":{}}}""")
+        val p = File(root, "active.txt"); val b = File(root, "active.txt.bak").apply { writeText("backup") }
+        val t = File(root, "active.txt.tmp").apply { writeText("temp") }; val before = bytes(p, b, t)
+        val error = assertThrows(IllegalArgumentException::class.java) { store.setActive(target) }
+        assertTrue(error.message.orEmpty().contains("compatible")); assertEquals(before, bytes(p, b, t))
+        assertEquals(current, store.activeId())
+    }
+
 }

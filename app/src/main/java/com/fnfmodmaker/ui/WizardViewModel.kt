@@ -1926,11 +1926,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 portableCache.deleteRecursively()
                 val active = projectStore.activeId()
                 val existing = projectStore.list()
-                val id = active ?: existing.firstOrNull()?.id
+                if (active == null && (existing.isNotEmpty() || File(app.filesDir, "projects/active.txt.bak").exists() ||
+                        File(app.filesDir, "projects/active.txt.tmp").exists()))
+                    error("No hay proyecto activo; selecciona un proyecto manualmente.")
+                val id = active
                 if (id != null) {
                     val record = projectStore.load(id)
                     val opened = parseConfig(record.config)
-                    projectStore.setActive(id)
                     Triple(record.id to opened, projectStore.list(), emptyList<String>())
                 } else {
                     val oldCache = File(app.cacheDir, "autosave_modconfig.json")

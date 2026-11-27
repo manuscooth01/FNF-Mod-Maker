@@ -30,6 +30,29 @@ object ProjectProcessWorker {
     }
 }
 
+/** Runs the real selection implementation in a second JVM. */
+object ActiveProcessWorker {
+    @JvmStatic fun main(args: Array<String>) {
+        val root = File(args[0]); val id = args[1]; val operation = args[2]
+        val store = ProjectStore(root, root.parentFile,
+            beforeFileLock = { name -> if (name == "active") { println("ATTEMPT"); System.out.flush() } },
+            afterActivePrepared = {
+                if (operation == "activeCrashBefore") Runtime.getRuntime().halt(71)
+                println("LOCKED"); System.out.flush(); check(readLine() == "CONTINUE")
+            },
+            activeReplace = if (operation == "activeCrashAfter") { source, target ->
+                java.nio.file.Files.move(source.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                Runtime.getRuntime().halt(72)
+            } else null)
+        println("READY"); System.out.flush(); check(readLine() == "START")
+        if (operation == "activeRead") { println("RESULT:${store.activeId()}"); System.out.flush(); return }
+        try { store.setActive(id); println("RESULT:OK") }
+        catch (e: Throwable) { println("RESULT:FAIL:${e.javaClass.simpleName}:${e.message}") }
+        System.out.flush()
+    }
+}
+
 class ProjectCrossProcessTest {
     @get:Rule val temp = TemporaryFolder()
 
@@ -57,7 +80,8 @@ class ProjectCrossProcessTest {
             cls.protectionDomain?.codeSource?.location?.takeIf { it.protocol == "file" }?.let { paths.add(File(it.toURI()).path) }
         }
         val java = File(System.getProperty("java.home"), "bin/java").absolutePath
-        val process = ProcessBuilder(java, "-cp", paths.joinToString(File.pathSeparator), ProjectProcessWorker::class.java.name,
+        val entry = if (op.startsWith("active")) ActiveProcessWorker::class.java.name else ProjectProcessWorker::class.java.name
+        val process = ProcessBuilder(java, "-cp", paths.joinToString(File.pathSeparator), entry,
             root.absolutePath, id, op).redirectErrorStream(true).start()
         val child = Child(process, process.outputStream.bufferedWriter(), process.inputStream.bufferedReader())
         assertEquals("READY", child.line())
@@ -73,6 +97,46 @@ class ProjectCrossProcessTest {
         return Triple(root, id, bytes)
     }
     private fun close(vararg children: Child) { children.forEach { if (it.process.isAlive) it.process.destroyForcibly() } }
+
+    @Test fun activeChangesAndReadsAreSerializedWithoutTouchingAuxiliaryFiles() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val config = Gson().toJsonTree(ModConfig()).asJsonObject.apply { addProperty("chartSchemaVersion", 1) }
+        val old = store.newId(); val a = store.newId(); val b = store.newId()
+        listOf(old, a, b).forEach { store.save(it, config) }; store.setActive(old)
+        val backup = File(root, "active.txt.bak").apply { writeText("backup") }
+        val tmp = File(root, "active.txt.tmp").apply { writeText("temp") }
+        val backupBytes = backup.readBytes(); val tempBytes = tmp.readBytes()
+        val first = worker(root, a, "activeSelect"); val second = worker(root, b, "activeSelect")
+        val reader = worker(root, old, "activeRead")
+        try {
+            first.send("START"); assertEquals("ATTEMPT", first.line()); assertEquals("LOCKED", first.line())
+            reader.send("START"); assertEquals("RESULT:$old", reader.done())
+            second.send("START"); assertEquals("ATTEMPT", second.line()); first.send("CONTINUE")
+            assertEquals("RESULT:OK", first.done()); assertEquals("RESULT:OK", second.done())
+            assertEquals(b, store.activeId()); assertArrayEquals(backupBytes, backup.readBytes()); assertArrayEquals(tempBytes, tmp.readBytes())
+        } finally { close(first, second, reader) }
+    }
+
+    @Test fun activePointerSurvivesProcessDeathBeforeAndAfterAtomicInstall() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val config = Gson().toJsonTree(ModConfig()).asJsonObject.apply { addProperty("chartSchemaVersion", 1) }
+        val old = store.newId(); val target = store.newId(); store.save(old, config); store.save(target, config); store.setActive(old)
+        val primary = File(root, "active.txt"); val backup = File(root, "active.txt.bak").apply { writeText("backup") }
+        val tmp = File(root, "active.txt.tmp").apply { writeText("tmp") }
+        val b = backup.readBytes(); val t = tmp.readBytes()
+        val before = worker(root, target, "activeCrashBefore")
+        try {
+            before.send("START"); assertEquals("ATTEMPT", before.line())
+            assertTrue(before.process.waitFor(20, TimeUnit.SECONDS)); assertEquals(71, before.process.exitValue())
+            assertEquals(old, primary.readText()); assertArrayEquals(b, backup.readBytes()); assertArrayEquals(t, tmp.readBytes())
+        } finally { close(before) }
+        val after = worker(root, target, "activeCrashAfter")
+        try {
+            after.send("START"); assertEquals("ATTEMPT", after.line()); assertEquals("LOCKED", after.line()); after.send("CONTINUE")
+            assertTrue(after.process.waitFor(20, TimeUnit.SECONDS)); assertEquals(72, after.process.exitValue())
+            assertEquals(target, primary.readText()); assertArrayEquals(b, backup.readBytes()); assertArrayEquals(t, tmp.readBytes())
+        } finally { close(after) }
+    }
 
     @Test fun saveAndRecoveryAreSerializedAcrossIndependentJvms() {
         for (firstOp in listOf("save", "recover")) {

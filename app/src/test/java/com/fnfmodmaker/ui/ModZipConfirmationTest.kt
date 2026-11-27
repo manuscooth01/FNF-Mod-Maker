@@ -320,13 +320,13 @@ class ModZipConfirmationTest {
         vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
         await { !vm.busy }
         assertNull(vm.currentProjectId)
-        assertEquals(futureId, projects.activeId())
+        assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(futureId, File(app.filesDir, "projects/active.txt").readText())
         assertTrue(vm.projects.any { it.id == compatible })
         vm.forceAutoSave(); scheduler.runCurrent()
         assertArrayEquals(bytes, file.readBytes())
         vm.switchProject(futureId); await { !vm.busy }
         assertNull(vm.currentProjectId)
-        assertEquals(futureId, projects.activeId())
+        assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(futureId, File(app.filesDir, "projects/active.txt").readText())
         assertArrayEquals(bytes, file.readBytes())
         vm.switchProject(compatible); await { !vm.busy }
         assertEquals(compatible, vm.currentProjectId)
@@ -362,12 +362,12 @@ class ModZipConfirmationTest {
         assertNull(vm.currentProjectId)
         assertTrue(vm.projects.single { it.id == futureId }.problem!!.contains("Charts incompatibles"))
         assertNull(vm.projects.single { it.id == compatible }.problem)
-        assertEquals(futureId, projects.activeId())
+        assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(futureId, File(app.filesDir, "projects/active.txt").readText())
 
         vm.preparePortableExport(futureId); await { !vm.busy }
         assertNull(vm.portableExportName)
         assertTrue(vm.portableMessage.orEmpty().contains("No se pudo exportar"))
-        assertEquals(before, files()); assertEquals(futureId, projects.activeId())
+        assertEquals(before, files()); assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(futureId, File(app.filesDir, "projects/active.txt").readText())
         assertArrayEquals(activeBefore, activeFile.readBytes())
         vm.preparePortableExport(compatible); await { !vm.busy }
         assertNotNull(vm.portableMessage, vm.portableExportName)
@@ -378,7 +378,7 @@ class ModZipConfirmationTest {
         val prepared = portable.prepare(output, projects.newImportStage())
         assertEquals(compatibleConfig.get("charts"), prepared.config.get("charts"))
         projects.discardImportStage(prepared.directory)
-        assertEquals(futureId, projects.activeId())
+        assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(futureId, File(app.filesDir, "projects/active.txt").readText())
         assertArrayEquals(activeBefore, activeFile.readBytes())
 
         val known = projects.list().map { it.id }.toSet()
@@ -386,7 +386,7 @@ class ModZipConfirmationTest {
         assertNotNull(vm.portableMessage, vm.portableImportSummary)
         vm.confirmPortableImport(); await { !vm.busy }
         assertEquals(1, projects.list().count { it.id !in known })
-        assertNull(vm.currentProjectId); assertEquals(futureId, projects.activeId())
+        assertNull(vm.currentProjectId); assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(futureId, File(app.filesDir, "projects/active.txt").readText())
         assertArrayEquals(activeBefore, activeFile.readBytes())
         assertEquals(before, files())
         vm.switchProject(compatible); await { !vm.busy }
@@ -408,7 +408,7 @@ class ModZipConfirmationTest {
         }
         vm = ViewModelProvider(store, factory)[WizardViewModel::class.java]
         await { !vm.busy }; assertNull(vm.currentProjectId)
-        assertEquals(futureId, projects.activeId())
+        assertThrows(IllegalArgumentException::class.java) { projects.activeId() }; assertEquals(futureId, File(app.filesDir, "projects/active.txt").readText())
         vm.switchProject(); await { !vm.busy }
         assertNotNull(vm.currentProjectId); assertNotEquals(futureId, vm.currentProjectId)
         assertEquals(vm.currentProjectId, projects.activeId())
@@ -432,6 +432,23 @@ class ModZipConfirmationTest {
         assertArrayEquals(oldCurrent, currentFile.readBytes()); assertArrayEquals(oldActive, activeFile.readBytes())
         assertEquals(current, vm.currentProjectId)
         assertEquals("Pendiente de guardar", vm.config.modTitle)
+    }
+
+    @Test fun activePointerPreparationFailureDoesNotSavePreviousPendingEdits() {
+        val root = File(app.filesDir, "projects")
+        val projects = com.fnfmodmaker.project.ProjectStore(root, File(app.applicationInfo.dataDir))
+        val current = vm.currentProjectId!!; val target = projects.newId()
+        projects.save(target, projects.load(current).config)
+        val primary = File(root, "active.txt"); val currentFile = File(root, "$current/project.json")
+        val oldActive = primary.readBytes(); val oldProject = currentFile.readBytes()
+        // An unreadable candidate forces selection to fail before atomic installation.
+        val backup = File(root, "active.txt.bak"); assertFalse(backup.exists()); assertTrue(backup.mkdir())
+        vm.setModTitle("Edición pendiente que no debe guardarse")
+        vm.switchProject(target); await { !vm.busy }
+        assertTrue(vm.projectMessage.orEmpty().contains("No se pudo abrir"))
+        assertEquals(current, vm.currentProjectId)
+        assertEquals("Edición pendiente que no debe guardarse", vm.config.modTitle)
+        assertArrayEquals(oldActive, primary.readBytes()); assertArrayEquals(oldProject, currentFile.readBytes())
     }
 
     @Test fun unknownJsonSurvivesAutosaveDuplicationAndPortableExport() {

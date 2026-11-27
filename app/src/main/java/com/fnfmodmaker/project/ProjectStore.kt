@@ -60,6 +60,9 @@ internal class ProjectStore(
         else android.system.Os.link(source.absolutePath, destination.absolutePath)
     },
     private val beforeFileLock: ((String) -> Unit)? = null,
+    private val activeTempWrite: ((File, String) -> Unit)? = null,
+    private val activeReplace: ((File, File) -> Unit)? = null,
+    private val afterActivePrepared: (() -> Unit)? = null,
     private val afterInspection: (() -> Unit)? = null
 ) {
     companion object { private val projectLocks = java.util.concurrent.ConcurrentHashMap<String, Any>() }
@@ -99,8 +102,58 @@ internal class ProjectStore(
     /** Read-only asset location, without creating directories during validation/export. */
     fun assetsLocation(id: String): File = File(dir(id), "assets")
     private fun projectFile(id: String) = SafeFile(File(dir(id), "project.json"))
-    private fun activeFile() = SafeFile(File(root, "active.txt"))
-    fun activeId(): String? = if (activeFile().exists()) activeFile().read { text -> text.trim().also { require(idPattern.matches(it)) } } else null
+    private fun activeFile() = File(root, "active.txt")
+    private fun readActiveCandidate(file: File): List<Byte>? {
+        if (!file.exists()) {
+            val names = if (root.exists()) root.list() ?: error("No se pudo inspeccionar la selección activa.") else null
+            check(names == null || file.name !in names) { "No se pudo leer ${file.name}." }
+            return null
+        }
+        check(file.canonicalFile.parentFile == root.canonicalFile && file.canonicalFile.name == file.name) {
+            "Archivo de selección inseguro: ${file.name}."
+        }
+        return try { file.readBytes().toList() }
+        catch (e: Exception) { throw IllegalStateException("No se pudo leer ${file.name}.", e) }
+    }
+    private fun activeSnapshot() = listOf(activeFile(), File(root, "active.txt.bak"), File(root, "active.txt.tmp"))
+        .map(::readActiveCandidate)
+    fun activeId(): String? {
+        val bytes = readActiveCandidate(activeFile()) ?: return null
+        val text = try {
+            Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                .decode(java.nio.ByteBuffer.wrap(bytes.toByteArray())).toString()
+        } catch (e: Exception) { throw IllegalStateException("Identificador activo inválido.", e) }
+        check(idPattern.matches(text)) { "Identificador activo inválido." }
+        // Never resolve an absent project through the project backup.
+        val candidates = checkCandidates(text)
+        check(candidates[0].kind == CandidateKind.V1) { "El proyecto activo no existe o requiere recuperación manual." }
+        load(text)
+        return text
+    }
+    private fun installActive(source: File, target: File) {
+        if (activeReplace != null) { activeReplace.invoke(source, target); return }
+        // Android's Os.rename is POSIX rename(2): a same-filesystem replacement
+        // is atomic and an error leaves the destination in place. On host JVMs,
+        // request ATOMIC_MOVE explicitly and never fall back to a plain move.
+        if (System.getProperty("java.vm.name") == "Dalvik") {
+            android.system.Os.rename(source.absolutePath, target.absolutePath)
+        } else {
+            java.nio.file.Files.move(source.toPath(), target.toPath(),
+                java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+    private fun writeActive(id: String) {
+        val before = activeSnapshot()
+        val staged = File.createTempFile("active-selection-", ".tmp", root)
+        if (activeTempWrite != null) activeTempWrite.invoke(staged, id)
+        else staged.outputStream().use { out -> out.write(id.toByteArray(Charsets.UTF_8)); out.fd.sync() }
+        val expected = id.toByteArray(Charsets.UTF_8)
+        check(idPattern.matches(id) && staged.readBytes().contentEquals(expected)) { "No se pudo verificar la selección activa." }
+        afterActivePrepared?.invoke()
+        check(activeSnapshot() == before) { "La selección activa cambió durante la preparación." }
+        installActive(staged, activeFile())
+    }
     // Classification is read-only: no fallback can hide an unreadable candidate.
     private enum class CandidateKind { ABSENT, V1, V2, FUTURE, CORRUPT, INVALID_WRAPPER, READ_ERROR }
     private data class Candidate(val file: File, val kind: CandidateKind, val bytes: List<Byte> = emptyList())
@@ -198,7 +251,7 @@ internal class ProjectStore(
             check(classify(id, File(dir(id), "project.json")).kind == CandidateKind.V1) {
                 "La copia requiere recuperación manual antes de activar el proyecto."
             }
-            withActiveLock { activeFile().write(id) }
+            withActiveLock { writeActive(id) }
         }
     }
     fun save(id: String, config: JsonObject) = withProjectLock(id) {

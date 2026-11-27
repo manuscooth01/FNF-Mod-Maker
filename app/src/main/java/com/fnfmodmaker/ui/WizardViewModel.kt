@@ -1893,28 +1893,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         return target
     }
     private fun parseConfig(value: com.google.gson.JsonObject): ModConfig {
-        // The marker is optional: an absent chartSchemaVersion is the legacy shared-chart
-        // schema and must never throw; only an explicit numeric 2 selects the v2 reader.
-        val version = value.get("chartSchemaVersion")
-        val isV2 = version != null && version.isJsonPrimitive &&
-            version.asJsonPrimitive.isNumber && version.asString == "2"
-        if (isV2) {
-            try {
-                com.fnfmodmaker.project.requireIndependentChartSchema(value, autoSaveGson)
-            } catch (e: Exception) {
-                throw IllegalArgumentException(
-                    "La versión de charts 2 contiene charts independientes que no se pudieron leer; no se modificó el proyecto.", e)
-            }
-            val config = autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java)
-                ?: error("El proyecto está vacío.")
-            chartRepository.setConfig(config)
-            return config
-        }
         requireSupportedChartSchema(value)
-        val config = autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java)
+        return autoSaveGson.fromJson(migrateCharacterLibrary(value), ModConfig::class.java)
             ?: error("El proyecto está vacío.")
-        chartRepository.setConfig(config)
-        return config
     }
 
     /** Merge the loaded document with model edits; unknown fields remain untouched. */
@@ -1957,6 +1938,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 }
             } }
             result.onSuccess { (record, list, missing) ->
+                chartRepository.setConfig(record.second)
                 config = record.second
                 currentProjectId = record.first; projects = list; projectSaveStatus = "Guardado en este dispositivo"
                 modIdEdited = config.modId.isNotBlank() && config.modId != slugify(config.modTitle)
@@ -2120,21 +2102,24 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun validatePortableConfig(value: com.google.gson.JsonObject) =
+    private fun validatePortableConfig(value: com.google.gson.JsonObject) {
+        requireSupportedChartSchema(value)
         ProjectConfigValidator(autoSaveGson).validate(value)
+    }
 
     /** Save current work before switching. Failed copies/opening never replace the current draft. */
     internal fun switchProject(target: String? = null, duplicate: Boolean = false) {
         if (busy || (duplicate && currentProjectId == null)) return
         val oldId = currentProjectId
         val oldConfig = config
-        pendingAutoSaveJob?.cancel()
         busy = true; projectMessage = null
         viewModelScope.launch {
             try {
                 withContext(NonCancellable) {
                     projectMutex.withLock {
                         val (project, list, missing) = withContext(Dispatchers.IO) {
+                            // Reject a target before parsing or snapshotting the current session.
+                            if (target != null) projectStore.load(target)
                             val oldSnapshot = oldId?.let { projectSnapshot(it, oldConfig) }
                             val id = target ?: projectStore.newId()
                             val missing = if (target == null) {
@@ -2171,6 +2156,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         // Playback cleanup is best effort; it must not leave active.txt and the UI out of sync.
         runCatching { closeLiveChart() }; runCatching { releaseMediaPlayer() }
         lastAiApplied = null; lastAiProjectId = null
+        pendingAutoSaveJob?.cancel()
+        chartRepository.setConfig(opened)
         currentProjectId = id; config = opened; projects = list
         projectRevision++; projectSaveStatus = "Guardado en este dispositivo"
         activeSongIndex = 0; activeChartSongIndex = 0; activeChartDifficulty = "normal"; activeVariationIndex = null

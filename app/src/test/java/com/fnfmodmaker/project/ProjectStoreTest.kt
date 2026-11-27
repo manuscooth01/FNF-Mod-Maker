@@ -10,6 +10,49 @@ import java.io.File
 class ProjectStoreTest {
     @get:Rule val temp = TemporaryFolder()
 
+    private fun snapshot(root: File): Map<String, List<Byte>> = root.walkTopDown()
+        .filter { it.isFile }.associate { it.relativeTo(root).path to it.readBytes().toList() }
+    private fun document(id: String, config: String) = """{"version":1,"id":"$id","updatedAt":1,"config":$config}"""
+
+    @Test fun v2CandidatesAreReadOnlyForListingLoadingSavingAndActivation() {
+        val root = File(temp.root, "projects")
+        val store = ProjectStore(root, temp.root)
+        val active = store.newId(); val legacy = JsonParser.parseString("""{"modTitle":"old","chartSchemaVersion":1}""").asJsonObject
+        store.save(active, legacy); store.setActive(active)
+        val id = store.newId(); val folder = File(root, id); assertTrue(folder.mkdirs())
+        val primary = File(folder, "project.json"); val backup = File(folder, "project.json.bak"); val tmp = File(folder, "project.json.tmp")
+        val v2 = document(id, """{"chartSchemaVersion":2,"independentCharts":{"stable":{"id":"stable"}}}""")
+        val v1 = document(id, """{"chartSchemaVersion":1,"modTitle":"legacy"}""")
+        primary.writeText(v2); backup.writeText(v1); tmp.writeText("temporary evidence")
+        fun rejectAndCheck() {
+            val before = snapshot(root)
+            assertTrue(store.list().single { it.id == id }.problem!!.contains("incompatible"))
+            val error = assertThrows(IllegalArgumentException::class.java) { store.load(id) }
+            assertTrue(error.message.orEmpty().contains("no es compatible"))
+            assertThrows(IllegalArgumentException::class.java) { store.save(id, legacy) }
+            assertThrows(IllegalArgumentException::class.java) { store.setActive(id) }
+            assertEquals(active, store.activeId()); assertEquals(before, snapshot(root))
+        }
+        rejectAndCheck() // V2 primary, older backup
+        primary.writeText("broken"); backup.writeText(v2)
+        rejectAndCheck() // damaged primary, V2 backup
+        assertTrue(primary.delete())
+        rejectAndCheck() // missing primary, V2 backup
+        primary.writeText(v1); backup.writeText(v1); tmp.writeText(v2)
+        rejectAndCheck() // a V2 interrupted write is protected too
+    }
+
+    @Test fun compatibleBackupIsListedWithoutRecoveryThenRestoredByLoad() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
+        val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"v1"}""").asJsonObject
+        store.save(id, config); store.save(id, config)
+        val folder = File(root, id); val primary = File(folder, "project.json"); val backup = File(folder, "project.json.bak")
+        val expected = backup.readBytes(); primary.writeText("broken"); val before = snapshot(root)
+        assertNull(store.list().single().problem); assertEquals(before, snapshot(root))
+        assertEquals(config, store.load(id).config); assertArrayEquals(expected, primary.readBytes())
+        assertArrayEquals(expected, backup.readBytes())
+    }
+
     @Test fun atomicFileRecoversLastValidVersionAfterCorruption() {
         val path = File(temp.root, "data.json")
         val safe = SafeFile(path)

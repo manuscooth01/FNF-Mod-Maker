@@ -30,15 +30,17 @@ internal class SafeFile(private val file: File) {
         }
     }
 
-    fun <T> read(parse: (String) -> T): T {
+    fun <T> read(recover: Boolean = true, parse: (String) -> T): T {
         var primaryError: Exception? = null
         if (file.exists()) try { return parse(file.readText(Charsets.UTF_8)) } catch (e: Exception) { primaryError = e }
         if (backup.exists()) try {
             val text = backup.readText(Charsets.UTF_8)
             val parsed = parse(text)
-            // Restore before the next write, so a corrupt primary cannot replace the good backup.
-            temp.outputStream().use { stream -> stream.write(text.toByteArray(Charsets.UTF_8)); stream.fd.sync() }
-            check(temp.renameTo(file)) { "No se pudo restaurar la copia anterior." }
+            // Listing and inspection never restore or touch temporary files.
+            if (recover) {
+                temp.outputStream().use { stream -> stream.write(text.toByteArray(Charsets.UTF_8)); stream.fd.sync() }
+                check(temp.renameTo(file)) { "No se pudo restaurar la copia anterior." }
+            }
             return parsed
         } catch (e: Exception) { if (primaryError == null) primaryError = e }
         throw IllegalStateException("No se pudo leer el proyecto ni su copia anterior.", primaryError)
@@ -59,26 +61,48 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
     private fun projectFile(id: String) = SafeFile(File(dir(id), "project.json"))
     private fun activeFile() = SafeFile(File(root, "active.txt"))
     fun activeId(): String? = if (activeFile().exists()) activeFile().read { text -> text.trim().also { require(idPattern.matches(it)) } } else null
-    fun setActive(id: String) { require(projectFile(id).exists()); activeFile().write(id) }
+    // Examine all parseable candidates, including interrupted writes, before any mutation.
+    // A corrupt candidate may be recovered from a compatible backup; an unreadable file
+    // fails closed. Do not interpret incompatible data as corruption and fall back to V1.
+    private fun checkCandidates(id: String) {
+        val folder = dir(id)
+        for (name in listOf("project.json", "project.json.bak", "project.json.tmp")) {
+            val candidate = File(folder, name)
+            if (!candidate.exists()) continue
+            val text = candidate.readText(Charsets.UTF_8)
+            val json = try { JsonParser.parseString(text) } catch (_: com.google.gson.JsonParseException) { continue }
+            if (!json.isJsonObject) continue
+            val config = json.asJsonObject.get("config")
+            if (config != null && config.isJsonObject) requireSupportedChartSchema(config.asJsonObject)
+        }
+    }
+    fun setActive(id: String) { load(id); activeFile().write(id) }
     fun save(id: String, config: JsonObject) {
+        requireSupportedChartSchema(config)
+        checkCandidates(id)
         val wrapper = JsonObject().apply {
             addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
         }
         projectFile(id).write(wrapper.toString())
     }
-    fun load(id: String): ProjectRecord = projectFile(id).read { raw ->
+    private fun readRecord(id: String, recover: Boolean): ProjectRecord = projectFile(id).read(recover) { raw ->
         val doc = JsonParser.parseString(raw).asJsonObject
         require(doc.get("version")?.asInt == 1) { "Versión de proyecto no compatible." }
         require(doc.get("id")?.asString == id) { "El proyecto no coincide con su carpeta." }
         ProjectRecord(id, doc.getAsJsonObject("config") ?: error("Falta la configuración."), doc.get("updatedAt")?.asLong ?: 0L)
     }
+    fun load(id: String): ProjectRecord {
+        checkCandidates(id)
+        return readRecord(id, true).also { requireSupportedChartSchema(it.config) }
+    }
     fun list(): List<ProjectSummary> = root.listFiles().orEmpty().filter { it.isDirectory && idPattern.matches(it.name) && projectFile(it.name).exists() }.map { folder ->
-        runCatching { load(folder.name) }.fold({ record ->
-            val problem = runCatching { requireSupportedChartSchema(record.config) }.exceptionOrNull()?.let {
+        runCatching {
+            val record = readRecord(folder.name, false)
+            val problem = runCatching { checkCandidates(folder.name); requireSupportedChartSchema(record.config) }.exceptionOrNull()?.let {
                 "Charts incompatibles: ${it.message}"
             }
             ProjectSummary(record.id, record.config.get("modTitle")?.asString?.takeIf { it.isNotBlank() } ?: "Proyecto sin nombre", record.updatedAt, problem)
-        }, { ProjectSummary(folder.name, "Proyecto no legible", folder.lastModified(), "No se pudo abrir; sus archivos se conservan.") })
+        }.getOrElse { ProjectSummary(folder.name, "Proyecto no legible", folder.lastModified(), "No se pudo abrir; sus archivos se conservan.") }
     }.sortedByDescending { it.updatedAt }
 
     /** Hidden staging lives beside final projects: publication is one same-filesystem rename. */
@@ -96,7 +120,9 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         val id = newId()
         val finalDir = dir(id)
         require(!finalDir.exists()) { "No se pudo crear un identificador único." }
+        requireSupportedChartSchema(prepared.config)
         val config = portable.materialize(prepared, finalDir)
+        requireSupportedChartSchema(config)
         validate(config)
         val wrapper = JsonObject().apply {
             addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
@@ -111,6 +137,7 @@ internal class ProjectStore(private val root: File, private val permittedAssetRo
         require(stage.parentFile.canonicalFile == root.canonicalFile && stage.name.startsWith(".pending-") && idPattern.matches(stage.name.removePrefix(".pending-")) && stage.isDirectory)
         val id = newId(); val finalDir = dir(id)
         require(!finalDir.exists())
+        requireSupportedChartSchema(source)
         val output = source.deepCopy()
         val canonicalStage = stage.canonicalFile
         // Stage and assets themselves must not be links to a different directory.

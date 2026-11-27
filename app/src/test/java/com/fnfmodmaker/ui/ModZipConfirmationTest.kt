@@ -115,11 +115,25 @@ class ModZipConfirmationTest {
         assertEquals(1, vm.config.chartSchemaVersion)
     }
 
+    // Fixtures emulate a project written by a newer app, not this version's guarded writer.
+    private fun seedFuture(id: String, config: com.google.gson.JsonObject) {
+        val file = File(app.filesDir, "projects/$id/project.json")
+        check(file.parentFile.isDirectory || file.parentFile.mkdirs())
+        file.writeText(com.google.gson.JsonObject().apply {
+            addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", 1L); add("config", config)
+        }.toString())
+    }
+    private fun seedActive(id: String) { File(app.filesDir, "projects/active.txt").writeText(id) }
+    private fun futureConfig(id: String) = com.google.gson.JsonParser.parseString(
+        File(app.filesDir, "projects/$id/project.json").readText()).asJsonObject.getAsJsonObject("config")
+
     private fun validIndependentV2(base: com.google.gson.JsonObject) = base.deepCopy().apply {
         addProperty("chartSchemaVersion", 2)
         add("independentCharts", com.google.gson.JsonParser.parseString("""{"stable":{"id":"stable"}}"""))
         add("charts", com.google.gson.JsonObject())
         add("chartHistories", com.google.gson.JsonObject())
+        com.fnfmodmaker.project.requireIndependentChartSchema(this, com.google.gson.Gson())
+        com.fnfmodmaker.project.ProjectConfigValidator(com.google.gson.Gson()).validate(this)
     }
 
     private fun projectFiles(): Map<String, List<Byte>> {
@@ -132,7 +146,7 @@ class ModZipConfirmationTest {
         val originalId = vm.currentProjectId!!
         vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
         val target = projects.newId()
-        projects.save(target, validIndependentV2(projects.load(originalId).config))
+        seedFuture(target, validIndependentV2(projects.load(originalId).config))
         val before = projectFiles(); val config = vm.config; val editor = vm.chartEditorState
         vm.switchProject(target); await { !vm.busy }
         assertEquals(originalId, vm.currentProjectId); assertEquals(originalId, projects.activeId())
@@ -146,8 +160,8 @@ class ModZipConfirmationTest {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val compatible = vm.currentProjectId!!
         vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
-        val target = projects.newId(); projects.save(target, validIndependentV2(projects.load(compatible).config))
-        store.clear(); scheduler.runCurrent(); projects.setActive(target)
+        val target = projects.newId(); seedFuture(target, validIndependentV2(projects.load(compatible).config))
+        store.clear(); scheduler.runCurrent(); seedActive(target)
         val before = projectFiles()
         store = ViewModelStore()
         val factory = object : ViewModelProvider.Factory {
@@ -168,7 +182,7 @@ class ModZipConfirmationTest {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val originalId = vm.currentProjectId!!
         vm.forceAutoSave(); await { vm.projectSaveStatus == "Guardado en este dispositivo" }
-        val target = projects.newId(); projects.save(target, validIndependentV2(projects.load(originalId).config))
+        val target = projects.newId(); seedFuture(target, validIndependentV2(projects.load(originalId).config))
         val primary = File(app.filesDir, "projects/$target/project.json")
         val backup = File(app.filesDir, "projects/$target/project.json.bak")
         check(primary.renameTo(backup)); val before = projectFiles(); val config = vm.config
@@ -187,8 +201,8 @@ class ModZipConfirmationTest {
             addProperty("chartSchemaVersion", 2)
             add("independentCharts", com.google.gson.JsonParser.parseString("""{"psych":{"normal":[1]}}"""))
         }
-        projects.save(futureId, future)
-        projects.setActive(futureId)
+        seedFuture(futureId, future)
+        seedActive(futureId)
         val file = File(app.filesDir, "projects/$futureId/project.json")
         val bytes = file.readBytes()
         store.clear(); scheduler.runCurrent()
@@ -224,7 +238,7 @@ class ModZipConfirmationTest {
             addProperty("chartSchemaVersion", 99)
             add("independentCharts", com.google.gson.JsonParser.parseString("""{"psych":{"normal":[1]}}"""))
         }
-        projects.save(futureId, future); projects.setActive(futureId)
+        seedFuture(futureId, future); seedActive(futureId)
         val activeFile = File(app.filesDir, "projects/active.txt")
         val activeBefore = activeFile.readBytes()
         val futureDir = File(app.filesDir, "projects/$futureId")
@@ -278,7 +292,7 @@ class ModZipConfirmationTest {
         val projects = com.fnfmodmaker.project.ProjectStore(File(app.filesDir, "projects"), File(app.applicationInfo.dataDir))
         val futureId = projects.newId()
         val future = projects.load(vm.currentProjectId!!).config.deepCopy().apply { addProperty("chartSchemaVersion", 99) }
-        projects.save(futureId, future); projects.setActive(futureId)
+        seedFuture(futureId, future); seedActive(futureId)
         val file = File(app.filesDir, "projects/$futureId/project.json")
         val bytes = file.readBytes()
         store.clear(); scheduler.runCurrent(); store = ViewModelStore()
@@ -363,15 +377,15 @@ class ModZipConfirmationTest {
             addProperty("chartSchemaVersion", 2)
             add("independentCharts", com.google.gson.JsonParser.parseString("""{"psych":{"normal":{"notes":[1]}},"vslice":{"normal":{"notes":[2]}}}"""))
         }
-        projects.save(futureId, future)
+        seedFuture(futureId, future)
         vm.switchProject(futureId); await { !vm.busy }
         assertEquals(previous, vm.currentProjectId)
         assertEquals(before, vm.config)
         assertTrue(vm.projectMessage.orEmpty().contains("versión de charts"))
         assertEquals(previous, projects.activeId())
-        assertEquals(future, projects.load(futureId).config)
+        assertEquals(future, futureConfig(futureId))
         vm.forceAutoSave(); scheduler.runCurrent()
-        assertEquals(future, projects.load(futureId).config)
+        assertEquals(future, futureConfig(futureId))
     }
 
     @Test fun mixedZipWithoutPackDoesNotChangeOrPublishProject() {

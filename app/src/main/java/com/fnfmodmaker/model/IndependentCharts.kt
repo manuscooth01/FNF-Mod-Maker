@@ -108,6 +108,14 @@ data class IndependentSong(
  * round trips compatible with the validator, the migration and the portable flows,
  * which all read that flattened shape (never a `songs` wrapper).
  */
+/** Reject ambiguous redundant identities instead of rewriting a conflicting document. */
+internal fun requireMatchingIndependentSongId(songId: String, song: JsonObject) {
+    val id = song.get("id") ?: return // Older documents may omit the redundant field.
+    require(id.isJsonPrimitive && id.asJsonPrimitive.isString && id.asString == songId) {
+        "La identidad de la canción no coincide con su clave: $songId."
+    }
+}
+
 internal object IndependentChartCollectionFormat {
     internal class Factory : TypeAdapterFactory {
         override fun <T : Any?> create(gson: Gson, typeToken: TypeToken<T>): TypeAdapter<T>? {
@@ -136,10 +144,12 @@ internal object IndependentChartCollectionFormat {
                         when (val songId = input.nextName()) {
                             "legacyDocumentJson" -> legacy = input.nextString() ?: ""
                             else -> {
-                                val song = songAdapter.read(input)
+                                val node = JsonParser.parseReader(input)
+                                require(node.isJsonObject) { "Canción inválida: $songId." }
+                                requireMatchingIndependentSongId(songId, node.asJsonObject)
+                                val song = songAdapter.fromJsonTree(node)
                                     ?: throw IllegalArgumentException("Canción inválida: $songId.")
-                                // The id inside the song node is redundant; the map key is
-                                // authoritative and the model keeps both consistent.
+                                // An omitted redundant ID is compatible; a conflicting ID is not.
                                 songs[songId] = if (song.id == songId) song else song.copy(id = songId)
                             }
                         }

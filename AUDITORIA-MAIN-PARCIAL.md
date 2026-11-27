@@ -18,7 +18,7 @@
 
 ### P0-1 — ID v2 contradictorio se normaliza silenciosamente (defectuoso)
 - Ubicación: `model/IndependentCharts.kt:129–138` y `project/ChartSchema.kt:57–75`.
-- Actual: el adaptador Gson sustituye el `id` interior diferente por la clave; el parser de esquema construye el ID desde la clave sin comprobar el valor interior. Un documento con identidades contradictorias puede aceptarse con una identidad cambiada.
+- Actual: el adaptador Gson sustituye el `id` interior diferente por la clave; el parser de esquema construye el ID desde la clave sin comprobar el valor interior. Un documento con identidades contradictorias puede aceptarse con una identidad cambiada. `requireSupportedChartSchema` rechaza actualmente v2 en el flujo normal de apertura, de modo que el riesgo es latente en las rutas directas y futuras integraciones; no se afirma corrupción reproducida en el flujo normal.
 - Esperado: rechazar explícitamente una contradicción conservando el documento y permitiendo compatibilidad con entradas válidas. Causa: ambos lectores consideran autoritativa la clave sin validar el valor redundante. Afecta carga, validación y edición v2.
 - Reparación inicial: validar el ID redundante en ambas rutas, sin modificar documentos ni generar IDs. Pruebas: lectura válida, ID ausente si el esquema anterior lo admite, ID contradictorio y no string, documento original intacto y rechazo por ambas rutas. Rechazar no soluciona otras rutas v2.
 

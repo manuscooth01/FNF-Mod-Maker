@@ -2,6 +2,7 @@ package com.fnfmodmaker.project
 
 import com.fnfmodmaker.model.IndependentChartCollection
 import com.fnfmodmaker.model.IndependentSong
+import com.fnfmodmaker.model.requireMatchingIndependentSongId
 import com.fnfmodmaker.model.IndependentVariant
 import com.fnfmodmaker.model.SongConfig
 import com.fnfmodmaker.model.ChartDraft
@@ -57,6 +58,7 @@ internal fun parseIndependentCharts(root: JsonObject, gson: Gson): IndependentCh
     root.entrySet().filterNot { it.key == "legacyDocumentJson" }.forEach { (songId, songNode) ->
         require(songNode.isJsonObject) { "Canción inválida: $songId." }
         val songObj = songNode.asJsonObject
+        requireMatchingIndependentSongId(songId, songObj)
         // Song nodes carry only their identity and engine variants; any other key is a
         // malformed v2 payload and is rejected instead of being read as hidden data.
         require(songObj.keySet().all { it == "id" || it == "psych" || it == "vslice" }) {

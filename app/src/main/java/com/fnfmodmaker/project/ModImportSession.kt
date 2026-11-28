@@ -8,7 +8,7 @@ internal class ModImportSession(private val stage: File, private val source: Jso
     var publishedId: String? = null
         private set
 
-    data class Opened<T>(val id: String, val config: T, val projects: List<ProjectSummary>)
+    data class Opened<T>(val id: String, val config: T, val projects: List<ProjectSummary>, val record: ProjectRecord)
 
     // Caller serializes this entire operation, including applying Opened to the UI, with projectMutex.
     fun <T> publishAndOpen(
@@ -27,6 +27,6 @@ internal class ModImportSession(private val stage: File, private val source: Jso
         if (store.load(oldId).config != oldConfig) store.save(oldId, oldConfig)
         // This must be the final disk operation that can fail before applying the opened project.
         store.setActive(id)
-        return Opened(id, config, projects)
+        return Opened(id, config, projects, record)
     }
 }

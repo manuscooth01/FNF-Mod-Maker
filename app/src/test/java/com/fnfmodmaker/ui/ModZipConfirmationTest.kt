@@ -589,7 +589,17 @@ class ModZipConfirmationTest {
         assertEquals(current, vm.currentProjectId); assertEquals(session, vm.projectSession)
         assertEquals("Cambios pendientes", vm.config.modTitle); assertEquals(editor, vm.chartEditorState)
         assertEquals(before, listOf(primary, backup, temp).map { it.readBytes().toList() })
-        assertEquals("Cambios pendientes", projects.load(current).config.get("modTitle").asString)
+        val saved = projects.load(current)
+        assertEquals("Cambios pendientes", saved.config.get("modTitle").asString)
+        // The old session must keep the version from that successful save even though
+        // installing the new active pointer failed. A further edit must save normally.
+        vm.setModTitle("Guardado posterior")
+        vm.forceAutoSave(); await { vm.projectSaveStatus != "Guardando…" }
+        assertEquals("Guardado en este dispositivo", vm.projectSaveStatus)
+        val after = projects.load(current)
+        assertEquals("Guardado posterior", after.config.get("modTitle").asString)
+        assertNotEquals(saved.version, after.version)
+        assertEquals(current, projects.activeId())
         assertTrue(root.listFiles().orEmpty().none { it.name.startsWith("active-selection-") })
     }
 

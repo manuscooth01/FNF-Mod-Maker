@@ -63,6 +63,9 @@ import com.fnfmodmaker.project.ProjectConfigValidator
 import com.fnfmodmaker.project.migrateCharacterLibrary
 import com.fnfmodmaker.project.requireSupportedChartSchema
 import com.fnfmodmaker.project.ProjectStore
+import com.fnfmodmaker.project.ProjectRecord
+import com.fnfmodmaker.project.ProjectVersion
+import com.fnfmodmaker.project.ProjectVersionConflict
 import com.fnfmodmaker.project.ProjectSummary
 import com.fnfmodmaker.project.PortableProject
 import com.fnfmodmaker.project.PreparedPortable
@@ -1400,7 +1403,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                         val opened = withContext(Dispatchers.IO) {
                             session.publishAndOpen(projectStore, oldId, projectSnapshot(oldId, oldConfig), ::validatePortableConfig, ::parseConfig)
                         }
-                        applyOpenedProject(opened.id, opened.config, opened.projects, emptyList())
+                        applyOpenedProject(opened.record, opened.config, opened.projects, emptyList())
                         preparedModZip = null; modImportSession = null; modZipReview = null
                         portableMessage = "Proyecto importado como copia independiente."
                     }
@@ -1867,6 +1870,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // A session token distinguishes reopening the same id from the previous session.
     internal var projectSession = 0L
         private set
+    // Owned by the current session; all save transitions are serialized by projectMutex.
+    private data class ProjectPersistenceState(
+        val id: String, val session: Long, val version: ProjectVersion,
+        val document: com.google.gson.JsonObject, val modelBaseline: com.google.gson.JsonObject
+    )
+    private var projectPersistence: ProjectPersistenceState? = null
+    private var conflictedSession: Long? = null
     internal var portableImportSummary by mutableStateOf<PortableSummary?>(null)
         private set
     var portableExportName by mutableStateOf<String?>(null)
@@ -1906,15 +1916,27 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             ?: error("El proyecto está vacío.")
     }
 
-    /** Merge the loaded document with model edits; unknown fields remain untouched. */
-    private fun projectSnapshot(id: String, value: ModConfig): com.google.gson.JsonObject {
-        val raw = migrateCharacterLibrary(projectStore.load(id).config)
-        val baseline = configJson(parseConfig(raw))
-        return com.fnfmodmaker.project.mergeProjectSnapshot(raw, baseline, configJson(value))
+    private fun persistenceFor(record: ProjectRecord, session: Long): ProjectPersistenceState {
+        val raw = migrateCharacterLibrary(record.config.deepCopy())
+        return ProjectPersistenceState(record.id, session,
+            requireNotNull(record.version) { "El proyecto requiere recuperación manual antes de guardar." },
+            raw, configJson(parseConfig(raw)))
     }
-    private fun saveProjectSnapshot(id: String, value: ModConfig): com.google.gson.JsonObject {
+    private fun projectSnapshot(id: String, value: ModConfig): com.google.gson.JsonObject {
+        val state = requireNotNull(projectPersistence) { "La sesión de persistencia no está disponible." }
+        check(state.id == id && state.session == projectSession) { "La sesión del proyecto cambió." }
+        return com.fnfmodmaker.project.mergeProjectSnapshot(state.document, state.modelBaseline, configJson(value))
+    }
+    // Called under projectMutex. Do not adopt a freshly read version after a conflict.
+    private suspend fun saveProjectSnapshot(id: String, value: ModConfig): com.google.gson.JsonObject {
+        val state = requireNotNull(projectPersistence) { "La sesión de persistencia no está disponible." }
+        check(state.id == id && state.session == projectSession && currentProjectId == id) { "La sesión del proyecto cambió." }
         val result = projectSnapshot(id, value)
-        if (projectStore.load(id).config != result) projectStore.save(id, result)
+        val version = withContext(Dispatchers.IO) { projectStore.save(id, result, state.version) }
+        // A successful older save advances its baseline even when a newer local edit exists.
+        if (projectPersistence === state && currentProjectId == id && projectSession == state.session) {
+            projectPersistence = state.copy(version = version, document = result.deepCopy(), modelBaseline = configJson(value))
+        }
         return result
     }
 
@@ -1933,7 +1955,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 if (id != null) {
                     val record = projectStore.load(id)
                     val opened = parseConfig(record.config)
-                    Triple(record.id to opened, projectStore.list(), emptyList<String>())
+                    Triple(record to opened, projectStore.list(), emptyList<String>())
                 } else {
                     val oldCache = File(app.cacheDir, "autosave_modconfig.json")
                     val source = if (autoSaveFile.exists()) autoSaveFile else oldCache
@@ -1942,16 +1964,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     parseConfig(old)
                     val newId = projectStore.newId()
                     val copied = projectStore.copyAssets(old, newId)
-                    projectStore.save(newId, copied.config)
+                    projectStore.create(newId, copied.config)
+                    val record = projectStore.load(newId)
                     projectStore.setActive(newId)
-                    Triple(newId to parseConfig(projectStore.load(newId).config), projectStore.list(), copied.missing)
+                    Triple(record to parseConfig(record.config), projectStore.list(), copied.missing)
                 }
             } }
             result.onSuccess { (record, list, missing) ->
                 chartRepository.setConfig(record.second)
                 config = record.second
-                currentProjectId = record.first; projects = list; projectSaveStatus = "Guardado en este dispositivo"
+                currentProjectId = record.first.id; projects = list; projectSaveStatus = "Guardado en este dispositivo"
                 startProjectAutoSave()
+                projectPersistence = persistenceFor(record.first, projectSession); conflictedSession = null
                 modIdEdited = config.modId.isNotBlank() && config.modId != slugify(config.modTitle)
                 projectMessage = if (missing.isEmpty()) null else "No se encontraron ${missing.size} recursos del borrador anterior: ${missing.joinToString()}. Vuelve a elegirlos."
             }.onFailure {
@@ -1978,13 +2002,15 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val snapshot = config
         val revision = projectRevision
         val session = projectSession
+        if (conflictedSession == session) return
         projectSaveStatus = "Guardando…"
         viewModelScope.launch {
             val result = projectMutex.withLock {
                 if (currentProjectId != id || projectRevision != revision || projectSession != session) return@launch
-                withContext(Dispatchers.IO) { runCatching {
-                    saveProjectSnapshot(id, snapshot); projectStore.list()
-                } }
+                runCatching {
+                    saveProjectSnapshot(id, snapshot)
+                    withContext(Dispatchers.IO) { projectStore.list() }
+                }
             }
             result.onSuccess { list ->
                 if (currentProjectId == id && projectRevision == revision && projectSession == session) {
@@ -1993,9 +2019,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     if (projectMessage?.startsWith("No se pudo guardar el proyecto:") == true) projectMessage = null
                 }
             }.onFailure {
-                if (currentProjectId == id && projectRevision == revision && projectSession == session) {
-                    projectSaveStatus = "Error al guardar"
-                    projectMessage = "No se pudo guardar el proyecto: ${it.message}. Comprueba el espacio e intenta de nuevo."
+                if (currentProjectId == id && projectSession == session) {
+                    if (it is ProjectVersionConflict) conflictedSession = session
+                    if (projectRevision == revision || it is ProjectVersionConflict) {
+                        projectSaveStatus = "Error al guardar"
+                        projectMessage = "No se pudo guardar el proyecto: ${it.message}. Comprueba el espacio e intenta de nuevo."
+                    }
                 }
             }
         }
@@ -2161,11 +2190,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 withContext(NonCancellable) {
                     projectMutex.withLock {
-                        val (project, list, missing) = withContext(Dispatchers.IO) {
-                            // Reject a target before parsing or snapshotting the current session.
+                        val duplicateSnapshot = if (duplicate) oldId?.let { projectSnapshot(it, oldConfig) } else null
+                        val (id, missing) = withContext(Dispatchers.IO) {
                             if (target != null) projectStore.load(target)
-                            // Duplication needs a read-only snapshot to construct the destination.
-                            val duplicateSnapshot = if (duplicate) oldId?.let { projectSnapshot(it, oldConfig) } else null
                             val id = target ?: projectStore.newId()
                             val missing = if (target == null) {
                                 val source = if (duplicate) requireNotNull(duplicateSnapshot).deepCopy().also {
@@ -2173,42 +2200,40 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                                     it.addProperty("modTitle", "$name (copia)")
                                 } else configJson(ModConfig())
                                 val copied = projectStore.copyAssets(source, id,
-                                    // Al duplicar, conserva la jerarquía de la biblioteca del proyecto origen.
                                     if (duplicate && oldId != null) projectStore.assetsLocation(oldId) else null)
                                 if (duplicate && copied.missing.isNotEmpty()) error("No se puede duplicar: faltan ${copied.missing.joinToString()}. Vuelve a elegirlos.")
-                                projectStore.save(id, copied.config)
+                                projectStore.create(id, copied.config)
                                 copied.missing
                             } else emptyList()
-                            projectStore.prepareActive(id).use { selection ->
-                                val loaded = projectStore.load(id)
-                                val validated = parseConfig(loaded.config)
-                                val oldSnapshot = oldId?.let { projectSnapshot(it, oldConfig) }
-                                val projects = projectStore.list()
-                                if (oldId != null && oldSnapshot != null && projectStore.load(oldId).config != oldSnapshot)
-                                    projectStore.save(oldId, oldSnapshot)
-                                projectStore.installPreparedActive(selection)
-                                Triple(loaded.id to validated, projects, missing)
-                            }
+                            id to missing
                         }
-                        applyOpenedProject(project.first, project.second, list, missing)
+                        val selection = withContext(Dispatchers.IO) { projectStore.prepareActive(id) }
+                        try {
+                            val (record, validated, list) = withContext(Dispatchers.IO) {
+                                val loaded = projectStore.load(id)
+                                Triple(loaded, parseConfig(loaded.config), projectStore.list())
+                            }
+                            if (oldId != null) saveProjectSnapshot(oldId, oldConfig)
+                            withContext(Dispatchers.IO) { projectStore.installPreparedActive(selection) }
+                            applyOpenedProject(record, validated, list, missing)
+                        } finally { selection.close() }
                     }
                 }
             } catch (e: Exception) {
+                if (e is ProjectVersionConflict) conflictedSession = projectSession
                 projectMessage = "No se pudo abrir el proyecto: ${e.message}. El proyecto actual no se ha reemplazado."
-            } finally {
-                busy = false
-            }
+            } finally { busy = false }
         }
     }
 
-    private fun applyOpenedProject(id: String, opened: ModConfig, list: List<ProjectSummary>, missing: List<String>) {
-        // Playback cleanup is best effort; it must not leave active.txt and the UI out of sync.
+    private fun applyOpenedProject(record: ProjectRecord, opened: ModConfig, list: List<ProjectSummary>, missing: List<String>) {
         runCatching { closeLiveChart() }; runCatching { releaseMediaPlayer() }
         lastAiApplied = null; lastAiProjectId = null
         pendingAutoSaveJob?.cancel()
         chartRepository.setConfig(opened)
-        currentProjectId = id; config = opened; projects = list
+        currentProjectId = record.id; config = opened; projects = list
         startProjectAutoSave()
+        projectPersistence = persistenceFor(record, projectSession); conflictedSession = null
         resetCharacterUndoStacks()
         projectRevision++; projectSaveStatus = "Guardado en este dispositivo"
         activeSongIndex = 0; activeChartSongIndex = 0; activeChartDifficulty = "normal"; activeVariationIndex = null
@@ -2463,7 +2488,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun scheduleAutoSave() {
         projectRevision++
-        projectSaveStatus = "Cambios pendientes"
+        if (conflictedSession != projectSession) projectSaveStatus = "Cambios pendientes"
         savedName = null
         builtFiles = emptyList()
         pendingAutoSaveJob?.cancel()

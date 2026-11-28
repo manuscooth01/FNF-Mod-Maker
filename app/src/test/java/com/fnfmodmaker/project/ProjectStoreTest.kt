@@ -140,8 +140,14 @@ class ProjectStoreTest {
         val config = com.google.gson.Gson().toJsonTree(com.fnfmodmaker.model.ModConfig()).asJsonObject
         config.addProperty("chartSchemaVersion", 1)
         store.save(id, config); store.save(id, config)
+        val staleVersion = requireNotNull(store.load(id).version)
         val primary = File(root, "$id/project.json"); assertTrue(primary.delete()); val before = snapshot(root)
-        assertEquals(config, store.load(id).config); assertEquals(before, snapshot(root)); assertFalse(primary.exists())
+        val backupRecord = store.load(id)
+        assertEquals(config, backupRecord.config); assertNull(backupRecord.version)
+        assertEquals(before, snapshot(root)); assertFalse(primary.exists())
+        // A version from before the primary disappeared cannot authorize a backup-only save.
+        assertThrows(ProjectVersionConflict::class.java) { store.save(id, config, staleVersion) }
+        assertEquals(before, snapshot(root))
         assertThrows(IllegalStateException::class.java) { store.save(id, config) }
         assertThrows(IllegalStateException::class.java) { store.setActive(id) }
         assertEquals(before, snapshot(root))

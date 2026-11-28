@@ -128,10 +128,9 @@ internal class ProjectStore(
                 .decode(java.nio.ByteBuffer.wrap(bytes.toByteArray())).toString()
         } catch (e: Exception) { throw IllegalStateException("Identificador activo inválido.", e) }
         check(idPattern.matches(text)) { "Identificador activo inválido." }
-        // Never resolve an absent project through the project backup.
-        val candidates = checkCandidates(text)
-        check(candidates[0].kind == CandidateKind.V1) { "El proyecto activo no existe o requiere recuperación manual." }
-        load(text)
+        // The record and the presence of a primary are checked under the same project lock.
+        // A backup-only record has no version and cannot be selected as the active project.
+        check(load(text).version != null) { "El proyecto activo no existe o requiere recuperación manual." }
         return text
     }
     private fun installActive(source: File, target: File) {
@@ -193,7 +192,7 @@ internal class ProjectStore(
     }
     private fun <T> withValidatedActiveTarget(id: String, action: () -> T): T = withProjectLock(id) {
         // Do not create a project lock artifact for an incompatible target.
-        load(id)
+        checkCandidates(id)
         withFileLock(id) {
             loadLocked(id)
             check(classify(id, File(dir(id), "project.json")).kind == CandidateKind.V1) {
@@ -327,8 +326,6 @@ internal class ProjectStore(
     // Lock order: project JVM monitor -> per-project advisory file lock -> active lock.
     // Callers already holding the per-project file lock must use loadLocked, not load.
     fun load(id: String): ProjectRecord = withProjectLock(id) {
-        // Reject incompatible/unsafe candidates without creating a lock for the target.
-        checkCandidates(id)
         withFileLock(id) { loadLocked(id) }
     }
     private fun loadLocked(id: String): ProjectRecord {

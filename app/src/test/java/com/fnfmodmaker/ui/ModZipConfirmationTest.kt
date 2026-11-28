@@ -339,6 +339,21 @@ class ModZipConfirmationTest {
         assertEquals("Edición externa", other.load(id).config.get("modTitle").asString)
     }
 
+    @Test fun staleSessionCannotExportPortablePackageOrOverwriteExternalChanges() {
+        val root = File(app.filesDir, "projects")
+        val other = com.fnfmodmaker.project.ProjectStore(root, File(app.applicationInfo.dataDir))
+        val id = vm.currentProjectId!!; val original = other.load(id)
+        vm.setModTitle("Pendiente local")
+        val external = original.config.deepCopy().apply { addProperty("modTitle", "Cambio externo") }
+        other.save(id, external, requireNotNull(original.version))
+        val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")
+        val before = listOf(primary, backup).map { it.readBytes().toList() }
+        vm.preparePortableExport(id); await { !vm.busy }
+        assertTrue(vm.portableMessage.orEmpty().contains("conflicto", ignoreCase = true))
+        assertNull(vm.portableExportName); assertEquals("Pendiente local", vm.config.modTitle)
+        assertEquals(before, listOf(primary, backup).map { it.readBytes().toList() })
+    }
+
     @Test fun staleSnapshotMustBlockProjectSwitchAndPreserveSession() {
         val root = File(app.filesDir, "projects")
         val other = com.fnfmodmaker.project.ProjectStore(root, File(app.applicationInfo.dataDir))

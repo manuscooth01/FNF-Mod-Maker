@@ -142,11 +142,11 @@ class PsychImportCycleTest {
         val audio = File(prepared.config.firstSong.instrumental!!.path)
         val bytes = audio.readBytes(); assertTrue(audio.delete())
         assertThrows(IllegalArgumentException::class.java) {
-            session.publishAndOpen(store, active, old, {}) { gson.fromJson(it, ModConfig::class.java) }
+            session.publishAndOpen(store, active, old, requireNotNull(store.load(active).version), {}, {}) { gson.fromJson(it, ModConfig::class.java) }
         }
         assertEquals(active, store.activeId()); assertEquals("Current", store.load(active).config.get("modTitle").asString)
         assertTrue(stage.isDirectory); audio.writeBytes(bytes)
-        val opened = session.publishAndOpen(store, active, old, {}) { gson.fromJson(it, ModConfig::class.java) }
+        val opened = session.publishAndOpen(store, active, old, requireNotNull(store.load(active).version), {}, {}) { gson.fromJson(it, ModConfig::class.java) }
         assertEquals(opened.id, store.activeId())
         assertEquals(TargetEngine.PSYCH, opened.config.engine)
         assertEquals(2, opened.config.getChart("test", "normal")!!.notes.size)

@@ -101,7 +101,7 @@ class VSliceImportCycleTest {
         val active = store.newId(); store.save(active, old); store.setActive(active)
         val prepared = prepare(zip(), store)
         val session = ModImportSession(prepared.stage, productionJson(prepared.config))
-        val opened = session.publishAndOpen(store, active, old, productionValidator::validate) { gson.fromJson(it, ModConfig::class.java) }
+        val opened = session.publishAndOpen(store, active, old, requireNotNull(store.load(active).version), {}, productionValidator::validate) { gson.fromJson(it, ModConfig::class.java) }
         assertEquals(opened.id, store.activeId())
         assertEquals(TargetEngine.VSLICE, opened.config.engine)
         assertEquals("Test", opened.config.firstSong.songName)
@@ -114,6 +114,25 @@ class VSliceImportCycleTest {
         assertEquals(old, store.load(active).config)
     }
 
+    @Test fun staleSessionDuringImportKeepsPublishedProjectAndActivePointer() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root)
+        val old = productionJson(ModConfig(modTitle = "Anterior"))
+        val active = store.newId(); val expected = store.create(active, old); store.setActive(active)
+        val prepared = prepare(zip(), store)
+        val session = ModImportSession(prepared.stage, productionJson(prepared.config))
+        val changed = old.deepCopy().apply { addProperty("modTitle", "Cambio externo") }
+        store.save(active, changed, expected)
+        val primary = File(root, "$active/project.json"); val backup = File(root, "$active/project.json.bak")
+        val tempFile = File(root, "$active/project.json.tmp").apply { writeText("interrupted") }
+        val before = listOf(primary, backup, tempFile, File(root, "active.txt")).map { it.readBytes().toList() }
+        assertThrows(com.fnfmodmaker.project.ProjectVersionConflict::class.java) {
+            session.publishAndOpen(store, active, old, expected, { error("unexpected save") }, productionValidator::validate) { gson.fromJson(it, ModConfig::class.java) }
+        }
+        assertNotNull(session.publishedId)
+        assertEquals(before, listOf(primary, backup, tempFile, File(root, "active.txt")).map { it.readBytes().toList() })
+        assertTrue(File(root, session.publishedId!!).isDirectory)
+    }
+
     @Test fun confirmationFailuresKeepPreviousProjectAndRetryWithoutLosingOriginals() {
         val store = ProjectStore(File(temp.root, "projects"), temp.root)
         val old = productionJson(ModConfig(modTitle = "Anterior"))
@@ -122,17 +141,17 @@ class VSliceImportCycleTest {
         val session = ModImportSession(prepared.stage, productionJson(prepared.config))
         fun parse(value: com.google.gson.JsonObject) = gson.fromJson(value, ModConfig::class.java)
         assertThrows(IllegalStateException::class.java) {
-            session.publishAndOpen(store, active, old, { error("publication failure") }, ::parse)
+            session.publishAndOpen(store, active, old, requireNotNull(store.load(active).version), {}, { error("publication failure") }, ::parse)
         }
         assertNull(session.publishedId); assertTrue(prepared.stage.isDirectory)
         assertEquals(active, store.activeId()); assertEquals(old, store.load(active).config)
         assertThrows(IllegalStateException::class.java) {
-            session.publishAndOpen(store, active, old, productionValidator::validate) { error("opening failure") }
+            session.publishAndOpen(store, active, old, requireNotNull(store.load(active).version), {}, productionValidator::validate) { error("opening failure") }
         }
         val published = session.publishedId!!
         assertFalse(prepared.stage.exists()); assertEquals(active, store.activeId())
         assertEquals(old, store.load(active).config)
-        val opened = session.publishAndOpen(store, active, old, productionValidator::validate, ::parse)
+        val opened = session.publishAndOpen(store, active, old, requireNotNull(store.load(active).version), {}, productionValidator::validate, ::parse)
         assertEquals(published, opened.id); assertEquals(published, store.activeId())
         assertEquals(2, store.list().size)
         val script = opened.config.importedModResources.single { it.originalPath == "scripts/a.hx" }

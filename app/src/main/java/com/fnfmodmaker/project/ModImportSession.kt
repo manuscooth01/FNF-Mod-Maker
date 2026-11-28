@@ -15,6 +15,8 @@ internal class ModImportSession(private val stage: File, private val source: Jso
         store: ProjectStore,
         oldId: String,
         oldConfig: JsonObject,
+        expectedVersion: ProjectVersion,
+        onOldSaved: (ProjectVersion) -> Unit,
         validate: (JsonObject) -> Unit,
         parse: (JsonObject) -> T
     ): Opened<T> {
@@ -23,10 +25,13 @@ internal class ModImportSession(private val stage: File, private val source: Jso
         validate(record.config)
         val config = parse(record.config)
         val projects = store.list()
-        // Do not alter the old snapshot if validation or opening the import fails.
-        if (store.load(oldId).config != oldConfig) store.save(oldId, oldConfig)
-        // This must be the final disk operation that can fail before applying the opened project.
-        store.setActive(id)
+        store.prepareActive(id).use { selection ->
+            // Check even a no-op against the version held by the old session.
+            val version = store.save(oldId, oldConfig, expectedVersion)
+            // The old session must retain this version even if installation fails.
+            onOldSaved(version)
+            store.installPreparedActive(selection)
+        }
         return Opened(id, config, projects, record)
     }
 }

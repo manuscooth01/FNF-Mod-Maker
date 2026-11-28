@@ -1400,8 +1400,15 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 // is cancelled. Never leave active.txt pointing at a project the UI hasn't adopted.
                 withContext(NonCancellable) {
                     projectMutex.withLock {
+                        val previous = requireNotNull(projectPersistence)
+                        check(previous.id == oldId && previous.session == projectSession) { "La sesión del proyecto cambió." }
+                        val snapshot = projectSnapshot(oldId, oldConfig)
                         val opened = withContext(Dispatchers.IO) {
-                            session.publishAndOpen(projectStore, oldId, projectSnapshot(oldId, oldConfig), ::validatePortableConfig, ::parseConfig)
+                            session.publishAndOpen(projectStore, oldId, snapshot, previous.version, { version ->
+                                // projectMutex is held, and this happens before installing active.txt.
+                                if (projectPersistence === previous && currentProjectId == oldId && projectSession == previous.session)
+                                    projectPersistence = previous.copy(version = version, document = snapshot.deepCopy(), modelBaseline = configJson(oldConfig))
+                            }, ::validatePortableConfig, ::parseConfig)
                         }
                         applyOpenedProject(opened.record, opened.config, opened.projects, emptyList())
                         preparedModZip = null; modImportSession = null; modZipReview = null
@@ -1409,6 +1416,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
             } catch (e: Exception) {
+                if (e is ProjectVersionConflict) conflictedSession = projectSession
                 val retained = if (session.publishedId == null) "La preparación se conserva para volver a intentarlo."
                     else "El proyecto importado ya está guardado; puedes reintentar abrirlo o cancelar y abrirlo desde la lista."
                 modZipImportError = "No se pudo importar y abrir el mod: ${e.message ?: "error desconocido"}. El proyecto anterior sigue activo. $retained"
@@ -2046,26 +2054,31 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         busy = true; portableMessage = null; portableProgress = "Preparando proyecto…"
         val token = ++portableOperation
         viewModelScope.launch {
-            val result = projectMutex.withLock { withContext(Dispatchers.IO) { runCatching {
-                // Validate and build the package before committing any pending active edits.
-                // A failed export must not rewrite an existing project or active.txt.
+            val result = projectMutex.withLock { runCatching {
                 val pending = active?.let { projectSnapshot(it, snapshot) }
-                val record = projectStore.load(id)
-                val target = if (id == active) requireNotNull(pending) else record.config
-                val validated = portableConfig(target)
-                val title = target.get("modTitle")?.asString.orEmpty()
-                check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear el archivo temporal." }
-                val output = File.createTempFile("export_", ".fnfproject", portableCache)
+                val packaged = withContext(Dispatchers.IO) {
+                    // Prepare the package before touching the active project.
+                    val target = if (id == active) requireNotNull(pending) else projectStore.load(id).config
+                    val validated = portableConfig(target)
+                    val title = target.get("modTitle")?.asString.orEmpty()
+                    check(portableCache.isDirectory || portableCache.mkdirs()) { "No se pudo crear el archivo temporal." }
+                    val output = File.createTempFile("export_", ".fnfproject", portableCache)
+                    try {
+                        portable.export(validated, projectStore.assetsLocation(id), output) { reportPortableProgress(token, it) }
+                        Triple(output, slugify(title).ifBlank { "proyecto" } + ".fnfproject", output.length())
+                    } catch (e: Exception) { output.delete(); throw e }
+                }
                 try {
-                    portable.export(validated, projectStore.assetsLocation(id), output) { reportPortableProgress(token, it) }
-                    val result = Triple(output, slugify(title).ifBlank { "proyecto" } + ".fnfproject", output.length())
-                    if (active != null && pending != null && projectStore.load(active).config != pending) projectStore.save(active, pending)
-                    result
-                } catch (e: Exception) { output.delete(); throw e }
-            } } }
+                    if (active != null) saveProjectSnapshot(active, snapshot)
+                    packaged
+                } catch (e: Exception) { packaged.first.delete(); throw e }
+            } }
             result.onSuccess { (file, name, size) ->
                 preparedExport?.delete(); preparedExport = file; portableExportName = name; portableExportSize = size
-            }.onFailure { portableMessage = "No se pudo exportar: ${it.message}. Revisa los recursos y el espacio disponible." }
+            }.onFailure {
+                if (it is ProjectVersionConflict) conflictedSession = projectSession
+                portableMessage = "No se pudo exportar: ${it.message}. Revisa los recursos y el espacio disponible."
+            }
             portableProgress = null; busy = false
         }
     }

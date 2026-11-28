@@ -14,6 +14,37 @@ class ProjectStoreTest {
         .filter { it.isFile }.associate { it.relativeTo(root).path to it.readBytes().toList() }
     private fun document(id: String, config: String) = """{"version":1,"id":"$id","updatedAt":1,"config":$config}"""
 
+    @Test fun versionedCreateAndConsecutiveSavesUseExactBytesAndNoopDoesNotWrite() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
+        val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"one","unknown":{"keep":7}}""").asJsonObject
+        val version1 = store.create(id, config); val first = store.load(id)
+        assertEquals(version1, first.version); assertEquals(config, first.config)
+        val primary = File(root, "$id/project.json"); val backup = File(root, "$id/project.json.bak")
+        val firstBytes = primary.readBytes(); assertEquals(version1, store.save(id, config, version1))
+        assertArrayEquals(firstBytes, primary.readBytes()); assertFalse(backup.exists())
+        val next = first.config.deepCopy().apply { addProperty("modTitle", "two") }
+        val version2 = store.save(id, next, version1); assertNotEquals(version1, version2)
+        val third = next.deepCopy().apply { addProperty("modTitle", "three") }
+        val version3 = store.save(id, third, version2); assertNotEquals(version2, version3)
+        val result = store.load(id); assertEquals(version3, result.version)
+        assertEquals("three", result.config.get("modTitle").asString)
+        assertEquals(7, result.config.getAsJsonObject("unknown").get("keep").asInt)
+        assertThrows(IllegalStateException::class.java) { store.create(id, config) }
+    }
+
+    @Test fun staleVersionPreservesAllCandidatesIncludingInterruptedTemporary() {
+        val root = File(temp.root, "projects"); val store = ProjectStore(root, temp.root); val id = store.newId()
+        val config = JsonParser.parseString("""{"chartSchemaVersion":1,"modTitle":"one"}""").asJsonObject
+        val old = store.create(id, config)
+        val next = config.deepCopy().apply { addProperty("modTitle", "newer") }; val recent = store.save(id, next, old)
+        assertNotEquals(old, recent)
+        val tmp = File(root, "$id/project.json.tmp").apply { writeText("interrupted evidence") }
+        val before = snapshot(root)
+        val error = assertThrows(ProjectVersionConflict::class.java) { store.save(id, config, old) }
+        assertTrue(error.message.orEmpty().contains("Conflicto")); assertEquals(before, snapshot(root))
+        assertEquals("interrupted evidence", tmp.readText())
+    }
+
     @Test fun v2CandidatesAreReadOnlyForListingLoadingSavingAndActivation() {
         val root = File(temp.root, "projects")
         val store = ProjectStore(root, temp.root)

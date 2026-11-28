@@ -38,9 +38,11 @@ object StaleSnapshotWorker {
         val store = ProjectStore(root, root.parentFile,
             beforeFileLock = { name -> if (saving && name == id) { println("ATTEMPT"); System.out.flush() } },
             afterInspection = { if (saving) { println("LOCKED"); System.out.flush(); check(readLine() == "CONTINUE") } })
-        val snapshot = store.load(id).config.deepCopy().apply { addProperty("modTitle", title) }
+        val loaded = store.load(id)
+        val expectedVersion = requireNotNull(loaded.version)
+        val snapshot = loaded.config.deepCopy().apply { addProperty("modTitle", title) }
         println("READY"); System.out.flush(); check(readLine() == "START"); saving = true
-        try { store.save(id, snapshot); println("RESULT:OK") }
+        try { store.save(id, snapshot, expectedVersion); println("RESULT:OK") }
         catch (e: Throwable) { println("RESULT:FAIL:${e.javaClass.simpleName}:${e.message}") }
         System.out.flush()
     }

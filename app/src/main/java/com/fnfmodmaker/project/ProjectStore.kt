@@ -6,7 +6,9 @@ import java.io.File
 import java.util.UUID
 
 /** Internal projects only. ZIP mods are deliberately not handled by this class. */
-internal data class ProjectRecord(val id: String, val config: JsonObject, val updatedAt: Long)
+internal data class ProjectVersion(val sha256: String)
+internal class ProjectVersionConflict : IllegalStateException("Conflicto: el proyecto cambió en otra sesión; no se guardó el snapshot.")
+internal data class ProjectRecord(val id: String, val config: JsonObject, val updatedAt: Long, val version: ProjectVersion? = null)
 internal data class ProjectSummary(val id: String, val title: String, val updatedAt: Long, val problem: String? = null)
 internal data class CopiedAssets(val config: JsonObject, val missing: List<String>)
 
@@ -193,7 +195,7 @@ internal class ProjectStore(
         // Do not create a project lock artifact for an incompatible target.
         load(id)
         withFileLock(id) {
-            load(id)
+            loadLocked(id)
             check(classify(id, File(dir(id), "project.json")).kind == CandidateKind.V1) {
                 "La copia requiere recuperación manual antes de activar el proyecto."
             }
@@ -319,25 +321,82 @@ internal class ProjectStore(
         require(doc.get("id")?.asString == id) { "El proyecto no coincide con su carpeta." }
         ProjectRecord(id, doc.getAsJsonObject("config") ?: error("Falta la configuración."), doc.get("updatedAt")?.asLong ?: 0L)
     }
+    private fun sha256(bytes: ByteArray): ProjectVersion = ProjectVersion(
+        java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) })
+
+    // Lock order: project JVM monitor -> per-project advisory file lock -> active lock.
+    // Callers already holding the per-project file lock must use loadLocked, not load.
     fun load(id: String): ProjectRecord = withProjectLock(id) {
+        // Reject incompatible/unsafe candidates without creating a lock for the target.
+        checkCandidates(id)
+        withFileLock(id) { loadLocked(id) }
+    }
+    private fun loadLocked(id: String): ProjectRecord {
         val before = checkCandidates(id)
         afterInspection?.invoke()
-        if (before[0].kind == CandidateKind.ABSENT && before[1].kind == CandidateKind.V1) {
-            // Missing primary: verify the backup as a complete legacy project. Reading it
-            // without recovery avoids overwriting or creating any project files.
-            val backup = readRecord(id, false)
+        val primary = before[0]
+        val backup = before[1]
+        val chosen = if (primary.kind == CandidateKind.ABSENT && backup.kind == CandidateKind.V1) backup else primary
+        check(chosen.kind == CandidateKind.V1) { "El proyecto no existe o requiere recuperación manual." }
+        // Parse the identical bytes previously classified, not a second file read.
+        val bytes = chosen.bytes.toByteArray()
+        val doc = JsonParser.parseString(bytes.toString(Charsets.UTF_8)).asJsonObject
+        val config = doc.getAsJsonObject("config") ?: error("Falta la configuración.")
+        requireReadableProjectSchema(config)
+        if (chosen === backup) {
             val validatorGson = com.google.gson.GsonBuilder().registerTypeAdapter(android.net.Uri::class.java,
                 object : com.google.gson.TypeAdapter<android.net.Uri>() {
                     override fun write(out: com.google.gson.stream.JsonWriter, value: android.net.Uri?) { out.nullValue() }
                     override fun read(input: com.google.gson.stream.JsonReader): android.net.Uri? { input.skipValue(); return null }
                 }.nullSafe()).create()
-            try { ProjectConfigValidator(validatorGson).validate(backup.config) }
+            try { ProjectConfigValidator(validatorGson).validate(config) }
             catch (e: Exception) { throw IllegalStateException("La copia requiere recuperación manual; se conservan los archivos.", e) }
-            stable(id, before)
-            return@withProjectLock backup
         }
         stable(id, before)
-        readRecord(id, false).also { requireReadableProjectSchema(it.config) }
+        return ProjectRecord(id, config, doc.get("updatedAt")?.asLong ?: 0L,
+            if (chosen === primary) sha256(bytes) else null)
+    }
+    /** Explicit create: never overwrite an existing candidate or recover a backup. */
+    fun create(id: String, config: JsonObject): ProjectVersion = withProjectLock(id) {
+        requireReadableProjectSchema(config)
+        withFileLock(id) {
+            val before = checkCandidates(id)
+            check(before.all { it.kind == CandidateKind.ABSENT }) { "El proyecto ya existe; no se creó." }
+            stable(id, before)
+            val wrapper = JsonObject().apply {
+                addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
+            }
+            val text = wrapper.toString()
+            projectFile(id).write(text)
+            val written = File(dir(id), "project.json").readBytes()
+            check(written.contentEquals(text.toByteArray(Charsets.UTF_8))) { "No se pudo verificar el proyecto creado." }
+            sha256(written)
+        }
+    }
+    /** Compare the caller's original exact-byte version before touching any candidate. */
+    fun save(id: String, config: JsonObject, expectedVersion: ProjectVersion): ProjectVersion = withProjectLock(id) {
+        requireReadableProjectSchema(config)
+        withFileLock(id) {
+            val raw = candidates(id)
+            afterInspection?.invoke()
+            val primary = raw[0]
+            if (primary.kind != CandidateKind.V1 || sha256(primary.bytes.toByteArray()) != expectedVersion)
+                throw ProjectVersionConflict()
+            val before = checkCandidates(id)
+            check(before == raw) { "El proyecto cambió durante la inspección; recuperación manual necesaria." }
+            stable(id, before)
+            val doc = JsonParser.parseString(primary.bytes.toByteArray().toString(Charsets.UTF_8)).asJsonObject
+            if (doc.getAsJsonObject("config") == config) return@withFileLock expectedVersion
+            beforeSaveWrite?.invoke(id)
+            val wrapper = JsonObject().apply {
+                addProperty("version", 1); addProperty("id", id); addProperty("updatedAt", System.currentTimeMillis()); add("config", config)
+            }
+            val text = wrapper.toString()
+            projectFile(id).write(text)
+            val written = File(dir(id), "project.json").readBytes()
+            check(written.contentEquals(text.toByteArray(Charsets.UTF_8))) { "No se pudo verificar el proyecto guardado." }
+            sha256(written)
+        }
     }
     /** Explicitly requested by the user. Never moves or removes the backup. */
     fun recoverBackup(id: String) = withProjectLock(id) {

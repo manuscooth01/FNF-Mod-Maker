@@ -326,6 +326,9 @@ internal class ProjectStore(
     // Lock order: project JVM monitor -> per-project advisory file lock -> active lock.
     // Callers already holding the per-project file lock must use loadLocked, not load.
     fun load(id: String): ProjectRecord = withProjectLock(id) {
+        // Preflight avoids creating lock artifacts for unsupported or damaged projects.
+        // It is not the returned read: loadLocked revalidates all bytes under the file lock.
+        checkCandidates(id)
         withFileLock(id) { loadLocked(id) }
     }
     private fun loadLocked(id: String): ProjectRecord {
